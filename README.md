@@ -133,13 +133,15 @@ https://cdn.example.com/play/2/index.m3u8
 ### 3. 调用前台 API
 
 ```
-GET /index.php?url=<官方视频链接>[&page=<集数>][&key=<密钥>][&debug=1][&callback=<jsonp>]
+GET /index.php?key=<密钥>&url=<官方视频链接>[&page=<集数>][&debug=1][&callback=<jsonp>]
 ```
+
+> `key` 固定放在 `url` 之前（未开启 key 鉴权时可省略）。
 
 **示例**（腾讯 → 庆余年第2集）：
 
 ```
-/index.php?url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce
+/index.php?key=YOUR_KEY&url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce
 ```
 
 **返回**：
@@ -190,7 +192,11 @@ GET /index.php?url=<官方视频链接>[&page=<集数>][&key=<密钥>][&debug=1]
 return 'your_secret_key';
 ```
 
-开启后调用需携带 `&key=your_secret_key`，否则返回 `code=403`。
+开启后调用需携带 `&key=your_secret_key`（放在 url 之前），否则返回 `code=403`。例如：
+
+```
+/index.php?key=your_secret_key&url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce
+```
 
 ---
 

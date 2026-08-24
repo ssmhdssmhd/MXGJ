@@ -2,10 +2,13 @@
 /**
  * 沫兮官替系统 - 前台解析 API
  *
- * 使用：/index.php?url=<官方视频链接>[&page=<集数>][&key=<访问密钥>][&debug=1][&callback=<jsonp>]
- * 例：   /index.php?url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce
+ * 使用：/index.php?key=<访问密钥>&url=<官方视频链接>[&page=<集数>][&debug=1][&callback=<jsonp>]
+ * 例：   /index.php?key=YOUR_KEY&url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce
+ *
+ * 说明：key 参数固定在 url 之前（key 校验最先执行，key 为空字符串则跳过鉴权）。
  *
  * 流程：
+ *  0. 校验访问密钥 key（可选）
  *  1. 解析官方链接 → 平台 / vid / cid
  *  2. 命中本地映射表（mapping.json）得到「剧名 + 集数」
  *  3. 多线程并发向后台所有资源站搜索对应资源
@@ -14,15 +17,17 @@
 
 require __DIR__ . '/lib/bootstrap.php';
 
-$raw   = isset($_GET['url']) ? trim($_GET['url']) : '';
 $debug = !empty($_GET['debug']);
 $page  = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 
-/* 可选访问密钥（config/key.php 返回空串则关闭） */
+/* 0. 访问密钥鉴权（key 参数在最前，config/key.php 返回空串则跳过） */
 $visitKey = @include MXGJ_CONFIG . '/key.php';
 if (is_string($visitKey) && $visitKey !== '' && (($_GET['key'] ?? '') !== $visitKey)) {
-    mxgj_json_out(['code' => 403, 'msg' => '访问被拒绝：缺少有效的 key 参数', 'url' => ''], 403);
+    mxgj_json_out(['code' => 403, 'msg' => '访问被拒绝：缺少或无效的 key 参数', 'url' => ''], 403);
 }
+
+/* 1. 读取 url 参数（位于 key 之后） */
+$raw = isset($_GET['url']) ? trim($_GET['url']) : '';
 
 // 1. 校验链接
 if ($raw === '') {
