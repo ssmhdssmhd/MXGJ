@@ -1,0 +1,24 @@
+{
+  "name": "moxi-guantis",
+  "version": "1.0.0",
+  "description": "沫兮官替系统 - 输入官方视频链接，自动多线程检索后台配置的资源站，返回匹配到的直链(m3u8/mp4) 用于官替",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "mock": "node test/mock-resource.js",
+    "test": "node test/run-test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "官替",
+    "资源站",
+    "m3u8",
+    "苹果CMS",
+    "聚合搜索"
+  ],
+  "license": "MIT",
+  "dependencies": {}
+}

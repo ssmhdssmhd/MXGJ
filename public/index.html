@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>沫兮官替系统</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
+      min-height: 100vh;
+      color: #e2e8f0;
+      padding: 32px 16px;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    .header { text-align: center; margin-bottom: 28px; }
+    .header h1 { font-size: 30px; letter-spacing: 2px; background: linear-gradient(90deg,#a5b4fc,#f0abfc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .header p { margin-top: 8px; font-size: 14px; color: #94a3b8; }
+    .card {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    label { display: block; font-size: 13px; color: #a5b4fc; margin-bottom: 6px; font-weight: 600; }
+    .row { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    input[type="text"] {
+      flex: 1;
+      min-width: 240px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(148,163,184,0.3);
+      background: rgba(30,41,59,0.9);
+      color: #f1f5f9;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    input[type="text"]:focus { border-color: #818cf8; }
+    input.small { flex: 0 0 120px; min-width: 90px; }
+    .btn {
+      padding: 12px 26px;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(90deg,#6366f1,#8b5cf6);
+      color: #fff;
+      transition: transform .12s, box-shadow .2s;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(99,102,241,0.5); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
+    .hint { font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.7; }
+    .result { margin-top: 20px; }
+    .result .title { font-size: 13px; color: #a5b4fc; margin-bottom: 8px; font-weight: 600; }
+    pre {
+      background: rgba(2,6,23,0.85);
+      border: 1px solid rgba(148,163,184,0.15);
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 13px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.6;
+      color: #7dd3fc;
+    }
+    .ok { color: #4ade80; }
+    .err { color: #f87171; }
+    .muted { color: #94a3b8; }
+    .badge { display:inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; margin-left: 6px; }
+    .badge-ok { background: rgba(74,222,128,.15); color: #4ade80; }
+    .badge-err { background: rgba(248,113,113,.15); color: #f87171; }
+    .footer { text-align: center; margin-top: 26px; font-size: 12px; color: #64748b; }
+    .copy { margin-top: 10px; font-size: 13px; color: #93c5fd; cursor: pointer; display:inline-block; }
+    .copy:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1>沫兮官替系统</h1>
+      <p>输入官方视频链接，自动多线程检索后台资源站，返回可替换的直链(m3u8)</p>
+    </div>
+
+    <div class="card">
+      <form id="form">
+        <label for="url">官方视频链接 *</label>
+        <div class="row">
+          <input type="text" id="url" placeholder="https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce" value="https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce" />
+        </div>
+        <div class="row">
+          <div style="flex:1; min-width:200px;">
+            <label for="name">剧名（可选，默认自动识别）</label>
+            <input type="text" id="name" class="small" style="width:100%;" placeholder="如: 庆余年" />
+          </div>
+          <div style="flex:0 0 140px;">
+            <label for="ep">集数（可选）</label>
+            <input type="text" id="ep" class="small" placeholder="如: 2" />
+          </div>
+          <button type="submit" class="btn" id="submitBtn">开始官替</button>
+        </div>
+        <div class="hint">
+          默认会自动识别平台并抽取 cid/vid 反查剧名与集数；识别不到时可手动填写剧名/集数覆盖。
+          后台资源站在 config/resources.json 中配置，支持苹果CMS/海洋CMS 的 provide/vod 接口。
+        </div>
+      </form>
+
+      <div class="result" id="result" style="display:none;">
+        <div class="title">官替结果 <span class="badge" id="badge"></span></div>
+        <pre id="output"></pre>
+        <span class="copy" id="copyBtn">复制 JSON</span>
+      </div>
+    </div>
+
+    <div class="footer">沫兮官替系统 v1.0.0 · API: GET /api/vod?url=官方链接</div>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const resultBox = document.getElementById('result');
+    const output = document.getElementById('output');
+    const badge = document.getElementById('badge');
+    const submitBtn = document.getElementById('submitBtn');
+    const copyBtn = document.getElementById('copyBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('url').value.trim();
+      const name = document.getElementById('name').value.trim();
+      const ep = document.getElementById('ep').value.trim();
+      if (!url) { alert('请输入官方视频链接'); return; }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = '检索中...';
+      resultBox.style.display = 'none';
+
+      const qs = new URLSearchParams({ url });
+      if (name) qs.set('name', name);
+      if (ep) qs.set('ep', ep);
+
+      try {
+        const resp = await fetch('/api/vod?' + qs.toString());
+        const data = await resp.json();
+        render(data);
+      } catch (err) {
+        render({ code: 500, msg: '请求失败: ' + err.message });
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '开始官替';
+      }
+    });
+
+    function render(data) {
+      resultBox.style.display = 'block';
+      output.textContent = JSON.stringify(data, null, 2);
+      if (data.code === 200) {
+        badge.className = 'badge badge-ok';
+        badge.textContent = '匹配成功';
+      } else {
+        badge.className = 'badge badge-err';
+        badge.textContent = 'code ' + data.code;
+      }
+    }
+
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(output.textContent).then(() => {
+        copyBtn.textContent = '已复制 ✓';
+        setTimeout(() => (copyBtn.textContent = '复制 JSON'), 1500);
+      });
+    });
+  </script>
+</body>
+</html>
