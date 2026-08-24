@@ -1,0 +1,29 @@
+{
+    "name": "mxgj/video-parser",
+    "description": "MXGJ 视频解析工具 - 轻量级 PHP 框架版本（多平台视频解析 API + Web 播放界面）",
+    "type": "project",
+    "keywords": ["video", "parser", "iqiyi", "m3u8", "framework"],
+    "license": "MIT",
+    "version": "0.0.1",
+    "require": {
+        "php": ">=8.0",
+        "ext-curl": "*",
+        "ext-dom": "*",
+        "ext-mbstring": "*",
+        "ext-json": "*",
+        "ext-openssl": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Core\\": "core/",
+            "App\\": "app/"
+        }
+    },
+    "scripts": {
+        "test": "php tests/unit_test.php",
+        "serve": "php -S 0.0.0.0:8080 -t public"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

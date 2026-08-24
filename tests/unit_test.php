@@ -3,7 +3,9 @@
  * 核心逻辑自测脚本（不依赖外部网络）
  * 用法：php tests/unit_test.php
  */
-require_once __DIR__ . '/../src/VideoParser.php';
+require_once __DIR__ . '/../bootstrap.php';
+
+use App\Services\VideoParserService;
 
 $pass = 0;
 $fail = 0;
@@ -19,8 +21,11 @@ function check($name, $cond, $extra = '') {
     }
 }
 
+echo "== 框架版本 ==\n";
+check('App 版本 0.0.1', \Core\App::VERSION === '0.0.1', 'got ' . \Core\App::VERSION);
+
 echo "== extractVideoId ==\n";
-$p = new VideoParser();
+$p = new VideoParserService();
 check('爱奇艺', $p->extractVideoId('https://www.iqiyi.com/v_1re8v439zmw.html') === 'iqiyi_1re8v439zmw');
 check('腾讯路径', $p->extractVideoId('https://v.qq.com/x/cover/mzc00200abc.html') === 'qq_mzc00200abc');
 check('腾讯vid参数', $p->extractVideoId('https://v.qq.com/x/player.html?vid=abc123') === 'qq_abc123');
@@ -43,10 +48,9 @@ check('变体分辨率', $variants[1]['resolution'] === [3840, 2160]);
 check('变体URL', $variants[2]['url'] === '1080/index.m3u8');
 
 echo "== selectBestM3u8Variant (mock via subclass) ==\n";
-// 通过子类模拟 httpGet 返回主清单
-$mock = new class() extends VideoParser {
+$mock = new class() extends VideoParserService {
     public $mockBody = '';
-    protected function httpGet($url, $timeout = 15, array $extraHeaders = []) {
+    public function httpGet($url, $timeout = null, array $extraHeaders = []) {
         return $this->mockBody;
     }
 };

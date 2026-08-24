@@ -1,6 +1,6 @@
 <?php
 /**
- * VideoParser - 多平台视频解析器（PHP 版）
+ * VideoParserService - 多平台视频解析服务
  *
  * 由 Python 版「视频解析工具」转换而来，核心逻辑保持一致：
  *  - 从爱奇艺 / 腾讯 / 优酷 / 芒果TV 等链接中提取视频 ID
@@ -11,7 +11,9 @@
  * 依赖 PHP 扩展：curl、dom、mbstring、json、openssl
  */
 
-class VideoParser
+namespace App\Services;
+
+class VideoParserService
 {
     /** @var array 默认请求头 */
     protected $headers = [];
@@ -19,25 +21,36 @@ class VideoParser
     /** @var int 请求超时（秒） */
     protected $timeout = 15;
 
+    /** @var int 最大重试次数 */
+    protected $maxRetries = 3;
+
     /** @var array 第三方解析接口列表 */
-    protected $parseApis = [
-        'https://jx.playerjy.com/?url=',
-        'https://jx.aidouer.net/?url=',
-        'https://jx.jsonplayer.com/?url=',
-        'https://jx.bozrc.com:4433/player/?url=',
-    ];
+    protected $parseApis = [];
 
     /** @var int 最大返回播放源数量 */
     protected $maxUrls = 5;
 
-    public function __construct(array $parseApis = [])
+    /** @var bool 是否启用画质升级 */
+    protected $enableQualityUpgrade = true;
+
+    public function __construct(array $config = [])
     {
-        if ($parseApis) {
-            $this->parseApis = array_values($parseApis);
-        }
+        $this->parseApis = $config['parse_apis'] ?? [
+            'https://jx.playerjy.com/?url=',
+            'https://jx.aidouer.net/?url=',
+            'https://jx.jsonplayer.com/?url=',
+            'https://jx.bozrc.com:4433/player/?url=',
+        ];
+
+        $this->timeout = $config['timeout'] ?? 15;
+        $this->maxRetries = $config['max_retries'] ?? 3;
+        $this->maxUrls = $config['max_urls'] ?? 5;
+        $this->enableQualityUpgrade = $config['enable_quality_upgrade'] ?? true;
+
+        $userAgent = $config['user_agent'] ?? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
         $this->headers = [
-            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent' => $userAgent,
             'Referer' => 'https://www.iqiyi.com/',
             'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language' => 'zh-CN,zh;q=0.9,en;q=0.8',
@@ -59,20 +72,20 @@ class VideoParser
      * @param array  $extraHeaders 附加请求头
      * @return string|null 响应体，失败返回 null
      */
-    protected function httpGet($url, $timeout = 15, array $extraHeaders = [])
+    public function httpGet($url, $timeout = null, array $extraHeaders = [])
     {
         if (!function_exists('curl_init')) {
             return null;
         }
 
+        $timeout = $timeout ?: $this->timeout;
         $headers = array_merge($this->headers, $extraHeaders);
         $headerLines = [];
         foreach ($headers as $name => $value) {
             $headerLines[] = $name . ': ' . $value;
         }
 
-        $maxRetries = 3;
-        for ($attempt = 0; $attempt < $maxRetries; $attempt++) {
+        for ($attempt = 0; $attempt < $this->maxRetries; $attempt++) {
             $ch = curl_init();
             curl_setopt_array($ch, [
                 CURLOPT_URL => $url,
@@ -84,7 +97,7 @@ class VideoParser
                 CURLOPT_HTTPHEADER => $headerLines,
                 CURLOPT_SSL_VERIFYPEER => false,
                 CURLOPT_SSL_VERIFYHOST => 0,
-                CURLOPT_ENCODING => '', // 自动处理 gzip/deflate/br
+                CURLOPT_ENCODING => '',
                 CURLOPT_USERAGENT => $this->headers['User-Agent'],
             ]);
 
@@ -93,18 +106,16 @@ class VideoParser
             $errno = curl_errno($ch);
             curl_close($ch);
 
-            // 成功：2xx 或 3xx（已跟随跳转）
             if ($body !== false && $httpCode >= 200 && $httpCode < 400) {
                 return (string) $body;
             }
 
-            // 需要重试的状态码：429, 500, 502, 503, 504 或连接错误
             $retryable = in_array($httpCode, [429, 500, 502, 503, 504], true) || $errno !== 0;
-            if (!$retryable || $attempt === $maxRetries - 1) {
+            if (!$retryable || $attempt === $this->maxRetries - 1) {
                 break;
             }
 
-            usleep(($attempt + 1) * 1000000); // 退避：1s, 2s
+            usleep(($attempt + 1) * 1000000);
         }
 
         return null;
@@ -168,11 +179,9 @@ class VideoParser
             }
             // 腾讯视频
             elseif (strpos($domain, 'v.qq.com') !== false) {
-                // 优先匹配 /x/cover/{id} 或 /x/page/{id}
                 if (preg_match('#/x/(?:cover|page)/([a-zA-Z0-9]+)#', $path, $m)) {
                     return 'qq_' . $m[1];
                 }
-                // 查询参数兜底
                 parse_str($query, $params);
                 if (!empty($params['vid'])) {
                     return 'qq_' . $params['vid'];
@@ -248,11 +257,11 @@ class VideoParser
             ];
 
             // 使用 DOMDocument 解析 HTML
-            $dom = new DOMDocument();
+            $dom = new \DOMDocument();
             libxml_use_internal_errors(true);
             $dom->loadHTML('<?xml encoding="UTF-8">' . $body);
             libxml_clear_errors();
-            $xpath = new DOMXPath($dom);
+            $xpath = new \DOMXPath($dom);
 
             // 标题
             $titleSelectors = [
@@ -272,7 +281,6 @@ class VideoParser
                         $title = trim($node->textContent);
                     }
                     if ($title !== '') {
-                        // 清理标题：去掉 _ 或 - 分隔的后缀
                         $title = trim(explode('_', $title)[0]);
                         $title = trim(explode('-', $title)[0]);
                         $videoInfo['title'] = $title;
@@ -383,7 +391,9 @@ class VideoParser
             $playUrls = array_values(array_unique($playUrls));
 
             // 升级为最高清晰度（优先 4K / HDR / 最高码率）
-            $playUrls = $this->upgradeToBestQuality($playUrls, $url);
+            if ($this->enableQualityUpgrade) {
+                $playUrls = $this->upgradeToBestQuality($playUrls, $url);
+            }
 
             return array_slice($playUrls, 0, $this->maxUrls);
         } catch (\Throwable $e) {
@@ -407,10 +417,10 @@ class VideoParser
                 $newUrls = $this->extractPlayUrls($body);
                 if ($newUrls) {
                     $playUrls = array_merge($playUrls, $newUrls);
-                    break; // 找到就停止
+                    break;
                 }
             }
-            usleep(500000); // 短暂延迟 0.5s
+            usleep(500000);
         }
         return $playUrls;
     }
@@ -569,7 +579,6 @@ class VideoParser
             return false;
         }
 
-        // 检查是否为视频文件格式
         $videoExtensions = ['.m3u8', '.mp4', '.flv', '.avi', '.mkv', '.mov', '.wmv'];
         $lower = strtolower($url);
         foreach ($videoExtensions as $ext) {
@@ -578,7 +587,6 @@ class VideoParser
             }
         }
 
-        // 检查是否包含视频相关关键词
         $videoKeywords = ['video', 'player', 'play', 'stream', 'media'];
         foreach ($videoKeywords as $keyword) {
             if (strpos($lower, $keyword) !== false) {
@@ -624,7 +632,6 @@ class VideoParser
             }
         }
 
-        // 将最佳变体置前，其余保留原顺序
         $merged = [];
         foreach (array_merge($bestFirst, $others) as $u) {
             if (!in_array($u, $merged, true)) {
@@ -660,11 +667,9 @@ class VideoParser
 
         $variants = $this->parseMasterM3u8Variants($body);
         if (!$variants) {
-            // 非主清单，直接返回原 m3u8
             return $m3u8Url;
         }
 
-        // 选择优先规则：4K > 最大分辨率 > 最大带宽
         usort($variants, function ($a, $b) {
             return $this->m3u8Score($b) <=> $this->m3u8Score($a);
         });
@@ -675,7 +680,6 @@ class VideoParser
             return $m3u8Url;
         }
 
-        // 处理相对路径
         return $this->resolveUrl($m3u8Url, $bestUrl);
     }
 
@@ -722,13 +726,11 @@ class VideoParser
             if (strpos($line, '#EXT-X-STREAM-INF') === 0) {
                 $info = ['bandwidth' => 0, 'resolution' => [0, 0], 'name' => ''];
 
-                // 解析属性
                 $attrStr = '';
                 if (strpos($line, ':') !== false) {
                     $attrStr = substr($line, strpos($line, ':') + 1);
                 }
                 $attrs = [];
-                // 按逗号切分，但忽略引号内的逗号
                 $parts = preg_split('/,(?=[A-Za-z\-]+=)/', $attrStr);
                 foreach ($parts as $part) {
                     if (strpos($part, '=') !== false) {
@@ -750,7 +752,6 @@ class VideoParser
                 $info['name'] = isset($attrs['NAME']) ? $attrs['NAME'] : '';
                 $lastInfo = $info;
             } elseif ($line[0] !== '#' && $lastInfo !== null) {
-                // 紧随其后的即为该流的 URL
                 $entry = $lastInfo;
                 $entry['url'] = $line;
                 $variants[] = $entry;
@@ -783,17 +784,14 @@ class VideoParser
             return $base;
         }
 
-        // 协议相对
         if (strpos($url, '//') === 0) {
             return $scheme . ':' . $url;
         }
 
-        // 根相对
         if ($url[0] === '/') {
             return $scheme . '://' . $host . $port . $url;
         }
 
-        // 相对路径
         $path = isset($parts['path']) ? $parts['path'] : '/';
         $dir = preg_replace('#/[^/]*$#', '/', $path);
         return $scheme . '://' . $host . $port . $dir . $url;

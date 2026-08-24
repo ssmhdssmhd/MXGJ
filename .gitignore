@@ -1,0 +1,20 @@
+# 依赖
+/vendor/
+composer.lock
+
+# 运行时
+/storage/*.log
+/storage/cache/
+/storage/tmp/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# 打包产物（download/ 目录下的发布包除外）
+/download/*
+!/download/*.zip
+!/download/*.tar.gz

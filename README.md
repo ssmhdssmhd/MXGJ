@@ -1,9 +1,10 @@
-# 视频解析工具（PHP 版）
+# MXGJ 视频解析工具（框架版 v0.0.1）
 
-多平台视频解析工具，由 Python 桌面版（`iqiyi_gui_modern.py` / `iqiyi_gui_simple.py`）转换而来。提供**外部可调用的 REST API 接口**和 **Web 播放界面**，支持爱奇艺、腾讯视频、优酷、芒果TV、哔哩哔哩等主流平台。
+多平台视频解析工具，基于**轻量级 PHP 框架**（自研 MVC 结构）重构，由 Python 桌面版（`iqiyi_gui_modern.py` / `iqiyi_gui_simple.py`）转换而来。提供**外部可调用的 REST API 接口**和 **Web 播放界面**，支持爱奇艺、腾讯视频、优酷、芒果TV、哔哩哔哩等主流平台。
 
 ## 功能特性
 
+- 轻量级框架架构：`core/` 框架核心 + `app/` 应用层 + `config/` 配置 + `public/` 唯一入口
 - 多平台支持：爱奇艺、腾讯视频、优酷、芒果TV、哔哩哔哩等
 - 解析策略：依次尝试第三方解析接口 → 直接解析 → 移动端解析 → 通用播放器链接兜底
 - 画质升级：自动解析 m3u8 主清单，优先选择 4K / HDR / 最高分辨率 / 最高码率变体
@@ -11,18 +12,33 @@
 - Web 播放界面：m3u8 走 HLS.js，mp4 走原生播放器，其他走 iframe
 - 内置 SSRF 防护：仅允许常见视频域名
 
-## 目录结构
+## 框架结构
 
 ```
-video-parser-php/
+MXGJ-PHP/
+├── app/
+│   ├── Controllers/
+│   │   ├── IndexController.php     # 首页控制器（渲染视图）
+│   │   └── ParseController.php     # 解析控制器（API 逻辑）
+│   ├── Services/
+│   │   └── VideoParserService.php  # 解析服务（核心业务）
+│   └── Views/
+│       └── index.php               # Web 播放界面视图
+├── core/
+│   ├── App.php                     # 应用核心（版本 0.0.1）
+│   ├── Router.php                  # 路由器（支持 :param 路径参数）
+│   ├── Request.php                 # 请求封装（GET/POST/JSON）
+│   └── Response.php                # 响应封装（JSON/JSONP/CORS）
+├── config/
+│   └── config.php                  # 应用配置（解析接口、域名白名单等）
 ├── public/
-│   ├── index.php          # Web 播放界面入口
-│   └── api/
-│       └── parse.php      # 外部可调用解析 API
-├── src/
-│   └── VideoParser.php    # 核心解析类（由 Python 版转换）
+│   ├── index.php                   # 首页入口
+│   └── api.php                     # API 入口（外部可调用）
+├── storage/                        # 存储目录（日志、缓存等）
 ├── tests/
-│   └── unit_test.php      # 核心逻辑自测脚本
+│   └── unit_test.php               # 核心逻辑自测脚本（20 项用例）
+├── bootstrap.php                   # 框架引导（自动加载）
+├── composer.json                   # 版本 0.0.1
 ├── README.md
 └── CHANGELOG.md
 ```
@@ -43,7 +59,7 @@ sudo apt-get install -y php-cli php-curl php-xml php-mbstring
 ### 本地运行（PHP 内置服务器）
 
 ```bash
-cd video-parser-php
+cd MXGJ-PHP
 php -S 0.0.0.0:8080 -t public
 ```
 
@@ -51,13 +67,13 @@ php -S 0.0.0.0:8080 -t public
 
 ### 生产部署（Nginx + PHP-FPM）
 
-将 `public/` 作为站点根目录，`public/api/parse.php` 即 API 入口。示例 Nginx 配置：
+将 `public/` 作为站点根目录，`public/api.php` 即 API 入口。示例 Nginx 配置：
 
 ```nginx
 server {
     listen 80;
     server_name your-domain.com;
-    root /path/to/video-parser-php/public;
+    root /path/to/MXGJ-PHP/public;
     index index.php;
 
     location ~ \.php$ {
@@ -73,8 +89,9 @@ server {
 ### 接口地址
 
 ```
-GET /api/parse.php?url=<视频链接>
-POST /api/parse.php   （JSON: {"url":"<视频链接>"} 或表单 url 字段）
+GET  /api.php?url=<视频链接>
+POST /api.php   （JSON: {"url":"<视频链接>"} 或表单 url 字段）
+GET  /api.php/health   （健康检查，返回版本信息）
 ```
 
 ### 请求参数
@@ -113,22 +130,29 @@ POST /api/parse.php   （JSON: {"url":"<视频链接>"} 或表单 url 字段）
 }
 ```
 
+### 健康检查示例
+
+```bash
+curl "http://localhost:8080/api.php/health"
+# {"success":true,"app":"MXGJ 视频解析工具","version":"0.0.1","framework_version":"0.0.1","time":"..."}
+```
+
 ### 调用示例
 
 ```bash
 # GET
-curl "http://localhost:8080/api/parse.php?url=https://www.iqiyi.com/v_1re8v439zmw.html"
+curl "http://localhost:8080/api.php?url=https://www.iqiyi.com/v_1re8v439zmw.html"
 
 # POST JSON
 curl -X POST -H "Content-Type: application/json" \
   -d '{"url":"https://www.iqiyi.com/v_1re8v439zmw.html"}' \
-  "http://localhost:8080/api/parse.php"
+  "http://localhost:8080/api.php"
 
 # JSONP
-curl "http://localhost:8080/api/parse.php?url=https://www.iqiyi.com/v_1re8v439zmw.html&callback=myCallback"
+curl "http://localhost:8080/api.php?url=https://www.iqiyi.com/v_1re8v439zmw.html&callback=myCallback"
 
 # 前端跨域调用（CORS 已开启）
-fetch("http://your-domain.com/api/parse.php?url=" + encodeURIComponent(videoUrl))
+fetch("http://your-domain.com/api.php?url=" + encodeURIComponent(videoUrl))
   .then(r => r.json())
   .then(data => console.log(data.urls));
 ```
@@ -139,6 +163,7 @@ fetch("http://your-domain.com/api/parse.php?url=" + encodeURIComponent(videoUrl)
 |---|---|
 | `200` | 请求成功（`success` 字段区分解析结果） |
 | `400` | 参数缺失 / 格式错误 / 域名不支持 |
+| `404` | 路由不存在 |
 | `500` | 服务端异常 |
 
 ## 运行测试
@@ -147,20 +172,11 @@ fetch("http://your-domain.com/api/parse.php?url=" + encodeURIComponent(videoUrl)
 php tests/unit_test.php
 ```
 
-测试覆盖：视频 ID 提取、播放源验证、m3u8 主清单解析、最佳变体选择、相对 URL 解析、播放源正则提取。
+测试覆盖：框架版本、视频 ID 提取、播放源验证、m3u8 主清单解析、最佳变体选择、相对 URL 解析、播放源正则提取（20 项用例）。
 
-## 从 Python 版转换说明
+## 版本历史
 
-| Python 组件 | PHP 对应实现 |
-|---|---|
-| `requests`（HTTP） | cURL 封装（`httpGet`，含重试策略） |
-| `BeautifulSoup`（HTML 解析） | `DOMDocument` + `DOMXPath` |
-| `re`（正则） | `preg_match` / `preg_match_all` |
-| `urllib.parse`（URL 处理） | `parse_url` / `parse_str` / `urldecode` |
-| `json` | `json_encode` / `json_decode` |
-| `threading`（多线程） | PHP-FPM 天然多进程，无需转换 |
-| `tkinter`（桌面界面） | 改为 Web 前端（HTML + JS + HLS.js） |
-| `cv2` / VLC（本地播放） | 改为 HLS.js / 原生 video 播放 |
+- **v0.0.1**（当前）：框架化重构版本，详见 [CHANGELOG.md](CHANGELOG.md)
 
 ## 免责声明
 
