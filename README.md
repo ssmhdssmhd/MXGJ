@@ -93,6 +93,47 @@ server {
 GET  /api.php?url=<视频链接>
 POST /api.php   （JSON: {"url":"<视频链接>"} 或表单 url 字段）
 GET  /api.php/health   （健康检查，返回版本信息）
+GET  /api.php/check    （检测播放源接口，供配置前验证）
+```
+
+### 检测播放源接口（/api.php/check）
+
+在 `config/config.php` 中添加新的解析接口前，可用此接口验证其是否可用、属于哪种类型。
+
+```
+GET /api.php/check?url=<视频链接>                       检测配置中所有接口
+GET /api.php/check?url=<视频链接>&api=<接口地址>         检测单个接口
+GET /api.php/check?url=<视频链接>&api=<接口1>,<接口2>    检测多个接口
+```
+
+返回结果中每个接口包含：
+
+| 字段 | 说明 |
+|---|---|
+| `type` | 接口类型：`parse`（直链解析型）/ `iframe`（播放器型）/ `unknown`（无法识别）/ `error`（请求失败） |
+| `http_code` | HTTP 状态码 |
+| `size` | 返回内容大小 |
+| `time_ms` | 请求耗时 |
+| `play_url_count` | 提取到的直链播放源数量 |
+| `message` | 检测结论 |
+
+判断规则：
+
+| 检测结果 | 含义 | 应加入配置 |
+|---|---|---|
+| `parse` | 能提取出 m3u8 / mp4 直链 | `parse_apis` |
+| `iframe` | 返回播放器页面，整站 iframe 嵌入 | `iframe_players` |
+| `unknown` | 无法识别，可能已失效或需浏览器环境 | 不建议加入 |
+| `error` | 请求失败（超时 / 连接失败） | 不建议加入 |
+
+调用示例：
+
+```bash
+# 检测配置中所有接口
+curl "http://localhost:8080/api.php/check?url=https://www.iqiyi.com/v_1re8v439zmw.html"
+
+# 检测待添加的新接口
+curl "http://localhost:8080/api.php/check?url=https://www.iqiyi.com/v_1re8v439zmw.html&api=https://jx.xxx.com/?url="
 ```
 
 ### 请求参数

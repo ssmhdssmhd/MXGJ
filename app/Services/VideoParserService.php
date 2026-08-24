@@ -810,4 +810,96 @@ class VideoParserService
         $dir = preg_replace('#/[^/]*$#', '/', $path);
         return $scheme . '://' . $host . $port . $dir . $url;
     }
+
+    /**
+     * 检测单个解析接口是否可用（供配置前验证）
+     *
+     * 对接口发起一次真实请求，分析返回内容并判断其类型：
+     *  - parse    直链解析型：能提取出 m3u8 / mp4 等直链播放地址
+     *  - iframe   播放器型：返回播放器页面（iframe / video 标签或播放器特征）
+     *  - unknown  无法识别类型（可能已失效或需要浏览器环境）
+     *  - error    请求失败（超时 / 连接失败 / 非 2xx）
+     *
+     * @param string $api 解析接口地址（如 https://jx.xxx.com/?url=）
+     * @param string $videoUrl 测试视频链接
+     * @return array
+     */
+    public function detectApi(string $api, string $videoUrl): array
+    {
+        $start = microtime(true);
+        $fullUrl = $api . $videoUrl;
+
+        $result = [
+            'api' => $api,
+            'full_url' => $fullUrl,
+            'http_code' => 0,
+            'size' => 0,
+            'time_ms' => 0,
+            'type' => 'error',
+            'type_label' => '请求失败',
+            'play_urls' => [],
+            'play_url_count' => 0,
+            'message' => '',
+        ];
+
+        $body = $this->httpGet($fullUrl, 10);
+        $result['time_ms'] = (int) round((microtime(true) - $start) * 1000);
+
+        if ($body === null) {
+            $result['message'] = '请求失败（超时 / 连接失败 / 非 2xx）';
+            return $result;
+        }
+
+        $result['size'] = strlen($body);
+        $result['http_code'] = 200;
+
+        // 提取直链播放源
+        $playUrls = $this->extractPlayUrls($body);
+        $result['play_urls'] = array_slice($playUrls, 0, 3);
+        $result['play_url_count'] = count($playUrls);
+
+        if ($playUrls) {
+            $result['type'] = 'parse';
+            $result['type_label'] = '直链解析型（可提取播放地址）';
+            $result['message'] = '成功提取 ' . count($playUrls) . ' 个直链播放源';
+            return $result;
+        }
+
+        // 判断是否为播放器页面（iframe / video 标签 / 播放器特征）
+        $lower = strtolower($body);
+        $hasIframe = stripos($lower, '<iframe') !== false;
+        $hasVideo = stripos($lower, '<video') !== false;
+        $hasPlayerTitle = stripos($lower, '播放器') !== false || stripos($lower, 'player') !== false;
+        $hasObfuscated = stripos($lower, 'eval(') !== false
+            || stripos($lower, 'fromCharCode') !== false
+            || stripos($lower, 'URLSearchParams') !== false;
+
+        if ($hasIframe || $hasVideo || $hasPlayerTitle || $hasObfuscated) {
+            $result['type'] = 'iframe';
+            $result['type_label'] = '播放器型（整站 iframe 嵌入播放）';
+            $result['message'] = '返回播放器页面，需作为 iframe 播放源使用';
+            return $result;
+        }
+
+        $result['type'] = 'unknown';
+        $result['type_label'] = '无法识别';
+        $result['message'] = '返回内容无法识别为有效播放源，可能已失效或需浏览器环境';
+        return $result;
+    }
+
+    /**
+     * 批量检测解析接口（含配置中已有的接口）
+     *
+     * @param string $videoUrl 测试视频链接
+     * @param array  $apis 待检测接口列表
+     * @return array
+     */
+    public function detectApis(string $videoUrl, array $apis): array
+    {
+        $results = [];
+        foreach ($apis as $api) {
+            $results[] = $this->detectApi($api, $videoUrl);
+        }
+        return $results;
+    }
 }

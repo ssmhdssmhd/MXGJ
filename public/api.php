@@ -7,6 +7,7 @@
  * 路由：
  *   GET/POST /api.php?url=<视频链接>        解析视频
  *   GET      /api.php/health                健康检查
+ *   GET      /api.php/check?url=<视频链接>  检测播放源接口（供配置前验证）
  */
 
 require __DIR__ . '/../bootstrap.php';
@@ -16,6 +17,7 @@ $app = new \Core\App(dirname(__DIR__));
 $app->routes(function ($router) {
     $router->any('/', 'ParseController@parse');
     $router->get('/health', 'ParseController@health');
+    $router->get('/check', 'ParseController@check');
 });
 
 $app->run();

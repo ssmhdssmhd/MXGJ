@@ -110,6 +110,101 @@ class ParseController
     }
 
     /**
+     * 检测播放源接口（供配置前验证解析接口是否可用）
+     *
+     * 用法：
+     *   GET /api.php/check?url=<视频链接>                    检测配置中所有接口
+     *   GET /api.php/check?url=<视频链接>&api=<接口地址>      检测单个接口
+     *   GET /api.php/check?url=<视频链接>&api=<接口1>,<接口2>  检测多个接口
+     *
+     * @param Request $request
+     * @param array   $params
+     * @return void
+     */
+    public function check(Request $request, array $params): void
+    {
+        $response = new Response();
+        $url = trim((string) $request->input('url', ''));
+
+        if ($url === '') {
+            $response->json([
+                'success' => false,
+                'error' => '缺少参数 url，请传入测试视频链接',
+                'usage' => [
+                    'method' => 'GET',
+                    'params' => [
+                        'url' => '必填，测试视频页面链接',
+                        'api' => '可选，待检测接口地址（多个用逗号分隔）；不传则检测配置中所有接口',
+                    ],
+                    'examples' => [
+                        '/api.php/check?url=https://www.iqiyi.com/v_1re8v439zmw.html',
+                        '/api.php/check?url=https://www.iqiyi.com/v_1re8v439zmw.html&api=https://jx.xxx.com/?url=',
+                        '/api.php/check?url=https://www.iqiyi.com/v_1re8v439zmw.html&api=https://jx.a.com/?url=,https://jx.b.com/?url=',
+                    ],
+                ],
+            ], 400);
+        }
+
+        if (!preg_match('#^https?://#i', $url)) {
+            $response->json([
+                'success' => false,
+                'error' => 'url 格式不正确，必须以 http:// 或 https:// 开头',
+            ], 400);
+        }
+
+        try {
+            $service = new VideoParserService([
+                'parse_apis' => $this->config['parse_apis'],
+                'iframe_players' => $this->config['iframe_players'],
+                'timeout' => $this->config['http']['timeout'],
+                'max_retries' => 1,
+                'user_agent' => $this->config['http']['user_agent'],
+            ]);
+
+            // 待检测接口：优先取 api 参数，否则检测配置中全部接口
+            $apiInput = trim((string) $request->input('api', ''));
+            if ($apiInput !== '') {
+                $apis = array_values(array_filter(array_map('trim', explode(',', $apiInput))));
+            } else {
+                $apis = array_merge($this->config['parse_apis'], $this->config['iframe_players']);
+            }
+
+            if (!$apis) {
+                $response->json([
+                    'success' => false,
+                    'error' => '没有可检测的接口（api 参数为空且配置中无接口）',
+                ], 400);
+            }
+
+            $results = $service->detectApis($url, $apis);
+
+            $summary = [
+                'total' => count($results),
+                'parse' => 0,
+                'iframe' => 0,
+                'unknown' => 0,
+                'error' => 0,
+            ];
+            foreach ($results as $r) {
+                $summary[$r['type']]++;
+            }
+
+            $response->json([
+                'success' => true,
+                'test_url' => $url,
+                'summary' => $summary,
+                'results' => $results,
+                'time' => date('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            $response->json([
+                'success' => false,
+                'error' => '服务异常: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * 校验域名是否在白名单内
      *
      * @param string $url
