@@ -1,0 +1,6 @@
+{
+    "admin_password": "moxi123",
+    "timeout": 15,
+    "cache_ttl": 600,
+    "replace_domain": ""
+}

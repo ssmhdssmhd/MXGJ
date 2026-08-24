@@ -1,0 +1,12 @@
+{
+    "sites": [
+        {
+            "name": "示例-苹果CMS采集站A",
+            "template": "http://your-cms-a.com/api.php/provide/vod/?ac=videolist&wd=%u"
+        },
+        {
+            "name": "示例-苹果CMS采集站B",
+            "template": "http://your-cms-b.com/api.php/provide/vod/?ac=videolist&wd=%u"
+        }
+    ]
+}
