@@ -14,12 +14,19 @@ return [
         'debug' => false,
     ],
 
-    // 第三方解析接口列表
+    // 第三方解析接口列表（返回播放地址，走正则提取）
     'parse_apis' => [
         'https://jx.playerjy.com/?url=',
         'https://jx.aidouer.net/?url=',
         'https://jx.jsonplayer.com/?url=',
         'https://jx.bozrc.com:4433/player/?url=',
+    ],
+
+    // iframe 播放器接口列表（返回播放器页面，直接作为 iframe 播放源）
+    // 注：此类接口不返回可直接提取的播放地址，需整站 iframe 嵌入播放
+    'iframe_players' => [
+        'https://jx.xmflv.cc/?url=',
+        'https://jx.xmflv.com/?url=',
     ],
 
     // 请求配置

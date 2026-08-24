@@ -27,6 +27,9 @@ class VideoParserService
     /** @var array 第三方解析接口列表 */
     protected $parseApis = [];
 
+    /** @var array iframe 播放器接口列表 */
+    protected $iframePlayers = [];
+
     /** @var int 最大返回播放源数量 */
     protected $maxUrls = 5;
 
@@ -40,6 +43,12 @@ class VideoParserService
             'https://jx.aidouer.net/?url=',
             'https://jx.jsonplayer.com/?url=',
             'https://jx.bozrc.com:4433/player/?url=',
+        ];
+
+        // iframe 播放器接口（不参与正则提取，直接作为 iframe 播放源）
+        $this->iframePlayers = $config['iframe_players'] ?? [
+            'https://jx.xmflv.cc/?url=',
+            'https://jx.xmflv.com/?url=',
         ];
 
         $this->timeout = $config['timeout'] ?? 15;
@@ -385,6 +394,11 @@ class VideoParserService
                 foreach ($this->parseApis as $api) {
                     $playUrls[] = $api . $url;
                 }
+            }
+
+            // 方法5：iframe 播放器源（如虾米播放器，整站 iframe 嵌入播放）
+            foreach ($this->iframePlayers as $api) {
+                $playUrls[] = $api . $url;
             }
 
             // 去重（保持顺序）

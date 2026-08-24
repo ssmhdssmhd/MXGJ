@@ -7,6 +7,7 @@
 - 轻量级框架架构：`core/` 框架核心 + `app/` 应用层 + `config/` 配置 + `public/` 唯一入口
 - 多平台支持：爱奇艺、腾讯视频、优酷、芒果TV、哔哩哔哩等
 - 解析策略：依次尝试第三方解析接口 → 直接解析 → 移动端解析 → 通用播放器链接兜底
+- iframe 播放器源：内置虾米播放器（`jx.xmflv.cc` / `jx.xmflv.com`），整站 iframe 嵌入播放
 - 画质升级：自动解析 m3u8 主清单，优先选择 4K / HDR / 最高分辨率 / 最高码率变体
 - 外部可调用 API：支持 GET / POST / JSONP / 跨域（CORS）
 - Web 播放界面：m3u8 走 HLS.js，mp4 走原生播放器，其他走 iframe
@@ -100,6 +101,17 @@ GET  /api.php/health   （健康检查，返回版本信息）
 |---|---|---|
 | `url` | 是 | 视频页面链接，必须以 `http://` 或 `https://` 开头 |
 | `callback` | 否 | JSONP 回调函数名（启用 JSONP 模式） |
+
+### 播放源类型
+
+接口返回的 `urls` 数组可能包含两类播放源：
+
+| 类型 | 特征 | 前端播放方式 |
+|---|---|---|
+| 直链播放源 | `.m3u8` / `.mp4` / `.flv` 等 | HLS.js 或原生 video 播放 |
+| iframe 播放器源 | 如 `jx.xmflv.cc/?url=...`（虾米播放器） | 整站 iframe 嵌入播放 |
+
+iframe 播放器源在 `config/config.php` 的 `iframe_players` 中配置，当前内置虾米播放器双域名（`jx.xmflv.cc` / `jx.xmflv.com`），均已实测可正常解析播放。
 
 ### 返回格式（JSON）
 

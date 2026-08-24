@@ -17,6 +17,7 @@
   - `storage/` 存储目录、`bootstrap.php` 自动加载引导
 - 新增 `composer.json`，版本号 `0.0.1`，支持 PSR-4 自动加载
 - 新增健康检查接口 `GET /api.php/health`，返回应用与框架版本信息
+- 新增 iframe 播放器源支持：内置虾米播放器双域名（`jx.xmflv.cc` / `jx.xmflv.com`），经实测可正常解析播放爱奇艺等视频，作为 iframe 播放源返回
 - 核心解析逻辑迁移为 `VideoParserService`（业务服务层），支持从配置注入参数
 - 单元测试升级为 20 项用例（新增框架版本校验）
 
