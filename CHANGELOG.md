@@ -1,6 +1,14 @@
 # 更新日志
 
-本项目由 Python 版「视频解析工具」整体转换为 Node.js 实现。
+本项目由 Python 版「视频解析工具」整体转换为 Node.js 实现，作为 MXGJ 视频解析框架发布。
+
+## [0.0.1] - 2026-08-24
+
+### 框架发布（首个版本）
+
+- 正式命名为 **mxgj**，版本号定为 `0.0.1`，作为 MXGJ 视频解析框架（Node.js 版）发布
+- 在 `package.json` 补充 `repository` 字段，关联仓库 `ssmhdssmhd/MXGJ`
+- 通过 GitHub Releases 发布 `v0.0.1` 供下载
 
 ## [1.0.0] - 2026-08-24
 

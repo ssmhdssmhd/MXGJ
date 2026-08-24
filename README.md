@@ -1,4 +1,6 @@
-# 视频解析工具 (Node.js 版)
+# MXGJ 视频解析框架 (Node.js 版)
+
+当前版本：**0.0.1**
 
 由 Python 版「视频解析工具」项目整体转换而来，包含 **视频解析 API 服务**（Express）与 **桌面 GUI 工具**（Electron），解析逻辑与 Python 版完全一致。
 
