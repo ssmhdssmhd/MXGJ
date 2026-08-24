@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>视频解析工具</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-theme="tech">
+  <div class="app">
+    <!-- 顶部栏 -->
+    <header class="topbar">
+      <h1 class="logo">🎬 视频解析工具</h1>
+      <div class="topbar-actions">
+        <label class="theme-label">主题</label>
+        <select id="themeSelect" class="theme-select">
+          <option value="tech">科技蓝</option>
+          <option value="purple">优雅紫</option>
+          <option value="green">清新绿</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- 输入区 -->
+    <section class="card input-card">
+      <input id="videoUrl" type="text" class="url-input" placeholder="请输入视频链接，例如 https://www.iqiyi.com/v_xxx.html" spellcheck="false">
+      <button id="parseBtn" class="btn btn-primary">🔍 解析</button>
+    </section>
+
+    <!-- 结果区 -->
+    <section id="resultCard" class="card result-card hidden">
+      <div class="result-header">
+        <h2 id="videoTitle" class="video-title">加载中...</h2>
+        <span id="statusBadge" class="badge"></span>
+      </div>
+      <div id="videoInfo" class="video-info"></div>
+
+      <div class="player-section">
+        <h3>🎥 视频播放器</h3>
+        <div class="player-container">
+          <iframe id="playerFrame" src="" allowfullscreen allow="autoplay; fullscreen; encrypted-media"></iframe>
+          <div id="playerPlaceholder" class="player-placeholder">
+            <div class="placeholder-inner">暂无播放源</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="url-list">
+        <h3>🔗 可用播放源 <span id="urlCount"></span></h3>
+        <div id="urlItems"></div>
+      </div>
+    </section>
+
+    <!-- 底部提示 -->
+    <footer class="footer">视频解析工具 · Node.js / Electron 版</footer>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

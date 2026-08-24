@@ -1,0 +1,35 @@
+{
+  "name": "videoparse-node",
+  "version": "1.0.0",
+  "description": "视频解析工具 Node.js 版 —— 视频解析 API (Express) + 桌面 GUI (Electron)，由 Python 版转换而来",
+  "main": "launcher.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "api": "node src/server.js",
+    "dev": "node src/server.js",
+    "gui": "electron launcher.js --gui",
+    "test": "node --check src/parser.js && node --check src/server.js && echo '语法检查通过'"
+  },
+  "keywords": [
+    "视频解析",
+    "video-parser",
+    "express",
+    "electron",
+    "iqiyi"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.0",
+    "https-proxy-agent": "^7.0.0"
+  },
+  "optionalDependencies": {
+    "electron": "^31.0.0"
+  }
+}

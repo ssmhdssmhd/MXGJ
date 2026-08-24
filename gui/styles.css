@@ -1,0 +1,171 @@
+/* 视频解析工具样式 —— 三种主题，灵感来自 Python 版 */
+:root {
+  --bg: #0f1419;
+  --card-bg: #ffffff;
+  --text: #2d3748;
+  --text-2: #4a5568;
+  --accent: #3182ce;
+  --success: #38a169;
+  --warning: #ed8936;
+  --muted: #a0aec0;
+  --border: #e2e8f0;
+}
+
+body[data-theme="tech"] {
+  --bg: linear-gradient(135deg, #0f1419, #1a2332);
+  --accent: #3182ce;
+}
+body[data-theme="purple"] {
+  --bg: linear-gradient(135deg, #667eea, #764ba2);
+  --accent: #7c6cf0;
+}
+body[data-theme="green"] {
+  --bg: linear-gradient(135deg, #11998e, #38ef7d);
+  --accent: #0f9d7e;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif;
+  background: var(--bg);
+  background-attachment: fixed;
+  min-height: 100vh;
+  padding: 20px;
+  color: var(--text);
+}
+
+.app { max-width: 860px; margin: 0 auto; }
+
+/* 顶部栏 */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 0 4px;
+}
+.logo { font-size: 22px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.theme-label { color: #fff; font-size: 13px; opacity: .9; }
+.theme-select {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  background: rgba(255,255,255,.95);
+  color: var(--text);
+}
+
+/* 卡片 */
+.card {
+  background: var(--card-bg);
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.18);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+/* 输入区 */
+.input-card { display: flex; gap: 12px; }
+.url-input {
+  flex: 1;
+  padding: 13px 14px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  outline: none;
+  transition: border .15s, box-shadow .15s;
+}
+.url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(49,130,206,.15); }
+
+.btn {
+  padding: 0 22px;
+  font-size: 15px;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  color: #fff;
+  background: var(--accent);
+  transition: opacity .15s, transform .05s;
+  white-space: nowrap;
+}
+.btn:hover { opacity: .9; }
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* 结果区 */
+.hidden { display: none; }
+.result-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.video-title { font-size: 18px; color: var(--text); }
+.badge {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 20px;
+  color: #fff;
+}
+.badge.ok { background: var(--success); }
+.badge.err { background: var(--warning); }
+
+.video-info { color: var(--text-2); font-size: 13px; margin-bottom: 14px; white-space: pre-wrap; word-break: break-all; }
+.video-info .from { color: var(--muted); }
+
+/* 播放器 */
+.player-section h3, .url-list h3 { font-size: 15px; margin-bottom: 12px; color: var(--text); }
+.player-container {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-bottom: 56.25%;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.player-container iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+.player-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+}
+.placeholder-inner { font-size: 15px; }
+
+/* 播放源列表 */
+.url-list { margin-top: 18px; }
+.url-item {
+  position: relative;
+  background: #f8fafc;
+  padding: 13px 14px;
+  margin: 9px 0;
+  border-radius: 9px;
+  border-left: 4px solid var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.url-item a { color: var(--accent); text-decoration: none; word-break: break-all; font-size: 13px; flex: 1; }
+.url-item a:hover { text-decoration: underline; }
+.copy-btn {
+  background: var(--success);
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: opacity .15s;
+}
+.copy-btn:hover { opacity: .85; }
+
+.footer { text-align: center; color: rgba(255,255,255,.75); font-size: 12px; padding: 10px; }
