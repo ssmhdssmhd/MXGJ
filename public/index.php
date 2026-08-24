@@ -194,20 +194,31 @@ $apiUrl = 'api/parse.php';
         resultCard.style.display = 'none';
         playerWrap.style.display = 'none';
 
-        fetch(apiUrl + '?url=' + encodeURIComponent(url))
+        // 请求超时控制（45s），避免第三方接口故障时长时间无响应
+        var controller = new AbortController();
+        var timer = setTimeout(function () {
+            controller.abort();
+        }, 45000);
+
+        fetch(apiUrl + '?url=' + encodeURIComponent(url), { signal: controller.signal })
             .then(function (res) { return res.json(); })
             .then(function (data) {
+                clearTimeout(timer);
                 setLoading(false);
                 if (data.success) {
                     renderResult(data);
                     setStatus('✅ 解析完成，共找到 ' + data.urls.length + ' 个播放源', 'success');
                 } else {
-                    setStatus('❌ ' + (data.error || '解析失败'), 'error');
+                    setStatus('❌ ' + (data.error || '解析失败，请稍后重试'), 'error');
                 }
             })
             .catch(function (err) {
+                clearTimeout(timer);
                 setLoading(false);
-                setStatus('❌ 请求失败：' + err.message, 'error');
+                var msg = (err && err.name === 'AbortError')
+                    ? '解析超时，请稍后重试'
+                    : '请求失败：' + ((err && err.message) || '网络错误，请检查连接');
+                setStatus('❌ ' + msg, 'error');
             });
     }
 
@@ -284,11 +295,22 @@ $apiUrl = 'api/parse.php';
             v2.src = url;
             playerWrap.appendChild(v2);
         } else {
-            // 其他（iframe 播放页）
+            // 其他（iframe 播放页）：部分站点禁止内嵌，提供新窗口打开兜底
+            var box = document.createElement('div');
+            var link = document.createElement('a');
+            link.href = url;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.className = 'btn btn-primary btn-sm';
+            link.textContent = '↗ 若播放器空白，请在新窗口打开';
+            link.style.display = 'inline-block';
+            link.style.marginBottom = '8px';
             var iframe = document.createElement('iframe');
             iframe.src = url;
             iframe.allowFullscreen = true;
-            playerWrap.appendChild(iframe);
+            box.appendChild(link);
+            box.appendChild(iframe);
+            playerWrap.appendChild(box);
         }
     }
 

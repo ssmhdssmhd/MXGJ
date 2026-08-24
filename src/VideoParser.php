@@ -19,12 +19,10 @@ class VideoParser
     /** @var int 请求超时（秒） */
     protected $timeout = 15;
 
-    /** @var array 第三方解析接口列表 */
+    /** @var array 第三方解析接口列表（已移除不可达接口：jx.jsonplayer.com / jx.bozrc.com） */
     protected $parseApis = [
         'https://jx.playerjy.com/?url=',
         'https://jx.aidouer.net/?url=',
-        'https://jx.jsonplayer.com/?url=',
-        'https://jx.bozrc.com:4433/player/?url=',
     ];
 
     /** @var int 最大返回播放源数量 */
@@ -71,7 +69,8 @@ class VideoParser
             $headerLines[] = $name . ': ' . $value;
         }
 
-        $maxRetries = 3;
+        $maxRetries = 2;
+        $connectTimeout = min($timeout, 5); // 连接超时单独限制为 5s，避免长时间挂起
         for ($attempt = 0; $attempt < $maxRetries; $attempt++) {
             $ch = curl_init();
             curl_setopt_array($ch, [
@@ -79,7 +78,7 @@ class VideoParser
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_MAXREDIRS => 5,
-                CURLOPT_CONNECTTIMEOUT => $timeout,
+                CURLOPT_CONNECTTIMEOUT => $connectTimeout,
                 CURLOPT_TIMEOUT => $timeout,
                 CURLOPT_HTTPHEADER => $headerLines,
                 CURLOPT_SSL_VERIFYPEER => false,
