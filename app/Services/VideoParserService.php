@@ -30,6 +30,9 @@ class VideoParserService
     /** @var array iframe 播放器接口列表 */
     protected $iframePlayers = [];
 
+    /** @var bool 是否返回 iframe 播放器源（此类源整站 iframe 嵌入播放，播放器可能自带广告） */
+    protected $enableIframePlayers = true;
+
     /** @var int 最大返回播放源数量 */
     protected $maxUrls = 5;
 
@@ -50,6 +53,9 @@ class VideoParserService
             'https://jx.xmflv.cc/?url=',
             'https://jx.xmflv.com/?url=',
         ];
+
+        // 是否返回 iframe 播放器源（默认开启；关闭后仅返回直链，可能无可用源）
+        $this->enableIframePlayers = (bool) ($config['enable_iframe_players'] ?? true);
 
         $this->timeout = $config['timeout'] ?? 15;
         $this->maxRetries = $config['max_retries'] ?? 3;
@@ -143,11 +149,30 @@ class VideoParserService
             $playUrls = $this->generatePlayUrls($url);
 
             if ($playUrls) {
+                // 类型标注：direct=直链（m3u8/mp4/flv，无广告），iframe=播放器页面（可能含广告）
+                $sources = [];
+                $directCount = 0;
+                foreach ($playUrls as $pu) {
+                    $isDirect = $this->isDirectVideoUrl($pu);
+                    if ($isDirect) {
+                        $directCount++;
+                    }
+                    $sources[] = [
+                        'url' => $pu,
+                        'type' => $isDirect ? 'direct' : 'iframe',
+                        'label' => $isDirect ? '直链' : '播放器源',
+                        'note' => $isDirect ? '' : 'iframe 播放器，可能含广告',
+                    ];
+                }
+
                 return [
                     'success' => true,
                     'title' => ($videoInfo && !empty($videoInfo['title'])) ? $videoInfo['title'] : '解析成功',
                     'description' => ($videoInfo && !empty($videoInfo['description'])) ? $videoInfo['description'] : '',
                     'urls' => $playUrls,
+                    'sources' => $sources,
+                    'direct_count' => $directCount,
+                    'iframe_count' => count($playUrls) - $directCount,
                     'video_info' => $videoInfo ?: [],
                     'video_id' => $this->extractVideoId($url),
                     'parse_time' => date('Y-m-d H:i:s'),
@@ -370,42 +395,51 @@ class VideoParserService
     /**
      * 生成多种可能的播放地址（主流程）
      *
+     * 只返回「验证过」的播放源：
+     *  - 直链（m3u8 / mp4 / flv 等）优先
+     *  - iframe 播放器页面（整站 iframe 嵌入播放）作为兜底
+     * 不再返回未经请求验证的「拼接地址」（api + url）。
+     *
      * @param string $url
      * @return array
      */
     public function generatePlayUrls($url)
     {
         try {
-            // 方法1：第三方接口解析（主要方法）
-            $playUrls = $this->tryThirdPartyParse($url);
+            // 方法1：第三方接口解析（主要方法），返回 直链 + iframe 播放器源
+            $parsed = $this->tryThirdPartyParse($url);
+            $directUrls = $parsed['direct'];
+            $iframeUrls = $parsed['iframe'];
 
-            // 方法2：直接解析
-            if (!$playUrls) {
-                $playUrls = $this->tryDirectParse($url);
+            // 方法2：直接解析页面
+            if (!$directUrls) {
+                $directUrls = $this->tryDirectParse($url);
             }
 
             // 方法3：移动端解析
-            if (!$playUrls) {
-                $playUrls = $this->tryMobileParse($url);
+            if (!$directUrls) {
+                $directUrls = $this->tryMobileParse($url);
             }
 
-            // 方法4：生成通用播放器链接（备用方案）
-            if (!$playUrls) {
-                foreach ($this->parseApis as $api) {
-                    $playUrls[] = $api . $url;
+            // 方法4：配置的 iframe 播放器源（默认开启，作为兜底播放源）
+            if ($this->enableIframePlayers) {
+                foreach ($this->iframePlayers as $api) {
+                    $iframeUrls[] = $api . $url;
                 }
             }
 
-            // 方法5：iframe 播放器源（如虾米播放器，整站 iframe 嵌入播放）
-            foreach ($this->iframePlayers as $api) {
-                $playUrls[] = $api . $url;
+            // 直链优先，iframe 源在后；去重（保持顺序）
+            $playUrls = array_values(array_unique(array_merge($directUrls, $iframeUrls)));
+
+            // 若关闭 iframe 播放器源，则仅保留直链（可能无可用源）
+            if (!$this->enableIframePlayers) {
+                $playUrls = array_values(array_filter($playUrls, function ($u) {
+                    return $this->isDirectVideoUrl($u);
+                }));
             }
 
-            // 去重（保持顺序）
-            $playUrls = array_values(array_unique($playUrls));
-
-            // 升级为最高清晰度（优先 4K / HDR / 最高码率）
-            if ($this->enableQualityUpgrade) {
+            // 升级为最高清晰度（仅对直链 m3u8 生效）
+            if ($this->enableQualityUpgrade && $directUrls) {
                 $playUrls = $this->upgradeToBestQuality($playUrls, $url);
             }
 
@@ -418,25 +452,72 @@ class VideoParserService
     /**
      * 尝试第三方解析接口
      *
+     * 依次请求每个接口，返回结构化结果：
+     *  - direct  提取到的直链（m3u8 / mp4 / flv 等）
+     *  - iframe  验证过的 iframe 播放器页面（整站 iframe 嵌入播放）
+     *
+     * 只收集「真实请求并验证」的源，不再返回 api + url 的拼接地址。
+     *
      * @param string $url
-     * @return array
+     * @return array ['direct' => [], 'iframe' => []]
      */
     protected function tryThirdPartyParse($url)
     {
-        $playUrls = [];
+        $directUrls = [];
+        $iframeUrls = [];
+
         foreach ($this->parseApis as $api) {
             $parseUrl = $api . $url;
             $body = $this->httpGet($parseUrl, 10);
-            if ($body !== null) {
-                $newUrls = $this->extractPlayUrls($body);
-                if ($newUrls) {
-                    $playUrls = array_merge($playUrls, $newUrls);
-                    break;
+            if ($body === null) {
+                continue;
+            }
+
+            // 处理 meta refresh 跳转（如 aidouer → 77flv）
+            $redirectUrl = $this->extractMetaRefreshUrl($body);
+            if ($redirectUrl !== null) {
+                $body = $this->httpGet($redirectUrl, 10);
+                if ($body === null) {
+                    continue;
                 }
             }
+
+            // 1. 提取直链
+            $newDirect = $this->extractPlayUrls($body);
+            foreach ($newDirect as $du) {
+                if (!in_array($du, $directUrls, true)) {
+                    $directUrls[] = $du;
+                }
+            }
+
+            // 2. 提取 iframe 播放器页面，并尝试深度解析直链
+            $iframes = $this->extractIframeUrls($body);
+            foreach ($iframes as $iframeUrl) {
+                $nested = $this->deepExtractDirectUrls($iframeUrl, 2);
+                foreach ($nested as $nu) {
+                    if (!in_array($nu, $directUrls, true)) {
+                        $directUrls[] = $nu;
+                    }
+                }
+                // 深度解析未得到直链时，保留 iframe 播放器源
+                if (!$nested && !in_array($iframeUrl, $iframeUrls, true)) {
+                    $iframeUrls[] = $iframeUrl;
+                }
+            }
+
+            // 3. 若接口返回的是播放器页面本身（无 iframe 但含播放器特征），
+            //    则把接口地址作为 iframe 播放源
+            if (!$newDirect && !$iframes && $this->looksLikePlayerPage($body)) {
+                if (!in_array($parseUrl, $iframeUrls, true)) {
+                    $iframeUrls[] = $parseUrl;
+                }
+            }
+
+            // 继续尝试下一个接口，收集更多直链
             usleep(500000);
         }
-        return $playUrls;
+
+        return ['direct' => $directUrls, 'iframe' => $iframeUrls];
     }
 
     /**
@@ -554,6 +635,15 @@ class VideoParserService
      * @param string $htmlContent
      * @return array
      */
+    /**
+     * 从 HTML 中提取直链播放地址（m3u8 / mp4 / flv 等）
+     *
+     * 注意：只返回真正的直链，不包含 iframe 播放器页面链接。
+     * 播放器页面链接请使用 extractIframeUrls()。
+     *
+     * @param string $htmlContent
+     * @return array
+     */
     public function extractPlayUrls($htmlContent)
     {
         $playUrls = [];
@@ -561,18 +651,22 @@ class VideoParserService
             '#"url":"([^"]+\.m3u8[^"]*)"#',
             '#"url":"([^"]+\.mp4[^"]*)"#',
             '#"playUrl":"([^"]+)"#',
+            '#"videoUrl":"([^"]+)"#',
             '#"src":"([^"]+\.m3u8[^"]*)"#',
             '#"src":"([^"]+\.mp4[^"]*)"#',
-            '#<iframe[^>]+src="([^"]+)"#i',
             '#<video[^>]+src="([^"]+)"#i',
             '#<source[^>]+src="([^"]+)"#i',
+            '#(?:https?:)?//[^"\'<> ]+\.m3u8[^"\'<> ]*#i',
+            '#(?:https?:)?//[^"\'<> ]+\.mp4[^"\'<> ]*#i',
+            '#(?:https?:)?//[^"\'<> ]+\.flv[^"\'<> ]*#i',
         ];
 
         foreach ($patterns as $pattern) {
             if (preg_match_all($pattern, $htmlContent, $matches)) {
                 foreach ($matches[1] as $match) {
-                    if (!in_array($match, $playUrls, true) && $this->isValidVideoUrl($match)) {
-                        $playUrls[] = $match;
+                    $decoded = urldecode($match);
+                    if (!in_array($decoded, $playUrls, true) && $this->isDirectVideoUrl($decoded)) {
+                        $playUrls[] = $decoded;
                     }
                 }
             }
@@ -582,18 +676,147 @@ class VideoParserService
     }
 
     /**
-     * 验证是否为有效的视频 URL
+     * 从 HTML 中提取 iframe 播放器页面链接（如 getdata.staticfile.link/player/...）
+     *
+     * @param string $htmlContent
+     * @return array
+     */
+    public function extractIframeUrls($htmlContent)
+    {
+        $iframeUrls = [];
+        if (preg_match_all('#<iframe[^>]+src="([^"]+)"#i', $htmlContent, $matches)) {
+            foreach ($matches[1] as $src) {
+                $src = html_entity_decode($src, ENT_QUOTES, 'UTF-8');
+                if ($this->isValidHttpUrl($src) && !in_array($src, $iframeUrls, true)) {
+                    $iframeUrls[] = $src;
+                }
+            }
+        }
+        return $iframeUrls;
+    }
+
+    /**
+     * 深度解析：请求播放器页面并尝试提取直链
+     *
+     * 对 iframe 播放器链接递归请求（最多 $depth 层），
+     * 在每一层尝试提取 m3u8 / mp4 等直链；若该层是播放器页面，
+     * 则继续深入其内部 iframe，直到提取到直链或达到最大深度。
+     *
+     * @param string $url   播放器页面链接
+     * @param int    $depth 剩余递归深度
+     * @return array 提取到的直链列表
+     */
+    public function deepExtractDirectUrls($url, $depth = 2)
+    {
+        if ($depth < 0 || !$this->isValidHttpUrl($url)) {
+            return [];
+        }
+
+        $body = $this->httpGet($url, 10);
+        if ($body === null) {
+            return [];
+        }
+
+        // 处理 meta refresh 跳转
+        $redirectUrl = $this->extractMetaRefreshUrl($body);
+        if ($redirectUrl !== null && $redirectUrl !== $url) {
+            return $this->deepExtractDirectUrls($redirectUrl, $depth);
+        }
+
+        // 先尝试提取直链
+        $directUrls = $this->extractPlayUrls($body);
+        if ($directUrls) {
+            return $directUrls;
+        }
+
+        // 无直链则深入内部 iframe
+        $iframes = $this->extractIframeUrls($body);
+        foreach ($iframes as $iframeUrl) {
+            $nested = $this->deepExtractDirectUrls($iframeUrl, $depth - 1);
+            if ($nested) {
+                return $nested;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * 从 HTML 中提取 meta refresh 跳转地址
+     *
+     * 部分解析接口返回 <meta http-equiv="refresh" content="N;url=..."> 的跳转页，
+     * 需要跟随该地址继续解析。
+     *
+     * @param string $body
+     * @return string|null 跳转地址，无则返回 null
+     */
+    public function extractMetaRefreshUrl($body)
+    {
+        if ($body === null || $body === '') {
+            return null;
+        }
+
+        // 标准写法：<meta http-equiv="refresh" content="N;url=...">
+        if (preg_match('#<meta[^>]+http-equiv=["\']?refresh["\']?[^>]*content=["\']\d+;\s*url=([^"\']+)#i', $body, $m)) {
+            $url = trim($m[1]);
+            if ($this->isValidHttpUrl($url)) {
+                return $url;
+            }
+        }
+
+        // content 在 http-equiv 之前的写法
+        if (preg_match('#<meta[^>]+content=["\']\d+;\s*url=([^"\']+)["\'][^>]*http-equiv=["\']?refresh#i', $body, $m)) {
+            $url = trim($m[1]);
+            if ($this->isValidHttpUrl($url)) {
+                return $url;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 判断 HTML 是否为播放器页面（含播放器特征 / 视频标签 / 混淆脚本）
+     *
+     * @param string $body
+     * @return bool
+     */
+    public function looksLikePlayerPage($body)
+    {
+        if ($body === null || strlen($body) < 500) {
+            return false;
+        }
+
+        $lower = strtolower($body);
+        $markers = [
+            '<video', '<iframe', '<canvas',
+            'dplayer', 'ckplayer', 'jwplayer', 'videojs', 'flv.js', 'hls.js',
+            'xmflv', '播放器', 'player',
+            'eval(', 'fromcharcode', 'atob(',
+        ];
+
+        foreach ($markers as $marker) {
+            if (strpos($lower, $marker) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 判断是否为真正的直链播放地址（m3u8 / mp4 / flv 等）
      *
      * @param string $url
      * @return bool
      */
-    public function isValidVideoUrl($url)
+    public function isDirectVideoUrl($url)
     {
         if ($url === null || $url === '' || strlen($url) < 10) {
             return false;
         }
 
-        $videoExtensions = ['.m3u8', '.mp4', '.flv', '.avi', '.mkv', '.mov', '.wmv'];
+        $videoExtensions = ['.m3u8', '.mp4', '.flv', '.avi', '.mkv', '.mov', '.wmv', '.webm'];
         $lower = strtolower($url);
         foreach ($videoExtensions as $ext) {
             if (strpos($lower, $ext) !== false) {
@@ -601,14 +824,18 @@ class VideoParserService
             }
         }
 
-        $videoKeywords = ['video', 'player', 'play', 'stream', 'media'];
-        foreach ($videoKeywords as $keyword) {
-            if (strpos($lower, $keyword) !== false) {
-                return true;
-            }
-        }
-
         return false;
+    }
+
+    /**
+     * 判断是否为合法 http(s) URL
+     *
+     * @param string $url
+     * @return bool
+     */
+    public function isValidHttpUrl($url)
+    {
+        return is_string($url) && preg_match('#^https?://#i', $url) === 1;
     }
 
     /**

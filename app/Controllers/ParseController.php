@@ -70,6 +70,7 @@ class ParseController
             $service = new VideoParserService([
                 'parse_apis' => $this->config['parse_apis'],
                 'iframe_players' => $this->config['iframe_players'],
+                'enable_iframe_players' => $this->config['enable_iframe_players'],
                 'timeout' => $this->config['http']['timeout'],
                 'max_retries' => $this->config['http']['max_retries'],
                 'user_agent' => $this->config['http']['user_agent'],

@@ -35,8 +35,15 @@
 ### 修复
 
 - 修复 PHP 内置服务器下路由匹配问题：剥离入口脚本名（`SCRIPT_NAME`）前缀，使 `/api.php` 与 `/api.php/health` 正确路由
+- 修复播放源返回「拼接地址」问题：移除未经请求验证的 `api + url` 拼接兜底逻辑，只返回真实请求并验证过的播放源（直链优先，iframe 播放器源兜底）
+- 修复第三方接口 meta refresh 跳转未跟随问题：新增 `extractMetaRefreshUrl`，自动跟随 `<meta http-equiv="refresh">` 跳转继续解析
+- 修复 iframe 播放器源无法识别问题：新增 `looksLikePlayerPage` 播放器页面特征识别，将返回播放器页面的接口地址作为 iframe 播放源
 
 ### 变更
 
 - API 入口由 `public/api/parse.php` 调整为 `public/api.php`（框架统一入口）
 - 解析接口、超时、重试、域名白名单等参数改为 `config/config.php` 集中配置
+- 播放源分类标注：接口新增 `sources` 字段（`type` / `label` / `note`）及 `direct_count` / `iframe_count` 统计，明确区分「直链（无广告）」与「iframe 播放器源（可能含广告）」
+- 新增 `enable_iframe_players` 配置（默认 `true`）：控制是否返回 iframe 播放器源，设为 `false` 时仅返回直链
+- 解析接口列表更新为实测可用的接口（`jx.playerjy.com` / `jx.xmflv.cc` / `jx.xmflv.com` / `jx.77flv.cc`）
+- Web 播放界面：播放源列表区分「直链 / 播放器源」标签，优先自动播放直链，无直链时播放第一个播放器源

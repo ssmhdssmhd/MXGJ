@@ -33,11 +33,11 @@ check('优酷', $p->extractVideoId('https://v.youku.com/v_show/id_XNDYyMDAw.html
 check('芒果', $p->extractVideoId('https://www.mgtv.com/v/123456.html') === 'mgtv_123456');
 check('通用id参数', $p->extractVideoId('https://example.com/watch?id=xyz789') === 'generic_xyz789');
 
-echo "== isValidVideoUrl ==\n";
-check('m3u8', $p->isValidVideoUrl('https://a.com/play/1.m3u8') === true);
-check('mp4', $p->isValidVideoUrl('https://a.com/video.mp4') === true);
-check('短链接', $p->isValidVideoUrl('abc') === false);
-check('含play关键词', $p->isValidVideoUrl('https://a.com/player?x=1') === true);
+echo "== isDirectVideoUrl ==\n";
+check('m3u8', $p->isDirectVideoUrl('https://a.com/play/1.m3u8') === true);
+check('mp4', $p->isDirectVideoUrl('https://a.com/video.mp4') === true);
+check('短链接', $p->isDirectVideoUrl('abc') === false);
+check('播放器页面非直链', $p->isDirectVideoUrl('https://a.com/player?x=1') === false);
 
 echo "== parseMasterM3u8Variants ==\n";
 $m3u8 = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1280000,RESOLUTION=1280x720,NAME=\"720p\"\n720/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=3840x2160,NAME=\"4K\"\n4k/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1920x1080,NAME=\"1080p\"\n1080/index.m3u8\n";
@@ -75,6 +75,19 @@ echo "== extractPlayUrls ==\n";
 $html = '<html><body><script>var x={"url":"https://a.com/1.m3u8","playUrl":"https://b.com/2.mp4"};</script><iframe src="https://p.com/player?id=1"></iframe><video src="https://c.com/3.mp4"></video></body></html>';
 $urls = $p->extractPlayUrls($html);
 check('提取到播放源', count($urls) >= 3, 'got ' . count($urls));
+
+echo "== extractMetaRefreshUrl ==\n";
+$refreshHtml = '<html><head><meta http-equiv="refresh" content="3;url=https://jx.77flv.cc/?url=abc"></head></html>';
+check('meta refresh 提取', $p->extractMetaRefreshUrl($refreshHtml) === 'https://jx.77flv.cc/?url=abc', 'got ' . $p->extractMetaRefreshUrl($refreshHtml));
+check('无跳转返回 null', $p->extractMetaRefreshUrl('<html><body>ok</body></html>') === null);
+check('空内容返回 null', $p->extractMetaRefreshUrl('') === null);
+
+echo "== looksLikePlayerPage ==\n";
+$pad = str_repeat('x', 600);
+check('含 iframe 特征', $p->looksLikePlayerPage('<html><body><iframe src="x"></iframe>' . $pad . '</body></html>') === true);
+check('含播放器脚本', $p->looksLikePlayerPage('<html><body><script>var dplayer=new DPlayer();</script>' . $pad . '</body></html>') === true);
+check('普通页面返回 false', $p->looksLikePlayerPage('<html><body>hello world this is a normal page' . $pad . '</body></html>') === false);
+check('过短内容返回 false', $p->looksLikePlayerPage('abc') === false);
 
 echo "\n结果: $pass 通过, $fail 失败\n";
 exit($fail > 0 ? 1 : 0);

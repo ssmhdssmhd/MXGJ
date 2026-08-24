@@ -218,6 +218,7 @@ $apiUrl = 'api.php';
 
     function renderResult(data) {
         currentUrls = data.urls || [];
+        var sources = data.sources || [];
         resultCard.style.display = 'block';
 
         var info = data.video_info || {};
@@ -233,11 +234,14 @@ $apiUrl = 'api.php';
 
         urlList.innerHTML = '';
         currentUrls.forEach(function (u, i) {
+            var src = sources[i] || {};
+            var isDirect = src.type === 'direct' || /\.(m3u8|mp4|flv|webm|mov)(\?|$)/i.test(u);
             var li = document.createElement('li');
             li.className = 'url-item';
             var tag = document.createElement('span');
             tag.className = 'tag';
-            tag.textContent = '播放源 ' + (i + 1);
+            tag.style.background = isDirect ? '#38a169' : '#d69e2e';
+            tag.textContent = isDirect ? '直链 ' + (i + 1) : '播放器源 ' + (i + 1);
             var span = document.createElement('span');
             span.className = 'u';
             span.textContent = u;
@@ -257,7 +261,15 @@ $apiUrl = 'api.php';
         });
 
         if (currentUrls.length) {
-            play(currentUrls[0]);
+            // 优先播放第一个直链，无直链则播放第一个源
+            var firstDirect = -1;
+            currentUrls.forEach(function (u, i) {
+                var src = sources[i] || {};
+                if (firstDirect === -1 && (src.type === 'direct' || /\.(m3u8|mp4|flv|webm|mov)(\?|$)/i.test(u))) {
+                    firstDirect = i;
+                }
+            });
+            play(currentUrls[firstDirect === -1 ? 0 : firstDirect]);
         }
     }
 

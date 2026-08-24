@@ -6,11 +6,12 @@
 
 - 轻量级框架架构：`core/` 框架核心 + `app/` 应用层 + `config/` 配置 + `public/` 唯一入口
 - 多平台支持：爱奇艺、腾讯视频、优酷、芒果TV、哔哩哔哩等
-- 解析策略：依次尝试第三方解析接口 → 直接解析 → 移动端解析 → 通用播放器链接兜底
-- iframe 播放器源：内置虾米播放器（`jx.xmflv.cc` / `jx.xmflv.com`），整站 iframe 嵌入播放
+- 解析策略：依次尝试第三方解析接口 → 直接解析 → 移动端解析；只返回「验证过」的播放源，不再返回未经请求验证的拼接地址
+- 播放源分类：直链（m3u8 / mp4 / flv，无广告）优先，iframe 播放器源（整站 iframe 嵌入播放，可能含广告）兜底，接口中明确标注类型
+- iframe 播放器源：内置虾米播放器（`jx.xmflv.cc` / `jx.xmflv.com`），整站 iframe 嵌入播放，可通过 `enable_iframe_players` 配置开关
 - 画质升级：自动解析 m3u8 主清单，优先选择 4K / HDR / 最高分辨率 / 最高码率变体
 - 外部可调用 API：支持 GET / POST / JSONP / 跨域（CORS）
-- Web 播放界面：m3u8 走 HLS.js，mp4 走原生播放器，其他走 iframe
+- Web 播放界面：m3u8 走 HLS.js，mp4 走原生播放器，iframe 源走 iframe 嵌入，播放源列表区分「直链 / 播放器源」
 - 内置 SSRF 防护：仅允许常见视频域名
 
 ## 框架结构
@@ -145,14 +146,16 @@ curl "http://localhost:8080/api.php/check?url=https://www.iqiyi.com/v_1re8v439zm
 
 ### 播放源类型
 
-接口返回的 `urls` 数组可能包含两类播放源：
+接口返回的 `urls` 数组可能包含两类播放源，`sources` 数组会为每个源标注类型：
 
-| 类型 | 特征 | 前端播放方式 |
-|---|---|---|
-| 直链播放源 | `.m3u8` / `.mp4` / `.flv` 等 | HLS.js 或原生 video 播放 |
-| iframe 播放器源 | 如 `jx.xmflv.cc/?url=...`（虾米播放器） | 整站 iframe 嵌入播放 |
+| 类型 | 特征 | 前端播放方式 | 广告 |
+|---|---|---|---|
+| 直链播放源 | `.m3u8` / `.mp4` / `.flv` 等 | HLS.js 或原生 video 播放 | 无 |
+| iframe 播放器源 | 如 `jx.xmflv.cc/?url=...`（虾米播放器） | 整站 iframe 嵌入播放 | 播放器可能自带广告 |
 
 iframe 播放器源在 `config/config.php` 的 `iframe_players` 中配置，当前内置虾米播放器双域名（`jx.xmflv.cc` / `jx.xmflv.com`），均已实测可正常解析播放。
+
+> 说明：免费解析接口对爱奇艺等平台通常返回 iframe 播放器页（JS 加密，需浏览器环境播放），无法在服务端提取直链。若希望只返回无广告的直链，可在 `config/config.php` 中将 `enable_iframe_players` 设为 `false`（此时可能无可用源）。
 
 ### 返回格式（JSON）
 
@@ -162,6 +165,12 @@ iframe 播放器源在 `config/config.php` 的 `iframe_players` 中配置，当�
   "title": "视频标题",
   "description": "视频描述",
   "urls": ["播放源1", "播放源2", "..."],
+  "sources": [
+    { "url": "播放源1", "type": "direct", "label": "直链", "note": "" },
+    { "url": "播放源2", "type": "iframe", "label": "播放器源", "note": "iframe 播放器，可能含广告" }
+  ],
+  "direct_count": 1,
+  "iframe_count": 1,
   "video_info": {
     "title": "视频标题",
     "description": "视频描述",
@@ -173,6 +182,16 @@ iframe 播放器源在 `config/config.php` 的 `iframe_players` 中配置，当�
   "parse_time": "2026-08-24 19:00:00"
 }
 ```
+
+`sources` 字段说明：
+
+| 字段 | 说明 |
+|---|---|
+| `type` | `direct`（直链，无广告）/ `iframe`（播放器源，可能含广告） |
+| `label` | 中文类型标签：`直链` / `播放器源` |
+| `note` | 附加说明（iframe 源提示可能含广告） |
+| `direct_count` | 直链数量 |
+| `iframe_count` | iframe 播放器源数量 |
 
 解析失败时返回：
 
@@ -225,7 +244,7 @@ fetch("http://your-domain.com/api.php?url=" + encodeURIComponent(videoUrl))
 php tests/unit_test.php
 ```
 
-测试覆盖：框架版本、视频 ID 提取、播放源验证、m3u8 主清单解析、最佳变体选择、相对 URL 解析、播放源正则提取（20 项用例）。
+测试覆盖：框架版本、视频 ID 提取、播放源验证、m3u8 主清单解析、最佳变体选择、相对 URL 解析、播放源正则提取、meta refresh 跳转提取、播放器页面识别（27 项用例）。
 
 ## 版本历史
 
