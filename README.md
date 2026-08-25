@@ -10,6 +10,10 @@
 
 ## 📌 更新说明（置顶，最新在最上）
 
+### v1.4.1 · 2026-08-25 — 频率控制推荐值落地为默认
+- 将「资源站频率控制」推荐值写为系统默认：搜索间隔 15s / 心跳 600s / 超时 5s / 连错3次禁用 / 冷却 1800s / 轮训 600s / 每请求并发4站
+- 后台帮助、设置页、README 推荐值同步为具体数值
+
 ### v1.4.0 · 2026-08-25 — 资源站频率控制（搜索/心跳/轮训）
 - 新增「**资源站调用频率控制**」（`lib/SiteHealth.php`），避免被资源站频繁/密集调用而屏蔽或禁用：
   - **搜索频率**（`search_interval`）：限制同一资源站两次实际调用最短间隔，依赖结果缓存兜底
@@ -18,6 +22,7 @@
 - 后台「设置」新增频率控制配置项 + **资源站健康状态**可视化（`立即心跳探测 / 重置健康状态`）
 - 后台「帮助」新增「资源站调用频率控制」说明与推荐值
 - 运行状态存于 `data/site_health.json`（已加入 .gitignore）
+- **默认即用推荐稳定值**：搜索间隔 15s / 心跳 600s / 超时 5s / 连错3次禁用 / 冷却 1800s / 轮训 600s / 每请求并发4站
 
 ### v1.3.0 · 2026-08-25 — 定时自动采集映射 + 后台帮助
 - 新增 **`cron/mapping.php` 定时访问功能**，周期性自动完成映射采集，省去手动：
@@ -289,16 +294,16 @@ return 'your_secret_key';
 | 心跳频率 | `heartbeat_interval` / `heartbeat_max_fail` / `cooldown_seconds` | 周期并发探测各站可达性；连续失败 N 次自动禁用，冷却期后自动恢复重试；只请求存活站点 |
 | 轮训 | `rotation_interval` / `max_sites_per_request` | 轮训周期推进命中顺序（round-robin）；可限制每次最多并发请求几个站，分散压力 |
 
-**推荐配置**（兼顾可用性与防屏蔽）：
+**推荐配置**（具体值，兼顾可用性与防屏蔽）：
 
 ```
-search_interval        = 10~15   (秒，同一站约每10秒最多1次)
-heartbeat_interval     = 300~600 (秒，每5~10分钟探测一次)
-heartbeat_timeout      = 5       (秒)
-heartbeat_max_fail     = 3       (连续失败3次禁用)
-cooldown_seconds       = 600~1800(秒，10~30分钟后恢复重试)
-rotation_interval      = 300~600 (秒)
-max_sites_per_request  = 5       (每次最多并发5个站)
+search_interval        = 15    (秒，同一站约每 15 秒最多 1 次)
+heartbeat_interval     = 600   (秒，每 10 分钟探测一次可达性)
+heartbeat_timeout      = 5     (秒)
+heartbeat_max_fail     = 3     (连续失败 3 次自动禁用)
+cooldown_seconds       = 1800  (秒，30 分钟后自动恢复重试)
+rotation_interval      = 600   (秒，每 10 分钟切换一次命中顺序)
+max_sites_per_request  = 4     (每次最多并发 4 个站)
 ```
 
 运行状态存于 `data/site_health.json`，后台 **设置 → 资源站健康状态** 可实时查看并「立即心跳探测 / 重置健康状态」。

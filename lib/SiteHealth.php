@@ -66,15 +66,15 @@ class SiteHealth
     {
         $sc = mxgj_settings()['site_control'] ?? [];
         return array_merge([
-            'search_interval'   => 10,
+            'search_interval'   => 15,
             'heartbeat_enable'  => true,
-            'heartbeat_interval'=> 300,
+            'heartbeat_interval'=> 600,
             'heartbeat_timeout' => 5,
             'heartbeat_max_fail'=> 3,
-            'cooldown_seconds'  => 600,
+            'cooldown_seconds'  => 1800,
             'rotation_enable'   => true,
-            'rotation_interval'=> 300,
-            'max_sites_per_request' => 0,
+            'rotation_interval'=> 600,
+            'max_sites_per_request' => 4,
         ], is_array($sc) ? $sc : []);
     }
 

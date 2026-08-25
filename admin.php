@@ -701,13 +701,14 @@ function renderHelp()
                 <li><b>心跳频率（heartbeat_interval）</b>：周期性并发探测各站可达性，连续失败 <code>heartbeat_max_fail</code> 次自动禁用，冷却 <code>cooldown_seconds</code> 后自动恢复重试；搜索只对「存活且未在冷却」的站发请求。</li>
                 <li><b>轮训（rotation_interval + max_sites_per_request）</b>：每过一个轮训周期推进一次命中顺序（round-robin），并可限制每次最多并发请求几个站，把压力分散到不同站。</li>
             </ul>
-            <p style="margin:8px 0 4px"><b>推荐值（兼顾可用性与防屏蔽）</b></p>
+            <p style="margin:8px 0 4px"><b>推荐值（具体配置，写在「设置」页保存即可）</b></p>
             <ul style="margin:0;padding-left:18px;color:#9fdc9f">
-                <li>搜索间隔：<b>10~15 s</b>（同一站约每 10 秒最多一次）</li>
-                <li>心跳间隔：<b>300~600 s</b>（每 5~10 分钟探测一次，别太频繁）</li>
-                <li>心跳单站超时：<b>5 s</b>；连续失败：<b>3 次</b>自动禁用</li>
-                <li>被禁用冷却：<b>600~1800 s</b>（10~30 分钟后再恢复重试）</li>
-                <li>轮驯周期：<b>300~600 s</b>；每次最多并发请求：<b>≤5 个站</b></li>
+                <li>搜索间隔：<b>15 s</b>（同一站约每 15 秒最多一次）</li>
+                <li>心跳间隔：<b>600 s</b>（每 10 分钟探测一次可达性）</li>
+                <li>心跳单站超时：<b>5 s</b>；连续失败 <b>3 次</b>自动禁用</li>
+                <li>被禁用冷却：<b>1800 s</b>（30 分钟后再自动恢复重试）</li>
+                <li>轮驯周期：<b>600 s</b>（每 10 分钟切换一次命中顺序）</li>
+                <li>每次最多并发请求：<b>4 个站</b>（把压力分散到不同站）</li>
             </ul>
             <p style="margin:8px 0 0">运行状态可视化：设置页 →「资源站健康状态」，可「立即心跳探测 / 重置健康状态」。</p>
         </div>
@@ -799,8 +800,8 @@ function renderSettingsForm($settings)
             <button type="submit" class="btn" name="action" value="health_reset" onclick="return confirm('确定重置全部资源站健康状态？')">重置健康状态</button>
         </form>
         <div class="note" style="margin-top:16px">
-            推荐值（兼顾可用性与防屏蔽）：搜索间隔 10~15s、心跳间隔 300~600s、心跳超时 5s、
-            连续失败 3 次禁用、冷却 600~1800s、轮驯周期 300~600s、每请求并发 ≤5 个站。
+            推荐值（兼顾可用性与防屏蔽）：搜索间隔 <b>15s</b>、心跳间隔 <b>600s</b>、心跳超时 <b>5s</b>、
+            连续失败 <b>3</b> 次禁用、冷却 <b>1800s</b>、轮驯周期 <b>600s</b>、每请求并发 <b>4</b> 个站。
         </div>
     </div>
 
