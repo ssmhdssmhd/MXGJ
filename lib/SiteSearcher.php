@@ -71,7 +71,7 @@ class SiteSearcher
                 $errors[] = ($h['site']['name'] ?? $h['url']) . '：' . $err;
             }
             if ($body !== false && $body !== '') {
-                $parsed = self::parseBody($body);
+                $parsed = self::parseBody($body, $episode);
                 if ($parsed['url'] !== '') {
                     $parsed['site'] = $h['site']['name'] ?? $h['url'];
                     $parsed['url']  = self::finalizeUrl($parsed['url'], $h['site']);
@@ -162,9 +162,12 @@ class SiteSearcher
     }
 
     /**
-     * 解析资源站返回内容（JSON / JSONP / 纯文本地址）
+     * 解析资源站返回内容（JSON / JSONP / 纯文本 / 苹果CMS列表 / 未匹配）
+     *
+     * @param string $body    响应正文
+     * @param int    $episode 目标集数（用于苹果CMS列表内按集数提取）
      */
-    protected static function parseBody(string $body): array
+    protected static function parseBody(string $body, int $episode = 0): array
     {
         $body = ltrim($body, "\xEF\xBB\xBF \t\r\n");
         if ($body === '') {
@@ -182,6 +185,13 @@ class SiteSearcher
             if ($url !== '' && $url !== null) {
                 return ['url' => (string)$url, 'msg' => '', 'w' => (int)$w];
             }
+            // 苹果CMS 采集接口：list[] + vod_play_url（第N集$地址#第N集$地址...）
+            if (isset($data['list']) && is_array($data['list'])) {
+                $hit = self::extractAppleList($data['list'], $episode);
+                if ($hit !== '') {
+                    return ['url' => $hit, 'msg' => '', 'w' => 0];
+                }
+            }
             return ['url' => '', 'msg' => (string)$msg, 'w' => (int)$w];
         }
         // 纯文本：以 http 开头或以 .m3u8 结尾
@@ -190,6 +200,63 @@ class SiteSearcher
             return ['url' => $body, 'msg' => '', 'w' => 0];
         }
         return ['url' => '', 'msg' => '非标准返回', 'w' => 0];
+    }
+
+    /**
+     * 从苹果CMS 的 list 中提取目标集数的播放地址
+     *
+     * vod_play_url 格式：第1集$http://...#第2集$http://...#...
+     * 优先返回“集数 == 目标集数”的地址；找不到目标集数时返回第一条。
+     */
+    protected static function extractAppleList(array $list, int $episode): string
+    {
+        $all    = [];   // 全部候选 [ep, url]
+        $target = '';   // 目标集数地址
+        foreach ($list as $item) {
+            $playUrl = (string)($item['vod_play_url'] ?? '');
+            if ($playUrl === '') {
+                continue;
+            }
+            foreach (explode('#', $playUrl) as $seg) {
+                $seg = trim($seg);
+                if ($seg === '') {
+                    continue;
+                }
+                $parts = array_pad(explode('$', $seg, 2), 2, '');
+                $label = $parts[0];
+                $u     = $parts[1] !== '' ? $parts[1] : $parts[0];
+                if (strpos($u, 'http') !== 0) {
+                    continue;
+                }
+                $ep = 0;
+                if (preg_match('~第?\s*(\d{1,4})\s*集~u', $label, $m)) {
+                    $ep = (int)$m[1];
+                }
+                if ($ep > 0 && $episode > 0 && $ep === $episode) {
+                    $target = $u; // 命中目标集
+                }
+                $all[] = ['ep' => $ep, 'u' => $u];
+            }
+        }
+        if ($target !== '') {
+            return $target;
+        }
+        if ($all !== []) {
+            // 无目标集时，优先取离目标集最近的一集，否则取第一条
+            $best = $all[0];
+            if ($episode > 0) {
+                $bestDiff = PHP_INT_MAX;
+                foreach ($all as $c) {
+                    $diff = abs($c['ep'] - $episode);
+                    if ($c['ep'] > 0 && $diff < $bestDiff) {
+                        $bestDiff = $diff;
+                        $best     = $c;
+                    }
+                }
+            }
+            return $best['u'];
+        }
+        return '';
     }
 
     /**
