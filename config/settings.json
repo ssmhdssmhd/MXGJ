@@ -45,7 +45,7 @@
         ]
     },
     "security": {
-        "obfuscate_enable": true
+        "obfuscate_enable": false
     },
     "cron": {
         "key": "",

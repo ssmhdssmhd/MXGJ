@@ -1221,7 +1221,7 @@ function renderSettingsForm($settings)
                 <div class="note" style="margin:4px 0 8px">
                     开启后，返回链接中「跟随播放链接」的<b>中转前缀域名会被伪装为当前系统域名</b>，避免对外暴露真实中转/播放站点。
                     例：<code>https://vv00.xyz?url=真实地址</code> → <code>https://当前域名?url=真实地址</code>。
-                    仅替换链接开头的中转域名，<b>不触碰真实播放地址参数，不影响正常播放</b>；默认开启。
+                    仅替换链接开头的中转域名，<b>不触碰真实播放地址参数，不影响正常播放</b>；<b>默认关闭</b>，按需开启。
                 </div>
                 <label style="margin:0">
                     <input type="checkbox" name="sec_obfuscate_enable" value="1" class="quick-toggle" data-action="setting" data-name="obfuscate_enable" <?= !empty($security['obfuscate_enable']) ? 'checked' : '' ?>>

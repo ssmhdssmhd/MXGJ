@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.9.0');
+define('MXGJ_VERSION', '1.9.1');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -97,7 +97,7 @@ function mxgj_settings(): array
             ],
             // 安全设置（欺诈/伪装）
             'security'       => [
-                'obfuscate_enable' => true, // 欺诈/伪装：将返回链接中的中转前缀域名伪装为当前系统域名（默认开启）
+                'obfuscate_enable' => false, // 欺诈/伪装：将返回链接中的中转前缀域名伪装为当前系统域名（默认关闭）
             ],
         ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
     }
@@ -137,7 +137,7 @@ function mxgj_mapping_enabled(array $mapping, string $sec, string $key): bool
  *     https://vv00.xyz?url=https://.../index.m3u8
  * 开启后输出为：
  *     https://当前域名?url=https://.../index.m3u8
- * 仅替换开头的域名部分，不触碰真实播放地址参数，保证正常播放；默认开启。
+ * 仅替换开头的域名部分，不触碰真实播放地址参数，保证正常播放；默认关闭，按需开启。
  *
  * @param string $url 待伪装链接
  * @return string 伪装后的链接（未开启/无需伪装时原样返回）
