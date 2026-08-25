@@ -2,6 +2,18 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.11.1] - 2026-08-25
+
+### 🔧 修复：play.php 对 HTML 播放页「特殊资源站不能播放」
+
+- 此前 `play.php?u=<加密地址>` 遇 HTML 播放页（如 `https://lgvideo.xyz/player/xxx`）走 **302 跳转**：
+  - `redirect` 模式顶部直接 302 → APP 跟随跳转拿到 HTML 页，原生播放器无法播放
+  - `proxy` 模式探测到 `text/html` 也 302；探测失败时还会把 HTML 当二进制流式输出
+- 现改为：**HTML 播放页 / 播放页地址（路径含 `/player/ /play/ /live/`）→ 直接渲染内联播放器页面**
+  - 内嵌 `https://vv00.xyz?url=<真实地址>` iframe（与 `player.php` / lgzym3u8 播放器一致），浏览器/APP webview 均可正常打开播放
+  - 同时修复 m3u8 以 `text/plain` 返回时被误判跳转的问题（m3u8 判断提到 HTML 之前）
+- 测试：HTML 播放页内联渲染、m3u8 重写、ts 流式、redirect 模式下播放页仍内联渲染（12/12 通过）
+
 ## [1.11.0] - 2026-08-25
 
 ### ✨ 新增：播放器页面 player.php（lgzym3u8 / 蓝光资源 MacPlayer）

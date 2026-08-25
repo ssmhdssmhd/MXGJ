@@ -53,12 +53,6 @@ if (empty($parts['scheme']) || $host === '' || preg_match('~[\x00-\x20]~', $host
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
 
-// 302 跳转模式
-if ($mode !== 'proxy') {
-    header('Location: ' . $real);
-    exit;
-}
-
 $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
 /**
@@ -134,19 +128,62 @@ function mxgj_play_fetch(string $url, string $ua): string
     return $body === false ? '' : $body;
 }
 
+/**
+ * 渲染内联播放器页面（HTML 播放页专用）
+ *
+ * 真实地址是「HTML 播放页」（如 https://lgvideo.xyz/player/xxx）时，
+ * 302 跳转会拿到 HTML 页、APP 原生播放器无法播放；这里直接渲染
+ * 与 player.php / lgzym3u8 播放器一致的 vv00.xyz iframe 播放器，
+ * 保证表面链接可正常打开播放（浏览器 / APP webview 均可）。
+ */
+function mxgj_play_render_player(string $real): void
+{
+    $u = rawurlencode($real);
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-cache');
+    echo '<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="referrer" content="no-referrer">
+<title>在线播放</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#000}
+  iframe{width:100%;height:100%;border:0;display:block}
+</style>
+</head>
+<body>
+<iframe src="https://vv00.xyz?url=' . $u . '" frameborder="0" scrolling="no" allowfullscreen></iframe>
+</body>
+</html>';
+    exit;
+}
+
 // 探测类型
 $probe = mxgj_play_probe($real, $ua);
 $ctype = $probe['type'];
 $finalUrl = $probe['final'] !== '' ? $probe['final'] : $real;
 
-// HTML 播放页：降级为 302 跳转（浏览器打开即播；APP 若为 webview 亦可播）
-if (stripos($ctype, 'text/html') !== false || stripos($ctype, 'text/plain') !== false) {
+// 类型识别
+$isM3u8 = stripos($ctype, 'mpegurl') !== false || preg_match('~\.m3u8($|\?)~i', $finalUrl);
+$isHtml = stripos($ctype, 'text/html') !== false;
+// 播放页地址（如 /player/ /play/ /live/ …）：HEAD 探测失败时也能据此识别
+$isPlayerPage = (bool)preg_match('~/(player|play|live)/~i', (string)parse_url($finalUrl, PHP_URL_PATH));
+
+// ① HTML 播放页 / 播放页地址：渲染内联播放器（vv00.xyz iframe），保证可正常打开播放
+if ($isHtml || $isPlayerPage) {
+    mxgj_play_render_player($real);
+}
+
+// ② 302 跳转模式：仅对非播放页生效（省流量，真实地址在跳转后可见）
+if ($mode !== 'proxy') {
     header('Location: ' . $finalUrl);
     exit;
 }
 
-// m3u8：抓取并重写切片/密钥地址为本站入口
-$isM3u8 = stripos($ctype, 'mpegurl') !== false || preg_match('~\.m3u8($|\?)~i', $finalUrl);
+// ③ m3u8：抓取并重写切片/密钥地址为本站入口
 if ($isM3u8) {
     $body = mxgj_play_fetch($finalUrl, $ua);
     if ($body === '') {
@@ -181,7 +218,7 @@ if ($isM3u8) {
     exit;
 }
 
-// 二进制媒体：本站流式转发（m3u8 切片 ts、mp4 等），APP 原生播放器可直接播放
+// ④ 二进制媒体：本站流式转发（m3u8 切片 ts、mp4 等），APP 原生播放器可直接播放
 if ($ctype === '') {
     $ctype = 'application/octet-stream';
 }

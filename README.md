@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.11.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.11.1-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,11 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.11.1] 2026-08-25 · 修复 play.php 对 HTML 播放页「特殊资源站不能播放」
+- `play.php?u=<加密地址>` 遇 HTML 播放页（如 `https://lgvideo.xyz/player/xxx`）不再 302 跳转，改为**直接渲染内联播放器**（内嵌 `https://vv00.xyz?url=<真实地址>` iframe，与 player.php / lgzym3u8 一致）
+  - 此前：redirect 模式 302 拿到 HTML 页、APP 原生播放器无法播放；proxy 模式探测失败时还会把 HTML 当二进制流式输出
+  - 现在：浏览器 / APP webview 均可正常打开播放；m3u8/ts 行为不变；顺带修复 m3u8 以 `text/plain` 返回时被误判跳转
 
 ### [v1.11.0] 2026-08-25 · 播放器页面 player.php（lgzym3u8 / 蓝光资源 MacPlayer）
 - 新增 `player.php`：将「Igzym3u8」播放器配置（苹果CMS MacPlayer / 蓝光资源）**原样加载**渲染真实播放
