@@ -31,17 +31,26 @@ class SiteSearcher
             return ['code' => 502, 'url' => '', 'site' => '', 'msg' => '无法识别该链接对应的剧名', 'episode' => $episode];
         }
 
-        // 为每个资源站生成请求句柄
+        // 频率控制：心跳探测 + 搜索节流 + 轮训分批（见 lib/SiteHealth.php）
+        $pool = SiteHealth::usable($sites, $timeout);
+        if ($pool === []) {
+            return ['code' => 503, 'url' => '', 'site' => '', 'msg' => '所有资源站当前均不可用/在冷却期/被节流', 'episode' => $episode];
+        }
+
+        // 为每个通过频率控制的资源站生成请求句柄
         $handles = [];
-        foreach ($sites as $site) {
-            $url = self::buildUrl($site, $title, $episode);
+        foreach ($pool as $item) {
+            $site = $item['site'];
+            $url  = self::buildUrl($site, $title, $episode);
             if ($url === '') {
                 continue;
             }
             $handles[] = [
-                'ch'   => self::makeHandle($url, $timeout),
-                'site' => $site,
-                'url'  => $url,
+                'ch'    => self::makeHandle($url, $timeout),
+                'site'  => $site,
+                'key'   => $item['key'],
+                't0'    => microtime(true),
+                'url'   => $url,
             ];
         }
 
@@ -67,6 +76,8 @@ class SiteSearcher
         foreach ($handles as $h) {
             $body = curl_multi_getcontent($h['ch']);
             $err  = curl_error($h['ch']);
+            $ms   = (int)((microtime(true) - $h['t0']) * 1000);
+            $ok   = false;
             if ($err !== '') {
                 $errors[] = ($h['site']['name'] ?? $h['url']) . '：' . $err;
             }
@@ -77,12 +88,15 @@ class SiteSearcher
                     $parsed['url']  = self::finalizeUrl($parsed['url'], $h['site']);
                     $parsed['w']    = (int)($parsed['w'] ?? 0);
                     $candidates[]   = $parsed;
+                    $ok = true;
                 } elseif ($parsed['msg'] !== '') {
                     $errors[] = ($h['site']['name'] ?? $h['url']) . '：' . $parsed['msg'];
                 }
             }
             curl_multi_remove_handle($multi, $h['ch']);
-            curl_close($h['ch']);
+            @curl_close($h['ch']);
+            // 上报频率控制健康状态（成功/失败）
+            SiteHealth::record($ok, $h['key'], $ms);
         }
         curl_multi_close($multi);
 

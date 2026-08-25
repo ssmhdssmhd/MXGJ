@@ -18,5 +18,16 @@
             "https://m.mgtv.com/b/857348/24330424.html",
             "https://www.bilibili.com/bangumi/play/ep431046"
         ]
+    },
+    "site_control": {
+        "search_interval": 10,
+        "heartbeat_enable": true,
+        "heartbeat_interval": 300,
+        "heartbeat_timeout": 5,
+        "heartbeat_max_fail": 3,
+        "cooldown_seconds": 600,
+        "rotation_enable": true,
+        "rotation_interval": 300,
+        "max_sites_per_request": 0
     }
 }

@@ -72,6 +72,18 @@ function mxgj_settings(): array
             'repo_owner'     => 'ssmhdssmhd',
             'repo_name'      => 'MXGJ',
             'repo_branch'    => 'main',
+            // 资源站调用频率控制（搜索节流 + 心跳探测 + 轮训）
+            'site_control'   => [
+                'search_interval'   => 10,    // 资源站搜索频率：同一站两次实际调用最短间隔(秒)，防刷屏被屏蔽
+                'heartbeat_enable'  => true,  // 是否启用心跳检测
+                'heartbeat_interval'=> 300,   // 资源站心跳频率：多久探测一次资源站可达性(秒)
+                'heartbeat_timeout' => 5,     // 心跳探测单站超时(秒)
+                'heartbeat_max_fail'=> 3,     // 连续失败达 N 次自动禁用该站
+                'cooldown_seconds'  => 600,   // 被禁用的站在多少秒后自动恢复重试
+                'rotation_enable'   => true,  // 是否启用资源站轮训（定期切换优先顺序/分批调用）
+                'rotation_interval'=> 300,    // 资源站轮训：每隔多少秒切换一次命中顺序(秒)
+                'max_sites_per_request' => 0, // 每次搜索最多并发请求几个资源站(0=不限制)
+            ],
         ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
     }
     return $settings;

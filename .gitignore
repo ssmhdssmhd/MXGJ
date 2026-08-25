@@ -1,6 +1,8 @@
 # 运行时数据（缓存）
 /data/cache/
 *.cache
+/data/site_health.json
+/data/heartbeat.lock
 
 # 日志 / 临时文件
 *.log

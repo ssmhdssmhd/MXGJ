@@ -127,9 +127,33 @@ switch ($ACTION) {
         $st['timeout']        = (int)($_POST['timeout'] ?? 15);
         $st['cache_ttl']      = (int)($_POST['cache_ttl'] ?? 600);
         $st['replace_domain'] = trim($_POST['replace_domain'] ?? '');
+        // 资源站频率控制
+        $sc = is_array($st['site_control'] ?? null) ? $st['site_control'] : [];
+        $sc['search_interval']        = max(0, (int)($_POST['sc_search_interval'] ?? 10));
+        $sc['heartbeat_enable']       = !empty($_POST['sc_heartbeat_enable']);
+        $sc['heartbeat_interval']     = max(10, (int)($_POST['sc_heartbeat_interval'] ?? 300));
+        $sc['heartbeat_timeout']      = max(1, (int)($_POST['sc_heartbeat_timeout'] ?? 5));
+        $sc['heartbeat_max_fail']     = max(1, (int)($_POST['sc_heartbeat_max_fail'] ?? 3));
+        $sc['cooldown_seconds']       = max(0, (int)($_POST['sc_cooldown_seconds'] ?? 600));
+        $sc['rotation_enable']        = !empty($_POST['sc_rotation_enable']);
+        $sc['rotation_interval']      = max(10, (int)($_POST['sc_rotation_interval'] ?? 300));
+        $sc['max_sites_per_request']  = max(0, (int)($_POST['sc_max_sites_per_request'] ?? 0));
+        $st['site_control'] = $sc;
         mxgj_write_json($settingsFile, $st);
         // 更换密码后重登
         header('Location: admin.php?tab=settings&saved=1');
+        exit;
+
+    case 'heartbeat_now':
+        // 立即触发一次资源站心跳探测
+        $rep = SiteHealth::probeAllNow();
+        $_SESSION['heartbeat_result'] = $rep;
+        header('Location: admin.php?tab=settings&hb=1');
+        exit;
+
+    case 'health_reset':
+        SiteHealth::reset();
+        header('Location: admin.php?tab=settings&hr=1');
         exit;
 
     case 'logout':
@@ -669,6 +693,25 @@ function renderHelp()
             <pre>curl -s "<?= $cronUrl ?>" >/dev/null</pre>
         </div>
 
+        <h2>资源站调用频率控制（搜索 / 心跳 / 轮训）</h2>
+        <div class="box">
+            <p style="margin:0 0 6px">在「设置」页可配置三项策略，降低对资源站的调用频率，避免频繁/密集调用被屏蔽或禁用：</p>
+            <ul style="margin:0;padding-left:18px">
+                <li><b>搜索频率（search_interval）</b>：同一站两次实际调用最短间隔，间隔内再次需该站则跳过（依赖结果缓存），限制单站 QPS。</li>
+                <li><b>心跳频率（heartbeat_interval）</b>：周期性并发探测各站可达性，连续失败 <code>heartbeat_max_fail</code> 次自动禁用，冷却 <code>cooldown_seconds</code> 后自动恢复重试；搜索只对「存活且未在冷却」的站发请求。</li>
+                <li><b>轮训（rotation_interval + max_sites_per_request）</b>：每过一个轮训周期推进一次命中顺序（round-robin），并可限制每次最多并发请求几个站，把压力分散到不同站。</li>
+            </ul>
+            <p style="margin:8px 0 4px"><b>推荐值（兼顾可用性与防屏蔽）</b></p>
+            <ul style="margin:0;padding-left:18px;color:#9fdc9f">
+                <li>搜索间隔：<b>10~15 s</b>（同一站约每 10 秒最多一次）</li>
+                <li>心跳间隔：<b>300~600 s</b>（每 5~10 分钟探测一次，别太频繁）</li>
+                <li>心跳单站超时：<b>5 s</b>；连续失败：<b>3 次</b>自动禁用</li>
+                <li>被禁用冷却：<b>600~1800 s</b>（10~30 分钟后再恢复重试）</li>
+                <li>轮驯周期：<b>300~600 s</b>；每次最多并发请求：<b>≤5 个站</b></li>
+            </ul>
+            <p style="margin:8px 0 0">运行状态可视化：设置页 →「资源站健康状态」，可「立即心跳探测 / 重置健康状态」。</p>
+        </div>
+
         <h2>定时任务运行记录</h2>
         <div class="box">
             <?php if (!$logExists || $recent === []): ?>
@@ -689,6 +732,10 @@ function renderHelp()
 
 function renderSettingsForm($settings)
 {
+    $sc   = is_array($settings['site_control'] ?? null) ? $settings['site_control'] : [];
+    $siteHealth = SiteHealth::healthTable();
+    $hbResult = $_SESSION['heartbeat_result'] ?? null;
+    unset($_SESSION['heartbeat_result']);
     ?>
     <div class="panel">
         <h2>系统设置</h2>
@@ -699,12 +746,67 @@ function renderSettingsForm($settings)
             <div class="full"><label>域名替换/中转前缀（留空则直接返回资源站地址）</label><input type="text" name="replace_domain" value="<?= htmlspecialchars($settings['replace_domain']) ?>" placeholder="如 https://cdn.example.com/m3u8/"></div>
             <div class="full"><label>升级密钥（update.php 用，留空则回退管理密码）</label><input type="text" name="updater_key" value="<?= htmlspecialchars($settings['updater_key'] ?? '') ?>" placeholder="留空则使用管理密码"></div>
             <div class="full"><label>修改管理密码（留空保持不变）</label><input type="password" name="admin_password" placeholder="新密码"></div>
+
+            <div class="full" style="margin-top:8px"><h3 style="margin:0 0 4px;font-size:14px">资源站调用频率控制（防刷屏/防被屏蔽）</h3></div>
+            <div><label>搜索频率：同一站两次调用最短间隔（秒）</label><input type="number" name="sc_search_interval" value="<?= (int)($sc['search_interval'] ?? 10) ?>" min="0"></div>
+            <div><label>心跳间隔（秒，多久探测一次可达性）</label><input type="number" name="sc_heartbeat_interval" value="<?= (int)($sc['heartbeat_interval'] ?? 300) ?>" min="10"></div>
+            <div><label>心跳单站超时（秒）</label><input type="number" name="sc_heartbeat_timeout" value="<?= (int)($sc['heartbeat_timeout'] ?? 5) ?>" min="1"></div>
+            <div><label>连续失败 N 次自动禁用</label><input type="number" name="sc_heartbeat_max_fail" value="<?= (int)($sc['heartbeat_max_fail'] ?? 3) ?>" min="1"></div>
+            <div><label>被禁用冷却时间（秒，到期自动恢复）</label><input type="number" name="sc_cooldown_seconds" value="<?= (int)($sc['cooldown_seconds'] ?? 600) ?>" min="0"></div>
+            <div><label>轮训周期（秒，每隔多久切换命中顺序）</label><input type="number" name="sc_rotation_interval" value="<?= (int)($sc['rotation_interval'] ?? 300) ?>" min="10"></div>
+            <div><label>每次最多并发请求几个资源站（0=不限制）</label><input type="number" name="sc_max_sites_per_request" value="<?= (int)($sc['max_sites_per_request'] ?? 0) ?>" min="0"></div>
+            <div class="full"><label style="margin-bottom:6px">开关</label>
+                <label style="margin-right:18px"><input type="checkbox" name="sc_heartbeat_enable" value="1" <?= !empty($sc['heartbeat_enable']) ? 'checked' : '' ?>> 启用心跳检测</label>
+                <label><input type="checkbox" name="sc_rotation_enable" value="1" <?= !empty($sc['rotation_enable']) ? 'checked' : '' ?>> 启用资源站轮训</label>
+            </div>
+
             <div class="full"><button type="submit" class="btn btn-green">保存设置</button></div>
         </form>
-        <div class="note" style="margin-top:20px">
-            默认密码：<code>moxi123</code>。请立即修改！<br>
-            数据文件位于 <code>config/settings.json</code>、<code>config/sites.json</code>、<code>config/mapping.json</code>，可手动编辑。
+    </div>
+
+    <div class="panel">
+        <h2>资源站健康状态</h2>
+        <div class="note" style="margin-bottom:12px">
+            心跳/节流/轮训的实时运行状态（存储于 <code>data/site_health.json</code>）。
+            连续失败达上限的站会被自动禁用并在冷却期后自动恢复重试。
         </div>
+        <?php if ($hbResult && isset($hbResult['rows'])): ?>
+            <div class="note" style="color:#7fc1ff;margin-bottom:10px">本次心跳（<?= htmlspecialchars($hbResult['at'] ?? '') ?>）：共 <?= count($hbResult['rows']) ?> 个站，<?= array_sum(array_column($hbResult['rows'], 'ok')) ?> 个可达。</div>
+        <?php endif; ?>
+        <?php if (!empty($_GET['hr'])): ?>
+            <div class="note" style="color:#7fc1ff;margin-bottom:10px">已重置全部资源站健康状态。</div>
+        <?php endif; ?>
+        <table>
+            <tr><th>资源站</th><th>状态</th><th>响应ms</th><th>连续失败</th><th>最近心跳</th></tr>
+            <?php if ($siteHealth === []): ?>
+                <tr><td colspan="5" style="color:#8892ab">暂无数据（尚未执行过心跳/搜索）</td></tr>
+            <?php else: foreach ($siteHealth as $row): ?>
+                <tr>
+                    <td><?= htmlspecialchars($row['name']) ?></td>
+                    <td>
+                        <?php if ($row['enabled']): ?><span style="color:#2ecc71">可用</span>
+                        <?php else: ?><span style="color:#e74c3c">禁用(冷却)</span><?php endif; ?>
+                        <?= $row['reachable'] ? '·可达' : '·不可达' ?>
+                    </td>
+                    <td><?= (int)$row['ms'] ?></td>
+                    <td><?= (int)$row['fail'] ?></td>
+                    <td><?= $row['last_heartbeat'] ? date('H:i:s', (int)$row['last_heartbeat']) : '—' ?></td>
+                </tr>
+            <?php endforeach; endif; ?>
+        </table>
+        <form method="post" style="margin-top:12px;display:flex;gap:10px">
+            <button type="submit" class="btn" name="action" value="heartbeat_now">立即心跳探测</button>
+            <button type="submit" class="btn" name="action" value="health_reset" onclick="return confirm('确定重置全部资源站健康状态？')">重置健康状态</button>
+        </form>
+        <div class="note" style="margin-top:16px">
+            推荐值（兼顾可用性与防屏蔽）：搜索间隔 10~15s、心跳间隔 300~600s、心跳超时 5s、
+            连续失败 3 次禁用、冷却 600~1800s、轮驯周期 300~600s、每请求并发 ≤5 个站。
+        </div>
+    </div>
+
+    <div class="note" style="margin-top:20px">
+        默认密码：<code>moxi123</code>。请立即修改！<br>
+        数据文件位于 <code>config/settings.json</code>、<code>config/sites.json</code>、<code>config/mapping.json</code>，可手动编辑。
     </div>
     <?php
 }
