@@ -40,25 +40,79 @@ class PageResolver
      */
     public static function resolve(string $url, int $fallbackEpisode = 0, int $timeout = 15): array
     {
-        $html = self::fetch($url, $timeout);
-        if ($html === '') {
-            return ['title' => '', 'episode' => 0, 'from' => ''];
+        // 优先原链接；若拿不到有效标题，再尝试移动子域（桌面站常只给平台名，移动端才给“剧名第N集”）
+        $attempts = [$url];
+        $m = self::mobileVariant($url);
+        if ($m !== null && $m !== $url) {
+            $attempts[] = $m;
         }
-        $title = self::extractTitle($html);
-        if ($title === '' || self::isRejected($title)) {
-            return ['title' => '', 'episode' => 0, 'from' => ''];
+
+        foreach ($attempts as $u) {
+            $html = self::fetch($u, $timeout);
+            if ($html === '') {
+                continue;
+            }
+            $title = self::extractTitle($html);
+            if ($title === '' || self::isRejected($title)) {
+                continue;
+            }
+            $episode = 0;
+            $cleaned = self::clean($title, $episode);
+            // 清洗结果为空或本身就是平台/站点词时，视为无效标题，回退
+            if ($cleaned === '' || in_array($cleaned, self::SITE_WORDS, true)) {
+                continue;
+            }
+            return [
+                'title' => $cleaned,
+                'episode' => $episode > 0 ? $episode : $fallbackEpisode,
+                'from' => 'page',
+            ];
         }
-        $episode = 0;
-        $cleaned = self::clean($title, $episode);
-        // 清洗结果为空或本身就是平台/站点词时，视为无效标题，回退
-        if ($cleaned === '' || in_array($cleaned, self::SITE_WORDS, true)) {
-            return ['title' => '', 'episode' => 0, 'from' => ''];
+        return ['title' => '', 'episode' => 0, 'from' => ''];
+    }
+
+    /**
+     * 生成同一链接的移动子域版本（若无映射则返回 null）
+     */
+    protected static function mobileVariant(string $url): ?string
+    {
+        $parts = parse_url($url);
+        if (!isset($parts['host'])) {
+            return null;
         }
-        return [
-            'title' => $cleaned,
-            'episode' => $episode > 0 ? $episode : $fallbackEpisode,
-            'from' => 'page',
+        $host = strtolower($parts['host']);
+        static $map = [
+            'iqiyi.com'      => 'm.iqiyi.com',
+            'www.iqiyi.com'  => 'm.iqiyi.com',
+            'youku.com'      => 'm.youku.com',
+            'www.youku.com'  => 'm.youku.com',
+            'v.youku.com'    => 'm.youku.com',
+            'mgtv.com'       => 'm.mgtv.com',
+            'www.mgtv.com'   => 'm.mgtv.com',
+            'bilibili.com'   => 'm.bilibili.com',
+            'www.bilibili.com' => 'm.bilibili.com',
+            'v.qq.com'       => 'm.v.qq.com',
+            'qq.com'         => 'm.v.qq.com',
         ];
+        if (!isset($map[$host])) {
+            return null;
+        }
+        $parts['host'] = $map[$host];
+        $scheme = isset($parts['scheme']) ? $parts['scheme'] . '://' : '//';
+        $auth = '';
+        if (isset($parts['user'])) {
+            $auth = $parts['user'] . (isset($parts['pass']) ? ':' . $parts['pass'] : '') . '@';
+        }
+        $url2 = $scheme . $auth . $parts['host'];
+        $url2 .= isset($parts['port']) ? ':' . $parts['port'] : '';
+        $url2 .= $parts['path'] ?? '';
+        if (isset($parts['query'])) {
+            $url2 .= '?' . $parts['query'];
+        }
+        if (isset($parts['fragment'])) {
+            $url2 .= '#' . $parts['fragment'];
+        }
+        return $url2;
     }
 
     /**
