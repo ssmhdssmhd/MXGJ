@@ -67,6 +67,12 @@ $testSites = [
 ];
 file_put_contents($sitesFile, json_encode($testSites, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
+/* 1.5 清空运行时缓存，确保测试确定性 */
+$cacheDir = $ROOT . '/data/cache';
+foreach (glob($cacheDir . '/*.cache') ?: [] as $f) {
+    @unlink($f);
+}
+
 /* 2. 启动服务（数组形式直接 exec php，便于 proc_terminate 精确杀掉进程） */
 $servers = [];
 function startServer(int $port, string $docroot, string $router = '', string $cwd = '/workspace')

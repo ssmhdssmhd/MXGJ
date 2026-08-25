@@ -77,6 +77,28 @@ if ($name !== '') {
     }
 }
 
+// 3.4 映射仍无法识别时，自动抓取官方页面获取「剧名 + 集数」
+$nameFrom = '';
+if ($name === '') {
+    $stNow = mxgj_settings();
+    $pgKey = 'page:' . ($parsed['vid'] !== '' ? $parsed['vid']
+        : ($parsed['cid'] !== '' ? $parsed['cid'] : md5($raw)));
+    $pageRes = Cache::get($pgKey);
+    if (!is_array($pageRes) || empty($pageRes['title'])) {
+        $pageRes = PageResolver::resolve($raw, $episode, (int)$stNow['timeout']);
+        if (!empty($pageRes['title'])) {
+            Cache::set($pgKey, $pageRes, 600);
+        }
+    }
+    if (!empty($pageRes['title'])) {
+        $nameFrom = $pageRes['title'];
+        $name     = $pageRes['title'];
+        if (!empty($pageRes['episode'])) {
+            $episode = (int)$pageRes['episode'];
+        }
+    }
+}
+
 if ($name === '') {
     $mapHint = $parsed['vid'] !== '' ? 'vid=' . $parsed['vid']
              : ($parsed['cid'] !== '' ? 'cid=' . $parsed['cid'] : '');
@@ -125,6 +147,8 @@ if ($debug) {
         'parsed' => $parsed,
         'title'  => $name,
         'episode'=> $episode,
+        'name_from' => $nameFrom !== '' ? 'page抓取' : 'mapping/解析',
+        'page_title' => $nameFrom,
         'sites'  => count($sites),
         'cached' => $cachedIsHit,
     ];
