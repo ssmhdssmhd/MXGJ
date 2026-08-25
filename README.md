@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.6.1-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.7.0-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,14 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.7.0] 2026-08-25 · 后台日志系统
+- 后台新增「**日志**」tab，自动记录**六类日志**（存 `data/logs/*.json`，每类保留 500 条）：
+  - **登录日志**：后台登录成功/失败（含 IP）· **操作日志**：后台全部增删改操作
+  - **更新日志**：在线升级 / `update.php` 升级结果（含步骤与测速）
+  - **搜索调用日志**：每次搜索的剧名/集数/状态码/站点/耗时/来源/IP
+  - **配置日志**：资源站/映射表/设置等配置保存成功或失败 · **错误日志**：拦截与异常
+- 支持级别标记（成功/警告/错误/提示）、详情展开、按类清空 / 一键清空全部
 
 ### [v1.6.1] 2026-08-25 · 资源站快捷「启用/禁用」开关
 - 后台「资源站」列表每行新增**启用开关**（滑块），点击**即时生效、无需保存**

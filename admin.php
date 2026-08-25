@@ -43,9 +43,11 @@ if ($ACTION === 'login') {
     $st  = mxgj_settings();
     if ($pwd !== '' && $pwd === $st['admin_password']) {
         $_SESSION['mxgj_admin'] = true;
+        Logger::log('login', '后台登录成功', 'success', ['ip' => $_SERVER['REMOTE_ADDR'] ?? '']);
         header('Location: admin.php');
         exit;
     }
+    Logger::log('login', '后台登录失败（密码错误）', 'error', ['ip' => $_SERVER['REMOTE_ADDR'] ?? '']);
     echo '<script>alert("密码错误");location.href="admin.php";</script>';
     exit;
 }
@@ -73,6 +75,8 @@ switch ($ACTION) {
             ];
         }
         mxgj_write_json($sitesFile, ['sites' => $clean]);
+        Logger::log('operation', '保存资源站列表（共 ' . count($clean) . ' 个）', 'success');
+        Logger::log('config', '资源站配置保存成功：' . count($clean) . ' 个站点', 'success', ['sites' => $clean]);
         header('Location: admin.php?tab=sites&saved=1');
         exit;
 
@@ -116,6 +120,8 @@ switch ($ACTION) {
             }
         }
         mxgj_write_json($mappingFile, $mapping);
+        Logger::log('operation', '保存映射表（title ' . count($mapping['title']) . ' / cid ' . count($mapping['cid']) . ' / episode ' . count($mapping['episode']) . '）', 'success');
+        Logger::log('config', '映射表配置保存成功', 'success', ['count' => ['title' => count($mapping['title']), 'cid' => count($mapping['cid']), 'episode' => count($mapping['episode'])]]);
         header('Location: admin.php?tab=mapping&saved=1');
         exit;
 
@@ -166,6 +172,8 @@ switch ($ACTION) {
             'fields'      => $fields,
         ];
         mxgj_write_json($settingsFile, $st);
+        Logger::log('operation', '保存系统设置', 'success');
+        Logger::log('config', '系统设置保存成功', 'success', ['timeout' => $st['timeout'], 'cache_ttl' => $st['cache_ttl'], 'output_fields' => count($fields)]);
         // 更换密码后重登
         header('Location: admin.php?tab=settings&saved=1');
         exit;
@@ -174,21 +182,25 @@ switch ($ACTION) {
         // 立即触发一次资源站心跳探测
         $rep = SiteHealth::probeAllNow();
         $_SESSION['heartbeat_result'] = $rep;
+        Logger::log('operation', '手动触发资源站心跳探测（' . ($rep['ok'] ? '完成' : '失败') . '）', $rep['ok'] ? 'success' : 'warn', ['reachable' => isset($rep['rows']) ? count(array_filter($rep['rows'], fn($r) => !empty($r['ok']))) : 0]);
         header('Location: admin.php?tab=settings&hb=1');
         exit;
 
     case 'health_reset':
         SiteHealth::reset();
+        Logger::log('operation', '重置资源站健康状态', 'info');
         header('Location: admin.php?tab=settings&hr=1');
         exit;
 
     case 'logout':
+        Logger::log('login', '后台退出登录', 'info', ['ip' => $_SERVER['REMOTE_ADDR'] ?? '']);
         session_destroy();
         header('Location: admin.php');
         exit;
 
     case 'clear_cache':
         AdminHelper::clearCache();
+        Logger::log('operation', '清空搜索缓存', 'info');
         header('Location: admin.php?tab=dashboard&cleared=1');
         exit;
 
@@ -202,6 +214,7 @@ switch ($ACTION) {
         }
         $site = ['name' => '测试', 'url' => $tpl, 'template' => $tpl];
         $res  = SiteSearcher::search([$site], $title, $ep, (int)mxgj_settings()['timeout']);
+        Logger::log('operation', '测试资源站：' . $title . ' 第' . $ep . '集 → ' . ($res['code'] === 200 ? '命中' : $res['msg'] ?? '失败'), $res['code'] === 200 ? 'success' : 'warn', ['code' => $res['code']]);
         mxgj_json_out($res);
 
     case 'detect_site':
@@ -209,6 +222,7 @@ switch ($ACTION) {
         $raw = trim($_POST['url'] ?? '');
         if ($raw === '') mxgj_json_out(['code' => 400, 'msg' => '请输入采集接口地址']);
         $det = SiteDetector::detect($raw, (int)mxgj_settings()['timeout']);
+        Logger::log('operation', ($det['ok'] ? '检测资源站成功' : '检测资源站失败') . '：' . ($det['name'] ?? $raw), $det['ok'] ? 'success' : 'error', ['msg' => $det['msg'] ?? '']);
         mxgj_json_out($det);
 
     case 'save_site_one':
@@ -235,6 +249,8 @@ switch ($ACTION) {
             $mode = 'add';
         }
         mxgj_write_json($sitesFile, ['sites' => $list]);
+        Logger::log('operation', ($mode === 'add' ? '添加' : '修改') . '资源站：' . $name_, 'success');
+        Logger::log('config', ($mode === 'add' ? '新增' : '修改') . '资源站成功：' . $name_, 'success');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($mode === 'add' ? '已添加' : '已修改') . '资源站：' . $name_, 'sites' => count($list)]);
 
     case 'toggle_site':
@@ -250,12 +266,30 @@ switch ($ACTION) {
         if ($hit === null) mxgj_json_out(['code' => 404, 'msg' => '资源站不存在']);
         $list[$hit]['enabled'] = $on;
         mxgj_write_json($sitesFile, ['sites' => $list]);
+        Logger::log('operation', ($on ? '启用' : '禁用') . '资源站：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn', ['enabled' => $on]);
+        Logger::log('config', ($on ? '启用' : '禁用') . '资源站配置：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '资源站：' . ($list[$hit]['name'] ?? '')]);
+
+    case 'log_clear':
+        // 清空日志（type=all 清空全部；否则清空指定类型）
+        $type = trim($_POST['type'] ?? '');
+        if ($type === 'all') {
+            $res = Logger::clearAll();
+            Logger::log('operation', '清空全部日志', 'info');
+            mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => '已清空全部日志', 'cleared' => $res]);
+        }
+        if (!isset(Logger::TYPES[$type])) {
+            mxgj_json_out(['code' => 400, 'msg' => '未知日志类型']);
+        }
+        $n = Logger::clear($type);
+        Logger::log('operation', '清空日志：' . Logger::TYPES[$type], 'info');
+        mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => '已清空「' . Logger::TYPES[$type] . '」共 ' . $n . ' 条', 'cleared' => $n]);
 
     case 'do_update':
         // 后台触发的在线更新（dry=1 时仅测速）
         $st  = mxgj_settings();
         $res = Updater::run($st['admin_password'], !empty($_POST['dry']));
+        Logger::log('update', (!empty($_POST['dry']) ? '[测速] ' : '') . ($res['ok'] ? '更新成功' : '更新失败') . '：' . $res['msg'], $res['ok'] ? 'success' : 'error', ['applied' => $res['applied'] ?? false, 'steps' => $res['steps'] ?? [], 'speed' => $res['speed'] ?? []]);
         mxgj_json_out([
             'ok'    => $res['ok'],
             'applied' => $res['applied'] ?? false,
@@ -420,6 +454,7 @@ function renderDashboard()
             <a href="?tab=sites" class="<?= $tab==='sites'?'active':'' ?>">资源站</a>
             <a href="?tab=mapping" class="<?= $tab==='mapping'?'active':'' ?>">映射表</a>
             <a href="?tab=update" class="<?= $tab==='update'?'active':'' ?>">更新</a>
+            <a href="?tab=logs" class="<?= $tab==='logs'?'active':'' ?>">日志</a>
             <a href="?tab=help" class="<?= $tab==='help'?'active':'' ?>">帮助</a>
             <a href="?tab=settings" class="<?= $tab==='settings'?'active':'' ?>">设置</a>
         </div>
@@ -437,6 +472,8 @@ function renderDashboard()
             <?php renderMappingForm($mapping); ?>
         <?php elseif ($tab === 'update'): ?>
             <?php renderUpdateForm(); ?>
+        <?php elseif ($tab === 'logs'): ?>
+            <?php renderLogs(); ?>
         <?php elseif ($tab === 'help'): ?>
             <?php renderHelp(); ?>
         <?php elseif ($tab === 'settings'): ?>
@@ -810,6 +847,73 @@ function renderUpdateForm()
             pre.textContent=s;
             if(!d.ok){pre.style.borderLeft='3px solid #e74c3c';}else{pre.style.borderLeft='3px solid #2ecc71';}
         }).catch(function(e){pre.textContent='请求失败:'+e;});
+    }
+    </script>
+    <?php
+}
+
+function renderLogs()
+{
+    $counts = Logger::counts();
+    $type   = isset($_GET['type']) && isset(Logger::TYPES[$_GET['type']]) ? $_GET['type'] : 'operation';
+    $rows   = Logger::read($type, 200);
+    $levelColor = ['info' => '#8892ab', 'success' => '#2ecc71', 'warn' => '#e2b93b', 'error' => '#e74c3c'];
+    $levelLabel = ['info' => '提示', 'success' => '成功', 'warn' => '警告', 'error' => '错误'];
+    ?>
+    <div class="stat-cards">
+        <?php foreach (Logger::TYPES as $t => $label): ?>
+            <a href="?tab=logs&type=<?= $t ?>" style="text-decoration:none;color:inherit">
+                <div class="stat" style="<?= $t === $type ? 'outline:2px solid #4f7cff' : '' ?>">
+                    <b><?= $counts[$t] ?></b><span><?= $label ?></span>
+                </div>
+            </a>
+        <?php endforeach; ?>
+    </div>
+
+    <div class="panel">
+        <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+            <h2 style="margin:0"><?= Logger::TYPES[$type] ?><span class="small" style="margin-left:8px">（最近 200 条 · 每类最多保留 500 条）</span></h2>
+            <div style="display:flex;gap:8px">
+                <button class="btn btn-danger" onclick="clearLog('all')">清空全部日志</button>
+                <button class="btn btn-danger" onclick="clearLog('<?= $type ?>')">清空本类</button>
+            </div>
+        </div>
+        <div class="note" style="margin:12px 0">
+            系统自动记录：<b>登录日志</b>（登录成功/失败）、<b>操作日志</b>（后台增删改）、<b>更新日志</b>（在线升级结果）、
+            <b>搜索调用日志</b>（前台每次搜索请求与命中情况）、<b>配置日志</b>（配置保存成功/失败）、<b>错误日志</b>（异常与拦截）。
+            日志存放于 <code>data/logs/*.json</code>。
+        </div>
+        <?php if ($rows === []): ?>
+            <div class="note" style="color:#8892ab">暂无日志记录。</div>
+        <?php else: ?>
+            <table>
+                <tr><th style="width:150px">时间</th><th style="width:60px">级别</th><th>内容</th><th style="width:40px">详情</th></tr>
+                <?php foreach ($rows as $r): ?>
+                    <?php $lv = isset($r['level']) ? $r['level'] : 'info'; ?>
+                    <tr>
+                        <td class="small" style="white-space:nowrap"><?= htmlspecialchars($r['time_str'] ?? '') ?></td>
+                        <td><span class="lvl" style="color:<?= $levelColor[$lv] ?? '#8892ab' ?>">● <?= $levelLabel[$lv] ?? $lv ?></span></td>
+                        <td><?= htmlspecialchars($r['msg'] ?? '') ?></td>
+                        <td>
+                            <?php if (!empty($r['extra'])): ?>
+                                <button class="btn small" onclick="var p=this.nextElementSibling;p.style.display=p.style.display==='none'?'block':'none'">详情</button>
+                                <pre style="display:none;margin-top:6px;font-size:11px"><?= htmlspecialchars(json_encode($r['extra'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)) ?></pre>
+                            <?php else: ?>
+                                <span class="small">-</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </table>
+        <?php endif; ?>
+    </div>
+    <script>
+    function clearLog(type){
+        if(!confirm('确定要清空该日志吗？'))return;
+        var fd=new FormData();fd.append('action','log_clear');fd.append('type',type);
+        fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
+            alert(d.msg||'完成');location.href='admin.php?tab=logs'+(type!=='all'?'&type='+type:'');
+        }).catch(function(e){alert('请求失败:'+e);});
     }
     </script>
     <?php

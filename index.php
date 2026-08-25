@@ -20,10 +20,12 @@ require __DIR__ . '/lib/bootstrap.php';
 $debug = !empty($_GET['debug']);
 $page  = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $t0    = microtime(true); // 计时（毫秒）
+$ip    = $_SERVER['REMOTE_ADDR'] ?? '';
 
 /* 0. 访问密钥鉴权（key 参数在最前，config/key.php 返回空串则跳过） */
 $visitKey = @include MXGJ_CONFIG . '/key.php';
 if (is_string($visitKey) && $visitKey !== '' && (($_GET['key'] ?? '') !== $visitKey)) {
+    Logger::log('error', '访问被拒绝：key 缺失或无效', 'warn', ['ip' => $ip]);
     mxgj_json_out(['code' => 403, 'msg' => '访问被拒绝：缺少或无效的 key 参数', 'url' => ''], 403);
 }
 
@@ -32,12 +34,14 @@ $raw = isset($_GET['url']) ? trim($_GET['url']) : '';
 
 // 1. 校验链接
 if ($raw === '') {
+    Logger::log('error', '缺少 url 参数', 'warn', ['ip' => $ip]);
     mxgj_json_out(['code' => 400, 'msg' => '缺少 url 参数', 'url' => ''], 400);
 }
 if (strpos($raw, 'http') !== 0) {
     $raw = 'http://' . $raw;
 }
 if (!parse_url($raw, PHP_URL_HOST)) {
+    Logger::log('error', '链接格式非法：' . $raw, 'warn', ['ip' => $ip]);
     mxgj_json_out(['code' => 400, 'msg' => '链接格式非法', 'url' => ''], 400);
 }
 
@@ -107,6 +111,7 @@ if ($name === '') {
 if ($name === '') {
     $mapHint = $parsed['vid'] !== '' ? 'vid=' . $parsed['vid']
              : ($parsed['cid'] !== '' ? 'cid=' . $parsed['cid'] : '');
+    Logger::log('error', '无法识别剧名：' . $raw, 'warn', ['vid' => $parsed['vid'], 'cid' => $parsed['cid'], 'ip' => $ip]);
     mxgj_json_out([
         'code' => 502,
         'msg'  => '无法识别该链接对应的剧名，请到后台「映射表」添加映射'
@@ -162,4 +167,23 @@ if ($debug) {
     ];
 }
 $out = mxgj_build_output($vars, $debug);
+
+// 8. 搜索调用日志（记录每次搜索请求与结果，便于排查/审计）
+Logger::log(
+    'search',
+    ($result['code'] === 200 ? '命中' : '未命中') . '：' . $name . ' 第' . $episode . '集',
+    $result['code'] === 200 ? 'success' : 'warn',
+    [
+        'title'    => $name,
+        'episode'  => $episode,
+        'code'     => $result['code'],
+        'site'     => $result['site'] ?? '',
+        'url'      => $result['url'] ?? '',
+        'cached'   => $cachedIsHit,
+        'time_ms'  => round((microtime(true) - $t0) * 1000, 1),
+        'from'     => $nameFrom !== '' ? 'page抓取' : 'mapping/解析',
+        'ip'       => $ip,
+    ]
+);
+
 mxgj_json_out($out);

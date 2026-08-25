@@ -38,6 +38,8 @@ if ($dry) {
 
 $result = Updater::run($key);
 
+Logger::log('update', ($dry ? '[dry 测速] ' : '') . ($result['ok'] ? '在线更新成功' : '在线更新失败') . '：' . $result['msg'], $result['ok'] ? 'success' : 'error', ['applied' => $result['applied'] ?? false, 'steps' => $result['steps'] ?? [], 'speed' => $result['speed'] ?? []]);
+
 foreach ($result['steps'] as $i => $step) {
     echo ($i + 1) . ") {$step}\n";
 }
