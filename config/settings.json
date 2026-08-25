@@ -29,5 +29,15 @@
         "rotation_enable": true,
         "rotation_interval": 600,
         "max_sites_per_request": 4
+    },
+    "output": {
+        "show_source": false,
+        "fields": [
+            {"k": "code", "v": "code"},
+            {"k": "msg", "v": "url"},
+            {"k": "url", "v": "url"},
+            {"k": "time", "v": "time"},
+            {"k": "KFZ", "v": "沫兮官替系统"}
+        ]
     }
 }

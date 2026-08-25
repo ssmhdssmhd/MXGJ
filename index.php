@@ -19,6 +19,7 @@ require __DIR__ . '/lib/bootstrap.php';
 
 $debug = !empty($_GET['debug']);
 $page  = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$t0    = microtime(true); // 计时（毫秒）
 
 /* 0. 访问密钥鉴权（key 参数在最前，config/key.php 返回空串则跳过） */
 $visitKey = @include MXGJ_CONFIG . '/key.php';
@@ -138,16 +139,19 @@ if ($cachedIsHit) {
     }
 }
 
-// 7. 组装返回
-$out = [
+// 7. 组装返回（按后台「输出返回设置」自定义字段映射，默认隐藏 source）
+$vars = [
     'code'    => $result['code'],
-    'url'     => $result['url'] ?? '',
     'msg'     => $result['msg'] ?? '',
-    'episode' => $result['episode'] ?? $episode,
+    'url'     => $result['url'] ?? '',
+    'title'   => $name,
+    'episode' => $episode,
+    'site'    => $result['site'] ?? '',
     'source'  => $raw,
+    'time'    => round((microtime(true) - $t0) * 1000, 1),
 ];
 if ($debug) {
-    $out['debug'] = [
+    $vars['debug'] = [
         'parsed' => $parsed,
         'title'  => $name,
         'episode'=> $episode,
@@ -157,4 +161,5 @@ if ($debug) {
         'cached' => $cachedIsHit,
     ];
 }
-mxgj_json_out($out, $result['code'] === 200 ? 200 : 200);
+$out = mxgj_build_output($vars, $debug);
+mxgj_json_out($out);

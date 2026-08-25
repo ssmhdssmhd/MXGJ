@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.5.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.6.0-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,15 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.6.0] 2026-08-25 · 后台「输出返回设置」（自定义返回字段映射）
+- 后台「设置」新增**输出返回设置**：前台返回的 JSON 字段完全由你定义
+  - 每条配置 **键名 k**（输出字段名）+ **值来源 v**（系统字段或固定常量文本）
+  - 可映射系统字段：`code` 状态码 / `url` 播放链接 / `title` 影视剧名 / `episode` 集数 / `time` 耗时 / `site` 命中站点 / `msg` 提示 / `source` 请求链接
+  - 或填**常量文本**作固定值，例如返回 `KFZ=沫兮官替系统`
+  - 例：返回 `JM=庆余年`、`JJ=第2集`——键名 `JM` 值来源 `title`，键名 `JJ` 值来源 `episode`
+- **原始请求链接默认隐藏**（`show_source=false`），避免返回杂乱；可随时勾选开启
+- **默认字段**：`code` · `msg`(=url) · `url` · `time` · `KFZ`，开箱即用、兼容既有调用
 
 ### [v1.5.0] 2026-08-25 · 资源站检测 + 自动添加/修改（苹果CMS10）
 - 后台「资源站」页新增 **「⚡ 检测并自动添加」**：只需粘贴苹果 CMS10 采集接口地址到弹窗

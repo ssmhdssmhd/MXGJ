@@ -139,6 +139,31 @@ switch ($ACTION) {
         $sc['rotation_interval']      = max(10, (int)($_POST['sc_rotation_interval'] ?? 300));
         $sc['max_sites_per_request']  = max(0, (int)($_POST['sc_max_sites_per_request'] ?? 0));
         $st['site_control'] = $sc;
+        // 输出返回设置
+        $outKeys = $_POST['out_k'] ?? [];
+        $outVals = $_POST['out_v'] ?? [];
+        $fields  = [];
+        if (is_array($outKeys)) {
+            foreach ($outKeys as $i => $k) {
+                $k = trim((string)$k);
+                $v = trim((string)($outVals[$i] ?? ''));
+                if ($k === '' || $v === '') continue;
+                $fields[] = ['k' => $k, 'v' => $v];
+            }
+        }
+        if ($fields === []) { // 至少保留 code 与 url，避免输出为空
+            $fields = [
+                ['k' => 'code', 'v' => 'code'],
+                ['k' => 'msg',  'v' => 'url'],
+                ['k' => 'url',  'v' => 'url'],
+                ['k' => 'time', 'v' => 'time'],
+                ['k' => 'KFZ',  'v' => '沫兮官替系统'],
+            ];
+        }
+        $st['output'] = [
+            'show_source' => !empty($_POST['out_show_source']),
+            'fields'      => $fields,
+        ];
         mxgj_write_json($settingsFile, $st);
         // 更换密码后重登
         header('Location: admin.php?tab=settings&saved=1');
@@ -861,6 +886,7 @@ function renderHelp()
 function renderSettingsForm($settings)
 {
     $sc   = is_array($settings['site_control'] ?? null) ? $settings['site_control'] : [];
+    $output = is_array($settings['output'] ?? null) ? $settings['output'] : [];
     $siteHealth = SiteHealth::healthTable();
     $hbResult = $_SESSION['heartbeat_result'] ?? null;
     unset($_SESSION['heartbeat_result']);
@@ -886,6 +912,40 @@ function renderSettingsForm($settings)
             <div class="full"><label style="margin-bottom:6px">开关</label>
                 <label style="margin-right:18px"><input type="checkbox" name="sc_heartbeat_enable" value="1" <?= !empty($sc['heartbeat_enable']) ? 'checked' : '' ?>> 启用心跳检测</label>
                 <label><input type="checkbox" name="sc_rotation_enable" value="1" <?= !empty($sc['rotation_enable']) ? 'checked' : '' ?>> 启用资源站轮训</label>
+            </div>
+
+            <div class="full" style="margin-top:8px">
+                <h3 style="margin:0 0 4px;font-size:14px">输出返回设置（自定义返回字段映射）</h3>
+                <div class="note" style="margin:4px 0 8px">
+                    自定义前台返回的 JSON 字段。<b>键名</b>（k）= 对外输出的字段名；<b>值来源</b>（v）可填系统字段名
+                    （<code>code</code> 状态码 / <code>url</code> 播放链接 / <code>title</code> 影视剧名 / <code>episode</code> 集数 /
+                    <code>time</code> 耗时ms / <code>site</code> 命中站点 / <code>source</code> 请求链接 / <code>msg</code> 提示），
+                    或直接填<b>固定文本</b>（常量，如 <code>沫兮官替系统</code>）作为该字段的值。<br>
+                    例如想返回 <code>JM=庆余年</code> <code>JJ=第2集</code>：键名填 <code>JM</code> 值来源填 <code>title</code>，键名 <code>JJ</code> 值来源填 <code>episode</code>。
+                </div>
+                <label style="margin:0"><input type="checkbox" name="out_show_source" value="1" <?= !empty($output['show_source']) ? 'checked' : '' ?>> 在返回中附带原始请求链接（默认隐藏）</label>
+                <table id="out-tbl" style="margin-top:8px">
+                    <tr><th style="width:140px">键名 k（输出字段）</th><th>值来源/常量 v</th><th style="width:60px">操作</th></tr>
+                    <?php if (!empty($output['fields'])): foreach ($output['fields'] as $i => $f): ?>
+                        <tr>
+                            <td><input type="text" name="out_k[]" value="<?= htmlspecialchars($f['k']) ?>" placeholder="如 url / JM / JJ"></td>
+                            <td><input type="text" name="out_v[]" value="<?= htmlspecialchars($f['v']) ?>" placeholder="如 code / url / title / episode / 常量文本" list="src-list"></td>
+                            <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
+                        </tr>
+                    <?php endforeach; else: ?>
+                        <tr>
+                            <td><input type="text" name="out_k[]" placeholder="url"></td>
+                            <td><input type="text" name="out_v[]" value="url" list="src-list"></td>
+                            <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
+                        </tr>
+                    <?php endif; ?>
+                </table>
+                <datalist id="src-list">
+                    <option value="code"></option><option value="msg"></option><option value="url"></option>
+                    <option value="title"></option><option value="episode"></option><option value="site"></option>
+                    <option value="source"></option><option value="time"></option>
+                </datalist>
+                <button type="button" class="btn" style="margin-top:8px" onclick="addOutRow()">+ 添加返回字段</button>
             </div>
 
             <div class="full"><button type="submit" class="btn btn-green">保存设置</button></div>
@@ -936,6 +996,17 @@ function renderSettingsForm($settings)
         默认密码：<code>moxi123</code>。请立即修改！<br>
         数据文件位于 <code>config/settings.json</code>、<code>config/sites.json</code>、<code>config/mapping.json</code>，可手动编辑。
     </div>
+    <script>
+    var outRow=<?= count($output['fields'] ?? []) ?>;
+    function addOutRow(){
+        var t=document.getElementById('out-tbl');
+        var tr=document.createElement('tr');
+        tr.innerHTML='<td><input type="text" name="out_k[]" placeholder="如 url / JM / JJ"></td>'+
+            '<td><input type="text" name="out_v[]" placeholder="如 code / url / title / episode / 常量文本" list="src-list"></td>'+
+            '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
+        t.appendChild(tr);
+    }
+    </script>
     <?php
 }
 

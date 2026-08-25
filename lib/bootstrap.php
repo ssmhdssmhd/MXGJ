@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.0.0');
+define('MXGJ_VERSION', '1.6.0');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -84,6 +84,17 @@ function mxgj_settings(): array
                 'rotation_interval'=> 600,    // 资源站轮训：每隔多少秒切换一次命中顺序(秒)
                 'max_sites_per_request' => 4, // 每次搜索最多并发请求几个资源站(0=不限制)
             ],
+            // 输出返回设置（自定义返回字段映射）
+            'output'         => [
+                'show_source' => false, // 是否在返回中附带原始请求链接（默认隐藏，避免太乱）
+                'fields'      => [      // 返回字段模板：k=输出键名，v=值来源(系统字段名)或常量字符串
+                    ['k' => 'code', 'v' => 'code'],         // 状态码
+                    ['k' => 'msg',  'v' => 'url'],          // msg 默认等于播放链接(便于兼容)
+                    ['k' => 'url',  'v' => 'url'],          // 播放链接
+                    ['k' => 'time', 'v' => 'time'],         // 耗时(毫秒)
+                    ['k' => 'KFZ',  'v' => '沫兮官替系统'], // 开发者(常量)
+                ],
+            ],
         ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
     }
     return $settings;
@@ -129,6 +140,48 @@ function mxgj_json_out(array $data, int $status = 200): void
         echo $json;
     }
     exit;
+}
+
+/**
+ * 依据「输出返回设置」把内部变量映射为对外返回的 JSON 字段
+ *
+ * @param array $vars 内部值，可包含：code,msg,url,title,episode,site,source,time,debug
+ * @param bool  $debug 是否附加 debug 详情
+ * @return array 对外返回字段（顺序与配置一致）
+ */
+function mxgj_build_output(array $vars, bool $debug): array
+{
+    $cfg    = mxgj_settings()['output'] ?? [];
+    $fields = is_array($cfg['fields'] ?? null) ? $cfg['fields'] : [];
+    $fMap   = ['code', 'msg', 'url', 'title', 'episode', 'site', 'source', 'time']; // 系统值来源
+
+    $out = [];
+    if ($fields === []) {
+        // 兜底默认字段
+        $fields = [
+            ['k' => 'code', 'v' => 'code'],
+            ['k' => 'msg',  'v' => 'url'],
+            ['k' => 'url',  'v' => 'url'],
+            ['k' => 'time', 'v' => 'time'],
+            ['k' => 'KFZ',  'v' => '沫兮官替系统'],
+        ];
+    }
+    foreach ($fields as $f) {
+        $k = (string)($f['k'] ?? '');
+        $v = (string)($f['v'] ?? '');
+        if ($k === '' || $k === 'debug') continue;
+        // 是系统字段：取对应内部值；否则当作常量字符串输出
+        $out[$k] = in_array($v, $fMap, true) ? ($vars[$v] ?? '') : $v;
+    }
+
+    // 是否附带原始请求链接（默认不显示，避免返回太乱）
+    if (!empty($cfg['show_source']) && isset($vars['source']) && !array_key_exists('source', $out)) {
+        $out['source'] = $vars['source'];
+    }
+    if ($debug && array_key_exists('debug', $vars)) {
+        $out['debug'] = $vars['debug'];
+    }
+    return $out;
 }
 
 /**
