@@ -71,6 +71,7 @@ switch ($ACTION) {
                 'name'     => $name,
                 'url'      => $url,          // 兼容旧字段
                 'template' => $url,          // 标准模板字段
+                'proxy'    => trim($s['proxy'] ?? ''), // 跟随播放链接（中转前缀），仅该站启用
                 'enabled'  => array_key_exists('enabled', $s) ? !empty($s['enabled']) : true, // 启用开关（默认启用）
             ];
         }
@@ -177,6 +178,10 @@ switch ($ACTION) {
             'show_source' => !empty($_POST['out_show_source']),
             'fields'      => $fields,
         ];
+        // 安全设置（欺诈/伪装）
+        $sec = is_array($st['security'] ?? null) ? $st['security'] : [];
+        $sec['obfuscate_enable'] = !empty($_POST['sec_obfuscate_enable']);
+        $st['security'] = $sec;
         mxgj_write_json($settingsFile, $st);
         Logger::log('operation', '保存系统设置', 'success');
         Logger::log('config', '系统设置保存成功', 'success', ['timeout' => $st['timeout'], 'cache_ttl' => $st['cache_ttl'], 'output_fields' => count($fields)]);
@@ -247,10 +252,12 @@ switch ($ACTION) {
         $entry = ['name' => $name_, 'url' => $tpl_, 'template' => $tpl_];
         if ($hit !== null) {
             $entry['enabled'] = array_key_exists('enabled', $list[$hit]) ? !empty($list[$hit]['enabled']) : true; // 保留原启用状态
+            $entry['proxy']   = (string)($list[$hit]['proxy'] ?? ''); // 保留跟随播放链接
             $list[$hit] = $entry;
             $mode = 'update';
         } else {
             $entry['enabled'] = true; // 新增默认启用
+            $entry['proxy']   = trim($_POST['proxy'] ?? ''); // 跟随播放链接（中转前缀）
             $list[] = $entry;
             $mode = 'add';
         }
@@ -314,18 +321,24 @@ switch ($ACTION) {
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '输出字段：' . ($fields[$idx]['k'] ?? '')]);
 
     case 'toggle_setting':
-        // 快捷开关设置项（当前支持：site_control 的 heartbeat_enable / rotation_enable）
+        // 快捷开关设置项（site_control 的心跳/轮训、security 的欺诈伪装）
         $name = trim($_POST['name'] ?? '');
         $on   = !empty($_POST['enabled']);
-        if (!in_array($name, ['heartbeat_enable', 'rotation_enable'], true)) {
+        $st   = mxgj_settings();
+        if ($name === 'heartbeat_enable' || $name === 'rotation_enable') {
+            $sc = is_array($st['site_control'] ?? null) ? $st['site_control'] : [];
+            $sc[$name] = $on;
+            $st['site_control'] = $sc;
+            $labels = ['heartbeat_enable' => '心跳检测', 'rotation_enable' => '资源站轮训'];
+        } elseif ($name === 'obfuscate_enable') {
+            $sec = is_array($st['security'] ?? null) ? $st['security'] : [];
+            $sec['obfuscate_enable'] = $on;
+            $st['security'] = $sec;
+            $labels = ['obfuscate_enable' => '欺诈/伪装'];
+        } else {
             mxgj_json_out(['code' => 400, 'msg' => '不支持的设置项']);
         }
-        $st = mxgj_settings();
-        $sc = is_array($st['site_control'] ?? null) ? $st['site_control'] : [];
-        $sc[$name] = $on;
-        $st['site_control'] = $sc;
         mxgj_write_json($settingsFile, $st);
-        $labels = ['heartbeat_enable' => '心跳检测', 'rotation_enable' => '资源站轮训'];
         Logger::log('operation', ($on ? '开启' : '关闭') . '设置：' . ($labels[$name] ?? $name), $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '开启' : '关闭') . '设置「' . ($labels[$name] ?? $name) . '」', $on ? 'success' : 'warn');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已开启' : '已关闭') . '：' . ($labels[$name] ?? $name)]);
@@ -611,6 +624,8 @@ function renderSitesForm($sites)
             模板占位符说明：<b>%s</b>=剧名（不转码）、<b>%p</b>=集数、<b>%u/%t</b>=剧名（URL 编码）。<br>
             示例一（JSON 源）：<code>http://api.example.com/vod?wd=%u&ep=%p</code><br>
             示例二（列表页）：<code>http://your.site/search?wd=%s&page=%p</code><br>
+            <b>跟随播放链接（中转前缀）</b>：仅该资源站命中时，在真实播放地址前拼接，如 <code>https://vv00.xyz?url=</code>
+            → 返回 <code>https://vv00.xyz?url=真实地址</code>。留空则直接返回原地址。<br>
             每行「启用」开关<b>即时生效</b>（无需保存）：关闭后该资源站不再参与前台搜索与心跳探测。
         </div>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
@@ -620,12 +635,13 @@ function renderSitesForm($sites)
         <form method="post">
             <input type="hidden" name="action" value="save_sites">
             <table id="site-tbl">
-                <tr><th style="width:170px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th style="width:80px">启用</th><th style="width:120px"></th></tr>
+                <tr><th style="width:130px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
                 <?php if ($sites): foreach ($sites as $i => $s): ?>
                     <?php $sEnabled = !array_key_exists('enabled', $s) || !empty($s['enabled']); ?>
                     <tr class="<?= $sEnabled ? '' : 'row-disabled' ?>">
                         <td><input type="text" name="sites[<?= $i ?>][name]" value="<?= htmlspecialchars($s['name']) ?>"></td>
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
+                        <td><input type="text" name="sites[<?= $i ?>][proxy]" value="<?= htmlspecialchars($s['proxy'] ?? '') ?>" placeholder="如 https://vv00.xyz?url= （留空不使用）"></td>
                         <td class="center">
                             <label class="toggle">
                                 <input type="checkbox" class="quick-toggle" data-action="site" <?= $sEnabled ? 'checked' : '' ?>
@@ -642,6 +658,7 @@ function renderSitesForm($sites)
                     <tr>
                         <td><input type="text" name="sites[0][name]" placeholder="站点A"></td>
                         <td><input type="text" name="sites[0][template]" placeholder="http://api.example.com/vod?wd=%u&ep=%p"></td>
+                        <td><input type="text" name="sites[0][proxy]" placeholder="如 https://vv00.xyz?url="></td>
                         <td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>
                         <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                     </tr>
@@ -669,6 +686,7 @@ function renderSitesForm($sites)
         var tr=document.createElement('tr');
         tr.innerHTML='<td><input type="text" name="sites['+rowIndex+'][name]" placeholder="站点"></td>'+
             '<td><input type="text" name="sites['+rowIndex+'][template]" placeholder="http://..." onclick="this.select()"></td>'+
+            '<td><input type="text" name="sites['+rowIndex+'][proxy]" placeholder="如 https://vv00.xyz?url="></td>'+
             '<td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>'+
             '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
         tbl.appendChild(tr);rowIndex++;
@@ -1129,6 +1147,7 @@ function renderSettingsForm($settings)
 {
     $sc   = is_array($settings['site_control'] ?? null) ? $settings['site_control'] : [];
     $output = is_array($settings['output'] ?? null) ? $settings['output'] : [];
+    $security = is_array($settings['security'] ?? null) ? $settings['security'] : [];
     $siteHealth = SiteHealth::healthTable();
     $hbResult = $_SESSION['heartbeat_result'] ?? null;
     unset($_SESSION['heartbeat_result']);
@@ -1195,6 +1214,19 @@ function renderSettingsForm($settings)
                     <option value="source"></option><option value="time"></option>
                 </datalist>
                 <button type="button" class="btn" style="margin-top:8px" onclick="addOutRow()">+ 添加返回字段</button>
+            </div>
+
+            <div class="full" style="margin-top:8px">
+                <h3 style="margin:0 0 4px;font-size:14px">安全设置（欺诈/伪装）</h3>
+                <div class="note" style="margin:4px 0 8px">
+                    开启后，返回链接中「跟随播放链接」的<b>中转前缀域名会被伪装为当前系统域名</b>，避免对外暴露真实中转/播放站点。
+                    例：<code>https://vv00.xyz?url=真实地址</code> → <code>https://当前域名?url=真实地址</code>。
+                    仅替换链接开头的中转域名，<b>不触碰真实播放地址参数，不影响正常播放</b>；默认开启。
+                </div>
+                <label style="margin:0">
+                    <input type="checkbox" name="sec_obfuscate_enable" value="1" class="quick-toggle" data-action="setting" data-name="obfuscate_enable" <?= !empty($security['obfuscate_enable']) ? 'checked' : '' ?>>
+                    启用欺诈/伪装（将中转前缀域名替换为当前域名）
+                </label>
             </div>
 
             <div class="full"><button type="submit" class="btn btn-green">保存设置</button></div>

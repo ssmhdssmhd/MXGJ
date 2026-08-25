@@ -2,6 +2,22 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.9.0] - 2026-08-25
+
+### ✨ 新增：资源站「跟随播放链接」中转前缀 + 后台「安全设置-欺诈/伪装」
+
+- **资源站单独配置「跟随播放链接」（中转前缀）**（`sites.json` 每站新增 `proxy` 字段，仅该站启用）
+  - 命中该资源站时，在真实播放地址前自动拼接中转前缀，如配置 `https://vv00.xyz?url=`
+    → 返回 `https://vv00.xyz?url=真实m3u8地址`
+  - 兼容两种写法：以 `=` 结尾（自带参数名）直接拼接；否则统一以 `?url=` 拼接
+  - 后台「资源站」列表每行新增「跟随播放链接（中转前缀）」输入框；`save_sites` / `save_site_one` 均保存/保留
+- **后台「安全设置（欺诈/伪装）」，默认开启**（`settings.json` 新增 `security.obfuscate_enable`）
+  - 开启后，返回链接中「跟随播放链接」的<b>中转前缀域名被伪装为当前系统域名</b>
+    → `https://vv00.xyz?url=真实地址` 输出为 `https://当前域名?url=真实地址`
+  - 仅替换链接开头的中转域名，**不触碰真实播放地址参数，不影响正常播放**；对返回 JSON 中所有含播放地址的字段（url/msg）统一生效
+  - 支持设置页开关与快捷开关即时切换（`toggle_setting` 新增 `obfuscate_enable`）
+- 实现：`SiteSearcher::finalizeUrl()` 拼接前缀、`lib/bootstrap.php` 新增 `mxgj_obfuscate_url()`、前台 `index.php` 输出时实时伪装（不写缓存）
+
 ## [1.8.0] - 2026-08-25
 
 ### ✨ 新增：通用快捷开关（映射表 / 输出字段 / 设置项，即时生效）

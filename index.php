@@ -147,11 +147,11 @@ if ($cachedIsHit) {
     }
 }
 
-// 7. 组装返回（按后台「输出返回设置」自定义字段映射，默认隐藏 source）
+// 7. 组装返回（按后台「输出返回设置」自定义字段映射，默认隐藏 source；按「安全-欺诈设置」伪装中转域名）
 $vars = [
     'code'    => $result['code'],
-    'msg'     => $result['msg'] ?? '',
-    'url'     => $result['url'] ?? '',
+    'msg'     => mxgj_obfuscate_url($result['msg'] ?? ''),
+    'url'     => mxgj_obfuscate_url($result['url'] ?? ''),
     'title'   => $name,
     'episode' => $episode,
     'site'    => $result['site'] ?? '',

@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.8.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.9.0-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,13 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.9.0] 2026-08-25 · 资源站「跟随播放链接」+ 安全设置（欺诈/伪装）
+- **资源站单独配置「跟随播放链接」中转前缀**：每行可填如 `https://vv00.xyz?url=`，仅该站命中时自动拼接到真实播放地址前
+  - 返回 `https://vv00.xyz?url=真实m3u8地址`，满足「特定资源站启用」的需求
+- **后台「安全设置（欺诈/伪装）」默认开启**：把返回链接中的中转前缀域名伪装为当前系统域名
+  - `https://vv00.xyz?url=真实地址` → `https://当前域名?url=真实地址`，不暴露真实中转站，且不影响正常播放
+  - 对返回 JSON 中所有含播放地址的字段（url/msg）统一生效；可在设置页随时开关
 
 ### [v1.8.0] 2026-08-25 · 通用快捷开关（映射表 / 输出字段 / 设置项）
 - 「快捷开关」升级为**通用机制**：点击即时生效、无需保存，后续新增配置项可直接复用

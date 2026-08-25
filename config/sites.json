@@ -4,6 +4,7 @@
             "name": "西瓜资源站",
             "url": "https://caiji.xgzyapi.com/api.php/provide/vod/?ac=videolist&wd=%u",
             "template": "https://caiji.xgzyapi.com/api.php/provide/vod/?ac=videolist&wd=%u",
+            "proxy": "",
             "enabled": true
         }
     ]

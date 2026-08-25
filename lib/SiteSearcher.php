@@ -278,13 +278,24 @@ class SiteSearcher
      */
     protected static function finalizeUrl(string $url, array $site): string
     {
+        // 1) 全局域名替换/中转前缀
         $replace = mxgj_settings()['replace_domain'] ?? '';
-        if (!is_string($replace) || $replace === '') {
-            return $url;
+        if (is_string($replace) && $replace !== '') {
+            $replace = rtrim($replace, '/');
+            if (preg_match('~^(https?://[^/]+)~i', $url, $m)) {
+                $url = $replace . '/' . ltrim(substr($url, strlen($m[1])), '/');
+            }
         }
-        $replace = rtrim($replace, '/');
-        if (preg_match('~^(https?://[^/]+)~i', $url, $m)) {
-            return $replace . '/' . ltrim(substr($url, strlen($m[1])), '/');
+        // 2) 站点级「跟随播放链接」中转前缀（仅配置了 proxy 的资源站命中时生效）
+        $proxy = trim((string)($site['proxy'] ?? ''));
+        if ($proxy !== '') {
+            if (substr($proxy, -1) === '=') {
+                // proxy 已自带参数名（如 https://vv00.xyz?url=），直接拼接
+                $url = $proxy . $url;
+            } else {
+                // 否则统一以 ?url= 形式拼接
+                $url = rtrim($proxy, '?&') . '?url=' . $url;
+            }
         }
         return $url;
     }

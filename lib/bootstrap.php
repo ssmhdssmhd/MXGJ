@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.8.0');
+define('MXGJ_VERSION', '1.9.0');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -95,6 +95,10 @@ function mxgj_settings(): array
                     ['k' => 'KFZ',  'v' => '沫兮官替系统'], // 开发者(常量)
                 ],
             ],
+            // 安全设置（欺诈/伪装）
+            'security'       => [
+                'obfuscate_enable' => true, // 欺诈/伪装：将返回链接中的中转前缀域名伪装为当前系统域名（默认开启）
+            ],
         ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
     }
     return $settings;
@@ -124,6 +128,58 @@ function mxgj_mapping_enabled(array $mapping, string $sec, string $key): bool
 {
     $disabled = $mapping['disabled'][$sec] ?? [];
     return is_array($disabled) ? !in_array($key, $disabled, true) : true;
+}
+
+/**
+ * 欺诈/伪装：把返回链接中「资源站跟随播放链接」的中转前缀域名替换为当前系统域名。
+ *
+ * 例：中转前缀为 https://vv00.xyz?url= ，返回 url 为
+ *     https://vv00.xyz?url=https://.../index.m3u8
+ * 开启后输出为：
+ *     https://当前域名?url=https://.../index.m3u8
+ * 仅替换开头的域名部分，不触碰真实播放地址参数，保证正常播放；默认开启。
+ *
+ * @param string $url 待伪装链接
+ * @return string 伪装后的链接（未开启/无需伪装时原样返回）
+ */
+function mxgj_obfuscate_url(string $url): string
+{
+    $sec = mxgj_settings()['security'] ?? [];
+    if (empty($sec['obfuscate_enable'])) {
+        return $url; // 欺诈/伪装开关被关闭
+    }
+    if ($url === '' || strpos($url, '://') === false) {
+        return $url;
+    }
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host === '') {
+        return $url;
+    }
+    $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $self   = $scheme . '://' . $host;
+
+    // 收集所有资源站配置的「跟随播放链接」中转域名
+    $domains = [];
+    foreach (mxgj_sites() as $s) {
+        $p = trim((string)($s['proxy'] ?? ''));
+        if ($p === '' || strpos($p, '://') === false) {
+            continue;
+        }
+        $parts = parse_url($p);
+        if (empty($parts['scheme']) || empty($parts['host'])) {
+            continue;
+        }
+        $domains[$parts['scheme'] . '://' . $parts['host']] = true;
+    }
+    if ($domains === []) {
+        return $url;
+    }
+    foreach (array_keys($domains) as $d) {
+        if (strpos($url, $d) === 0) {
+            return $self . substr($url, strlen($d));
+        }
+    }
+    return $url;
 }
 
 /**
