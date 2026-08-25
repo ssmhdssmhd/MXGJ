@@ -65,9 +65,13 @@ function mxgj_settings(): array
     if ($settings === null) {
         $settings = array_merge([
             'admin_password' => 'moxi123', // 后台登录密码（请修改）
+            'updater_key'    => '',        // 升级密钥（update.php 用，留空则回退 admin_password）
             'timeout'        => 15,        // 单次资源站请求超时(秒)
             'cache_ttl'      => 600,       // 搜索缓存时长(秒)
             'replace_domain' => '',        // 域名替换/中转前缀，留空则直接返回资源站地址
+            'repo_owner'     => 'ssmhdssmhd',
+            'repo_name'      => 'MXGJ',
+            'repo_branch'    => 'main',
         ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
     }
     return $settings;
@@ -113,4 +117,31 @@ function mxgj_json_out(array $data, int $status = 200): void
         echo $json;
     }
     exit;
+}
+
+/**
+ * 依据官方链接解析结果，自动把 vid/cid → 剧名+集数 追加进映射表
+ *
+ * 用于「一键测试 / AI 分析」识别出剧名与集数后自动建映射，
+ * 下次直接命中，无需再次联网抓取。已有该 ID 的映射则不覆盖（保护人工配置）。
+ *
+ * @return bool 是否写入了新映射
+ */
+function mxgj_auto_mapping(array $parsed, string $name, int $episode): bool
+{
+    $key = $parsed['vid'] !== '' ? 'vid:' . $parsed['vid']
+         : ($parsed['cid'] !== '' ? 'cid:' . $parsed['cid'] : '');
+    if ($key === '' || $name === '' || $episode <= 0) {
+        return false;
+    }
+    $file   = MXGJ_CONFIG . '/mapping.json';
+    $mapping = mxgj_read_json($file, []);
+    if (!isset($mapping['episode']) || !is_array($mapping['episode'])) {
+        $mapping['episode'] = [];
+    }
+    if (isset($mapping['episode'][$key])) {
+        return false; // 已有映射，不覆盖
+    }
+    $mapping['episode'][$key] = ['name' => $name, 'episode' => (int)$episode];
+    return mxgj_write_json($file, $mapping);
 }

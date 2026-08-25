@@ -96,6 +96,10 @@ if ($name === '') {
         if (!empty($pageRes['episode'])) {
             $episode = (int)$pageRes['episode'];
         }
+        // 识别成功即自动固化映射，下次直接命中、不再联网抓取
+        if ($episode > 0) {
+            mxgj_auto_mapping($parsed, $name, $episode);
+        }
     }
 }
 

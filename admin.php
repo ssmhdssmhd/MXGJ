@@ -123,6 +123,7 @@ switch ($ACTION) {
         $st['admin_password'] = trim($_POST['admin_password'] ?? '') !== ''
             ? $_POST['admin_password']
             : $st['admin_password'];
+        $st['updater_key']    = trim($_POST['updater_key'] ?? '');
         $st['timeout']        = (int)($_POST['timeout'] ?? 15);
         $st['cache_ttl']      = (int)($_POST['cache_ttl'] ?? 600);
         $st['replace_domain'] = trim($_POST['replace_domain'] ?? '');
@@ -153,19 +154,63 @@ switch ($ACTION) {
         $res  = SiteSearcher::search([$site], $title, $ep, (int)mxgj_settings()['timeout']);
         mxgj_json_out($res);
 
+    case 'do_update':
+        // 后台触发的在线更新（dry=1 时仅测速）
+        $st  = mxgj_settings();
+        $res = Updater::run($st['admin_password'], !empty($_POST['dry']));
+        mxgj_json_out([
+            'ok'    => $res['ok'],
+            'applied' => $res['applied'] ?? false,
+            'msg'   => $res['msg'],
+            'steps' => $res['steps'],
+            'speed' => $res['speed'],
+        ]);
+
     case 'test_full':
-        // Ajax 测试一个完整官方链接
+        // 一键测试：AI 智能分析（解析 + 页面抓取）→ 自动固化映射 → 去资源站查找
         $url = trim($_POST['url'] ?? '');
         if ($url === '') mxgj_json_out(['code' => 400, 'msg' => '缺少链接']);
         $parsed = LinkParser::parse($url);
-        $ep = $parsed['episode'] > 0 ? $parsed['episode'] : 1;
-        $res = SiteSearcher::search(mxgj_sites(), $parsed['title'], $ep, (int)mxgj_settings()['timeout']);
+        $name   = $parsed['title'];
+        $ep     = $parsed['episode'] > 0 ? $parsed['episode'] : 1;
+
+        // 若链接无法直接识别，则抓取官方页面做 AI 分析
+        $aiMode = '解析';
+        if ($name === '') {
+            $pg   = ['title' => '', 'episode' => 0];
+            $pgk  = 'page:' . ($parsed['vid'] !== '' ? $parsed['vid'] : ($parsed['cid'] !== '' ? $parsed['cid'] : md5($url)));
+            $pgr  = Cache::get($pgk);
+            if (is_array($pgr) && !empty($pgr['title'])) {
+                $pg = $pgr;
+            } else {
+                $pg = PageResolver::resolve($url, $ep, (int)mxgj_settings()['timeout']);
+                if (!empty($pg['title'])) Cache::set($pgk, $pg, 600);
+            }
+            if (!empty($pg['title'])) {
+                $name    = $pg['title'];
+                $aiMode  = '页面抓取';
+                if (!empty($pg['episode'])) $ep = (int)$pg['episode'];
+                // AI 识别出集数后自动固化映射
+                if ($ep > 0) mxgj_auto_mapping($parsed, $name, $ep);
+            }
+        }
+
+        $res = SiteSearcher::search(mxgj_sites(), $name, $ep, (int)mxgj_settings()['timeout']);
+        $mapped = mxgj_read_json(MXGJ_CONFIG . '/mapping.json', []);
+        $mapKey = $parsed['vid'] !== '' ? 'vid:' . $parsed['vid'] : ($parsed['cid'] !== '' ? 'cid:' . $parsed['cid'] : '');
+        $hasMap = isset($mapped['episode'][$mapKey]);
         mxgj_json_out([
             'code'    => $res['code'],
             'url'     => $res['url'],
             'msg'     => $res['msg'],
             'episode' => $ep,
-            'debug'   => ['parsed' => $parsed, 'targetTitle' => $parsed['title']],
+            'debug'   => [
+                'parsed'       => $parsed,
+                'targetTitle'  => $name,
+                'ai_mode'      => $aiMode,
+                'auto_mapped'  => $aiMode === '页面抓取' ? $hasMap : false,
+                'mapping_key'  => $mapKey !== '' ? $mapKey : null,
+            ],
         ]);
 
     default:
@@ -266,6 +311,7 @@ function renderDashboard()
             <a href="?tab=dashboard" class="<?= $tab==='dashboard'?'active':'' ?>">概览</a>
             <a href="?tab=sites" class="<?= $tab==='sites'?'active':'' ?>">资源站</a>
             <a href="?tab=mapping" class="<?= $tab==='mapping'?'active':'' ?>">映射表</a>
+            <a href="?tab=update" class="<?= $tab==='update'?'active':'' ?>">更新</a>
             <a href="?tab=settings" class="<?= $tab==='settings'?'active':'' ?>">设置</a>
         </div>
 
@@ -280,6 +326,8 @@ function renderDashboard()
             <?php renderSitesForm($sites); ?>
         <?php elseif ($tab === 'mapping'): ?>
             <?php renderMappingForm($mapping); ?>
+        <?php elseif ($tab === 'update'): ?>
+            <?php renderUpdateForm(); ?>
         <?php elseif ($tab === 'settings'): ?>
             <?php renderSettingsForm($settings); ?>
         <?php endif; ?>
@@ -496,6 +544,58 @@ function renderMappingForm($mapping)
     <?php
 }
 
+function renderUpdateForm()
+{
+    $st = mxgj_settings();
+    $upKey = isset($st['updater_key']) && $st['updater_key'] !== '' ? $st['updater_key'] : ($st['admin_password'] ?? '');
+    ?>
+    <div class="panel">
+        <h2>在线更新</h2>
+        <div class="note" style="margin-bottom:16px">
+            从 GitHub 自动拉取最新代码进行升级。<br>
+            · 更新前会删除当前代码文件（保留 <b>config/</b> 配置与 <b>data/</b> 缓存）<br>
+            · 面向国内网络，自动检测多个 <b>GitHub 加速镜像</b> 并选择最快节点下载<br>
+            · 升级后文件与子目录权限统一设为 <b>0777</b>
+        </div>
+        <div class="form-grid">
+            <div><label>仓库</label><input type="text" value="<?= htmlspecialchars(($st['repo_owner'] ?? 'ssmhdssmhd')) . '/' . htmlspecialchars($st['repo_name'] ?? 'MXGJ') . '@' . htmlspecialchars($st['repo_branch'] ?? 'main') ?>" readonly></div>
+            <div><label>升级密钥（update.php 用）</label><input type="text" value="<?= htmlspecialchars($upKey) ?>" readonly></div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-green" onclick="doUpdate()">立即更新</button>
+            <button class="btn" onclick="dryUpdate()">仅测速（不执行）</button>
+        </div>
+        <div id="up-out" style="display:none;margin-top:16px">
+            <h2 style="font-size:14px">更新报告</h2>
+            <pre id="up-pre" style="background:#0d1118;padding:12px;border-radius:8px;overflow:auto;font-size:12px"></pre>
+        </div>
+        <div class="note" style="margin-top:20px">
+            手动升级地址：<code>http://你的域名/update.php?key=<?= htmlspecialchars($upKey) ?></code><br>
+            当后台自动更新失败时，可直接访问该地址完成升级；加 <code>&dry=1</code> 仅测速排查。
+        </div>
+    </div>
+    <script>
+    function doUpdate(){ runUpdater(false); }
+    function dryUpdate(){ runUpdater(true); }
+    function runUpdater(dry){
+        var out=document.getElementById('up-out'), pre=document.getElementById('up-pre');
+        out.style.display='block'; pre.textContent=(dry?'[dry] 仅测速中...':'更新中，请稍候（含测速+下载+解压+替换+设置777），不要关闭页面...');
+        var fd=new FormData(); fd.append('action','do_update'); if(dry)fd.append('dry','1');
+        fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
+            var s='';
+            (d.steps||[]).forEach(function(x,i){s+=(i+1)+') '+x+'\n';});
+            s+='\n测速：';
+            if(d.speed&&Object.keys(d.speed).length){Object.keys(d.speed).forEach(function(k){s+='\n  '+k+': '+d.speed[k]+'ms';});}
+            else{s+=' (无可用节点)';}
+            s+='\n\n'+(!d.ok?'✘ ':'✔ ')+d.msg;
+            pre.textContent=s;
+            if(!d.ok){pre.style.borderLeft='3px solid #e74c3c';}else{pre.style.borderLeft='3px solid #2ecc71';}
+        }).catch(function(e){pre.textContent='请求失败:'+e;});
+    }
+    </script>
+    <?php
+}
+
 function renderSettingsForm($settings)
 {
     ?>
@@ -506,6 +606,7 @@ function renderSettingsForm($settings)
             <div><label>请求超时（秒）</label><input type="number" name="timeout" value="<?= (int)$settings['timeout'] ?>" min="1" max="60"></div>
             <div><label>缓存时长（秒，0=关闭）</label><input type="number" name="cache_ttl" value="<?= (int)$settings['cache_ttl'] ?>" min="0"></div>
             <div class="full"><label>域名替换/中转前缀（留空则直接返回资源站地址）</label><input type="text" name="replace_domain" value="<?= htmlspecialchars($settings['replace_domain']) ?>" placeholder="如 https://cdn.example.com/m3u8/"></div>
+            <div class="full"><label>升级密钥（update.php 用，留空则回退管理密码）</label><input type="text" name="updater_key" value="<?= htmlspecialchars($settings['updater_key'] ?? '') ?>" placeholder="留空则使用管理密码"></div>
             <div class="full"><label>修改管理密码（留空保持不变）</label><input type="password" name="admin_password" placeholder="新密码"></div>
             <div class="full"><button type="submit" class="btn btn-green">保存设置</button></div>
         </form>

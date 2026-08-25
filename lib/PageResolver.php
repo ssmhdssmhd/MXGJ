@@ -50,7 +50,8 @@ class PageResolver
         }
         $episode = 0;
         $cleaned = self::clean($title, $episode);
-        if ($cleaned === '') {
+        // 清洗结果为空或本身就是平台/站点词时，视为无效标题，回退
+        if ($cleaned === '' || in_array($cleaned, self::SITE_WORDS, true)) {
             return ['title' => '', 'episode' => 0, 'from' => ''];
         }
         return [
