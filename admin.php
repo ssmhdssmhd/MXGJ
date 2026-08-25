@@ -376,8 +376,11 @@ switch ($ACTION) {
 
     case 'do_update':
         // 后台触发的在线更新（dry=1 时仅测速）
-        $st  = mxgj_settings();
-        $res = Updater::run($st['admin_password'], !empty($_POST['dry']));
+        // 用「有效升级密钥」校验：优先 updater_key，未设置才回退 admin_password
+        $st     = mxgj_settings();
+        $effKey = isset($st['updater_key']) && trim((string)$st['updater_key']) !== ''
+            ? trim((string)$st['updater_key']) : ($st['admin_password'] ?? '');
+        $res = Updater::run($effKey, !empty($_POST['dry']));
         Logger::log('update', (!empty($_POST['dry']) ? '[测速] ' : '') . ($res['ok'] ? '更新成功' : '更新失败') . '：' . $res['msg'], $res['ok'] ? 'success' : 'error', ['applied' => $res['applied'] ?? false, 'steps' => $res['steps'] ?? [], 'speed' => $res['speed'] ?? []]);
         mxgj_json_out([
             'ok'    => $res['ok'],

@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.12.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.12.1-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,10 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.12.1] 2026-08-25 · 在线更新「老是报错/生成不了完整代码」修复
+- 修复后台「更新」按钮密钥不匹配：`do_update` 改用有效升级密钥（优先 `updater_key`，否则回退 `admin_password`）——此前设置了自定义升级密钥时后台更新必报「升级密钥不合法」、不下载不替换
+- 清除失效镜像（`mirror.ghproxy.com`/`ghproxy.com`），测速跟随 302，减少「所有节点不可达」误报
 
 ### [v1.12.0] 2026-08-25 · 资源站「播放入口 player_entry」（特殊资源站单独返回形式）
 - 后台「资源站」每行新增**播放入口（可选）**字段：仅该站命中时返回 `本站/<入口>?url=真实播放地址`（如 `player.php`，适配返回 HTML 播放页的特殊资源站）

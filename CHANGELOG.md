@@ -2,6 +2,17 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.12.1] - 2026-08-25
+
+### 🔧 修复：在线更新「老是报错 / 生成不了完整代码」
+
+- **后台「更新」按钮密钥不匹配**（根因）：`do_update` 固定传 `admin_password` 当升级密钥，但校验用的是「有效密钥 = `updater_key` ?: `admin_password`」。
+  - 一旦后台设置了自定义「升级密钥(updater_key)」，后台更新必返回**升级密钥不合法**，导致不下载、不替换 →「生成不了完整代码」
+  - 修复：`do_update` 改用有效升级密钥（优先 `updater_key`，未设置才回退 `admin_password`），与 `update.php` 保持一致
+- **清除失效镜像**：移除 `mirror.ghproxy.com` / `ghproxy.com`（已 SSL 失败），精简为 直连 / `ghfast.top` / `ghproxy.net` / `gh-proxy.com`
+- **测速跟随 302**：`speedMeter` 添加 `FOLLOWLOCATION`，避免 github raw 302 跳转被误判「不可达」，可用节点更多、减少「所有节点不可达」误报
+- 端到端实测：`Updater::run('moxi123')` 成功（下载/解压/替换/777 全通过）
+
 ## [1.12.0] - 2026-08-25
 
 ### ✨ 新增：资源站「播放入口 player_entry」（特殊资源站单独返回形式）
