@@ -118,6 +118,16 @@ https://cdn.example.com/play/2/index.m3u8
 
 后台 → **映射表** 页，官方ID映射格式：`vid:视频ID` 或 `cid:剧集ID`。
 
+> 多数情况下你**无需手动添加**：链接无法直接解析时，系统会自动抓取官方页面
+> 识别「剧名+集数」并**自动写入映射表**，下次直接命中、不再联网抓取。
+>
+> 支持平台及链接示例：
+> - 腾讯视频：`.../play?cid=mzc00200zx8psx0&vid=k4102szvyce`（cid/vid 双ID）
+> - 爱奇艺：`https://www.iqiyi.com/v_19hly1wd1gg.html`（`v_` ID）
+> - 优酷：`https://m.youku.com/alipay_video/id_fcad042e84ef43ce8309.html`（`id_` ID）
+> - 芒果TV：`https://m.mgtv.com/b/731684/24269945.html`（cid=731684，vid=24269945）
+> - 哔哩哔哩：`https://www.bilibili.com/bangumi/play/ep431046`（`av`/`BV`/`ep`）
+
 例如腾讯链接 `.../play?cid=mzc00200zx8psx0&vid=k4102szvyce` 是**庆余年第2集**：
 
 | ID                 | 剧名   | 集数 |

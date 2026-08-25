@@ -27,7 +27,9 @@ function http_get(string $url, int $timeout = 10): array
     ]);
     $body = curl_exec($ch);
     $err  = curl_error($ch);
-    curl_close($ch);
+    if (function_exists('curl_close')) {
+        @curl_close($ch);
+    }
     return ['body' => $body, 'error' => $err];
 }
 

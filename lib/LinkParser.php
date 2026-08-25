@@ -40,10 +40,11 @@ class LinkParser
             return array_merge($base, ['platform' => '优酷', 'vid' => $vid, 'episode' => $ep]);
         }
 
-        // 芒果TV
+        // 芒果TV（如 /b/{cid}/{vid}.html 或 /b/{cid}.html）
         if (self::host($url, ['mgtv.com', 'hunantv.com'])) {
-            $vid = self::regex($url, '~/(?:b|v)/_?(\d+)\.html~i') ?? '';
-            return array_merge($base, ['platform' => '芒果TV', 'vid' => $vid]);
+            $cid = self::regex($url, '~/(?:b|v|h)/_?(\d+)(?:/\d+)?\.html~i') ?? '';
+            $vid = self::regex($url, '~/(?:b|v|h)/_?\d+/(\d+)\.html~i') ?? '';
+            return array_merge($base, ['platform' => '芒果TV', 'cid' => $cid, 'vid' => $vid]);
         }
 
         // 哔哩哔哩
