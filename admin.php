@@ -178,6 +178,37 @@ switch ($ACTION) {
         $res  = SiteSearcher::search([$site], $title, $ep, (int)mxgj_settings()['timeout']);
         mxgj_json_out($res);
 
+    case 'detect_site':
+        // 检测苹果CMS10采集接口并自动构建模板
+        $raw = trim($_POST['url'] ?? '');
+        if ($raw === '') mxgj_json_out(['code' => 400, 'msg' => '请输入采集接口地址']);
+        $det = SiteDetector::detect($raw, (int)mxgj_settings()['timeout']);
+        mxgj_json_out($det);
+
+    case 'save_site_one':
+        // 弹窗里检测后确认保存（新增或按模板覆盖修改）
+        $name_ = trim($_POST['name'] ?? '');
+        $tpl_  = trim($_POST['template'] ?? '');
+        if ($name_ === '' || $tpl_ === '') mxgj_json_out(['code' => 400, 'msg' => '缺少站点名称或模板']);
+        $list = mxgj_sites();
+        $hit  = null;
+        foreach ($list as $i => $s) {
+            if ((($s['template'] ?? ($s['url'] ?? '')) === $tpl_) || (($s['name'] ?? '') === $name_ && ($s['name'] ?? '') !== '')) {
+                $hit = $i;
+                break;
+            }
+        }
+        $entry = ['name' => $name_, 'url' => $tpl_, 'template' => $tpl_];
+        if ($hit !== null) {
+            $list[$hit] = $entry;
+            $mode = 'update';
+        } else {
+            $list[] = $entry;
+            $mode = 'add';
+        }
+        mxgj_write_json($sitesFile, ['sites' => $list]);
+        mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($mode === 'add' ? '已添加' : '已修改') . '资源站：' . $name_, 'sites' => count($list)]);
+
     case 'do_update':
         // 后台触发的在线更新（dry=1 时仅测速）
         $st  = mxgj_settings();
@@ -431,15 +462,22 @@ function renderSitesForm($sites)
             示例一（JSON 源）：<code>http://api.example.com/vod?wd=%u&ep=%p</code><br>
             示例二（列表页）：<code>http://your.site/search?wd=%s&page=%p</code>
         </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+            <button type="button" class="btn btn-green" onclick="openDetect()">⚡ 检测并自动添加（苹果CMS10采集接口）</button>
+            <span class="note" style="margin:0;color:#8892ab">只需粘贴采集接口地址，系统自动探测并生成搜索模板，保存后即可被前台调用。</span>
+        </div>
         <form method="post">
             <input type="hidden" name="action" value="save_sites">
             <table id="site-tbl">
-                <tr><th style="width:200px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th style="width:60px"></th></tr>
+                <tr><th style="width:170px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th style="width:120px"></th></tr>
                 <?php if ($sites): foreach ($sites as $i => $s): ?>
                     <tr>
                         <td><input type="text" name="sites[<?= $i ?>][name]" value="<?= htmlspecialchars($s['name']) ?>"></td>
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
-                        <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
+                        <td>
+                            <button type="button" class="btn" onclick="openDetect(<?= htmlspecialchars(json_encode([$s['name'], $s['template']])) ?>)">编辑</button>
+                            <button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button>
+                        </td>
                     </tr>
                 <?php endforeach; else: ?>
                     <tr>
@@ -450,7 +488,7 @@ function renderSitesForm($sites)
                 <?php endif; ?>
             </table>
             <div style="margin:16px 0">
-                <button type="button" class="btn" onclick="addRow()">+ 添加资源站</button>
+                <button type="button" class="btn" onclick="addRow()">+ 添加资源站（手动）</button>
                 <button type="submit" class="btn btn-green">保存资源站</button>
             </div>
         </form>
@@ -484,7 +522,84 @@ function renderSitesForm($sites)
         fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(d=>out.textContent=JSON.stringify(d,null,2))
             .catch(e=>out.textContent='失败:'+e);
     }
+    /* ---- 苹果CMS采集接口 检测 / 自动添加 / 修改 ---- */
+    function openDetect(pre){
+        if(pre&&pre.length===2){
+            document.getElementById('dd-url').value=(pre[1]||'').replace(/[?&]ac=videolist[&]?|(?:\?|&)wd=%u[&]?/g,'');
+            document.getElementById('dd-name').value=pre[0]||'';
+            document.getElementById('dd-tpl').value=pre[1]||'';
+            document.getElementById('dd-msg').textContent='已载入「编辑」模式：修正后点「重新检测」或直接修改保存。';
+            document.getElementById('dd-msg').style.color='#7fc1ff';
+        }else{
+            document.getElementById('dd-url').value='';
+            document.getElementById('dd-name').value='';
+            document.getElementById('dd-tpl').value='';
+            document.getElementById('dd-msg').textContent='粘贴苹果CMS10采集接口地址，点「检测」自动生成模板与名称。';
+            document.getElementById('dd-msg').style.color='';
+            document.getElementById('dd-hint').style.display='none';
+        }
+        document.getElementById('dd-modal').style.display='flex';
+    }
+    function closeDetect(){ document.getElementById('dd-modal').style.display='none'; }
+    function detectSite(){
+        var url=document.getElementById('dd-url').value.trim();
+        if(!url){alert('请先填写采集接口地址');return;}
+        var msg=document.getElementById('dd-msg');
+        msg.textContent='检测中...';msg.style.color='#e2b93b';
+        document.getElementById('dd-hint').style.display='none';
+        var fd=new FormData();fd.append('action','detect_site');fd.append('url',url);
+        fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(function(d){
+            if(d.ok){
+                document.getElementById('dd-name').value=d.name||'';
+                document.getElementById('dd-tpl').value=d.template||'';
+                document.getElementById('dd-hint').style.display='block';
+                var smp=d.sample||{};
+                document.getElementById('dd-hint-name').textContent=smp.name||'(无)';
+                document.getElementById('dd-hint-url').textContent=smp.url||'';
+                msg.textContent='✔ 检测成功（'+d.type+'）：可获取真实资源，模板已生成，可修改后保存。';
+                msg.style.color='#2ecc71';
+            }else{
+                msg.textContent='✘ 检测失败：'+(d.msg||'未知错误');
+                msg.style.color='#e74c3c';
+            }
+        }).catch(function(e){msg.textContent='请求失败:'+e;msg.style.color='#e74c3c';});
+    }
+    function saveSiteOne(){
+        var name=document.getElementById('dd-name').value.trim();
+        var tpl=document.getElementById('dd-tpl').value.trim();
+        if(!name||!tpl){alert('请填写站点名称和模板');return;}
+        var msg=document.getElementById('dd-msg');
+        var fd=new FormData();fd.append('action','save_site_one');fd.append('name',name);fd.append('template',tpl);
+        fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(function(d){
+            if(d.ok){ msg.textContent='✔ '+d.msg+'，正在刷新...';msg.style.color='#2ecc71';
+                setTimeout(function(){location.href='admin.php?tab=sites&saved=1';},500);
+            }else{ msg.textContent='✘ '+(d.msg||'保存失败');msg.style.color='#e74c3c'; }
+        }).catch(function(e){alert('请求失败:'+e);});
+    }
     </script>
+
+    <div id="dd-modal" style="display:none;position:fixed;inset:0;background:rgba(5,10,20,.7);z-index:999;align-items:center;justify-content:center">
+        <div style="background:#141b2d;border:1px solid #2a3550;border-radius:12px;padding:22px;width:640px;max-width:94vw;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+            <h3 style="margin:0 0 12px;font-size:15px">⚡ 检测并自动添加 / 修改资源站（苹果CMS10 采集接口）</h3>
+            <div style="font-size:13px;color:#b8c0d2;margin-bottom:12px">只需粘贴采集接口地址，系统会自动探测返回格式、生成「搜索模板」与站点名称。</div>
+            <div><label>采集接口地址</label>
+                <input type="text" id="dd-url" placeholder="https://caiji.xxx.com/api.php/provide/vod/" style="width:100%;box-sizing:border-box">
+            </div>
+            <div style="margin-top:10px"><button type="button" class="btn btn-green" onclick="detectSite()" style="margin-right:8px">检测</button><button type="button" class="btn" onclick="closeDetect()">取消</button></div>
+            <div id="dd-hint" style="display:none;background:#10172a;border:1px solid #223;border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;color:#9aa4bc">
+                样本：<span id="dd-hint-name"></span><br>首条地址：<code id="dd-hint-url" style="word-break:break-all"></code>
+            </div>
+            <div id="dd-msg" style="margin-top:12px;font-size:13px">粘贴苹果CMS10采集接口地址，点「检测」自动生成模板与名称。</div>
+            <div style="margin-top:14px">
+                <div style="margin-bottom:8px"><label>站点名称</label><input type="text" id="dd-name" style="width:100%;box-sizing:border-box"></div>
+                <div><label>搜索模板（已自动生成，可微调）</label><input type="text" id="dd-tpl" style="width:100%;box-sizing:border-box" onclick="this.select()"></div>
+            </div>
+            <div style="margin-top:16px;text-align:right">
+                <button type="button" class="btn" onclick="closeDetect()" style="margin-right:8px">关闭</button>
+                <button type="button" class="btn btn-green" onclick="saveSiteOne()">✔ 确认保存</button>
+            </div>
+        </div>
+    </div>
     <?php
 }
 
@@ -663,6 +778,18 @@ function renderHelp()
                 <li>即：资源站需要的是「<b>剧名 + 集数</b>」，并不关心官方平台的 <code>vid/cid</code></li>
             </ul>
             <p style="margin:8px 0 0">因此本系统用「映射表（<code>vid/cid → 剧名+集数</code>）」作为桥：把官方链接的 <code>vid/cid</code> 翻译成资源站能识别的「剧名+集数」，再按集数从 <code>vod_play_url</code> 提取 m3u8。</p>
+        </div>
+
+        <h2>资源站检测 & 自动添加（苹果CMS10）</h2>
+        <div class="box">
+            <p style="margin:0">「资源站」页点 <b>⚡ 检测并自动添加</b>，弹出输入框，只需要粘贴你手上的 <b>苹果CMS10 采集接口地址</b>
+            （形如 <code>https://caiji.xxx.com/api.php/provide/vod/</code>），点「检测」即可：</p>
+            <ul style="margin:6px 0;padding-left:18px">
+                <li>自动校验接口可达性，并识别返回是否为苹果CMS列表（<code>list[]</code> 含可播放 http 地址），证明能取到<b>真实资源</b></li>
+                <li>自动生成搜索模板 <code>?ac=videolist&wd=%u</code> 与可读站点名称，并预览样本剧名+首条真实地址</li>
+                <li>确认后自动<b>新增</b>或按名称<b>修改</b>，保存到 <code>config/sites.json</code>，前台即刻并发调用</li>
+            </ul>
+            <p style="margin:8px 0 0">现有站点行上的「编辑」会打开同一弹窗并预填，便于修正后重新检测/保存。</p>
         </div>
 
         <h2>映射如何自动生成</h2>
