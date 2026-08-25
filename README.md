@@ -8,6 +8,24 @@
 
 ---
 
+## 📌 更新说明（置顶，最新在最上）
+
+### v1.3.0 · 2026-08-25 — 定时自动采集映射 + 后台帮助
+- 新增 **`cron/mapping.php` 定时访问功能**，周期性自动完成映射采集，省去手动：
+  - **官方种子链接补全**：遍历 `settings.json → cron → seed_links`，对未映射的官方链接自动抓取剧名+集数并写入映射表（已存在则跳过、不覆盖人工配置）
+  - **资源站库存盘点**：并发拉取资源站最新采集列表，把「在库剧名 + 集数」写入 `mapping.json → stock`
+- 前台返回 `code=200` 时自动固化映射（`vid/cid → 剧名+集数`），下次直接命中、不再联网抓取
+- 后台新增 **「帮助」tab**：含资源站「映射要求」说明与「定时访问功能」使用文档（crontab 用法 / dry 预览 / 运行记录）
+- 支持平台：腾讯视频 / 爱奇艺 / 优酷 / 芒果TV / 哔哩哔哩 / PPTV（芒果已修复双数字 `cid/vid` 提取）
+- 使用方法见下方「🕰️ 定时自动采集映射」章节
+
+### v1.2.1 · 2026-08-25 — 芒果/优酷实测映射 + 修复
+- 修复芒果TV `/b/{cid}/{vid}.html` 未能提取 `cid/vid` 导致自动映射不落库的问题
+- 新增实测映射：芒果「你是迟来的欢喜」、优酷「师兄太稳健」「以法之名」、哔哩「开心锤锤」
+- 清理 `tests/run_test.php` 中 PHP 8.5 `curl_close` 弃用告警，回归 8/8 通过
+
+---
+
 ## ✨ 功能特性
 
 - 🧵 **多线程资源站搜索**：基于 `curl_multi` 同时并发请求后台全部资源站，耗时≈最慢站点，而非站点数量×单站耗时
@@ -17,6 +35,8 @@
 - 🧩 **资源站模板**：`%s / %u / %t / %p` 占位符，兼容 JSON / JSONP / 纯文本 等任意返回格式
 - 📦 **文件缓存**：搜索结果缓存，减少对资源站的重复请求
 - 🛠️ **可视化后台**：资源站管理、映射管理、系统设置、一键测试，无需改代码
+- 🕰️ **定时自动采集映射**：`cron/mapping.php` 按周期自动补全官方链接映射 + 盘点资源站库存，省去手动（详见对应章节）
+- ⛑️ **后台帮助**：内置资源站「映射要求」与「定时访问功能」使用文档
 - 🤖 **一键测试 · AI 智能分析**：自动抓取官方页面识别剧名+集数，并**自动写入映射表**
 - 🔄 **在线自动更新**：从 GitHub 多加速镜像自动测速选最快节点拉取最新代码，更新后权限 777
 - 🔌 **JSONP 支持**：`callback` 参数，方便前端跨域调用
@@ -30,6 +50,8 @@ mxgj/
 ├── index.php               # 前台解析 API（入口）
 ├── admin.php               # 后台管理（登录后可配置）
 ├── update.php              # 独立升级入口（update.php?key=升级密钥）
+├── cron/
+│   └── mapping.php         # 定时自动采集映射（cron，可配 crontab）
 ├── lib/
 │   ├── bootstrap.php       # 公共引导 / JSON 文件读写 / 设置加载 / 自动写映射
 │   ├── LinkParser.php      # 官方链接解析（平台 / vid / cid / 集数）
@@ -245,6 +267,61 @@ return 'your_secret_key';
 ```
 
 ---
+
+## 🕰️ 定时自动采集映射（cron）
+
+新增 `cron/mapping.php`，按周期自动做两件事，省去手动一条条添加映射：
+
+1. **官方种子链接补全**：遍历 `config/settings.json → cron → seed_links`，
+   对尚未映射的官方链接自动抓取「剧名+集数」并写入映射表（已存在则跳过、不覆盖人工配置）。
+2. **资源站库存盘点**：并发拉取各资源站最新采集列表，把「在库剧名 + 集数」写入 `mapping.json → stock`。
+
+### ① 配置种子链接
+
+编辑 `config/settings.json` 的 `cron.seed_links`，放入想追踪的官方剧集链接
+（支持腾讯/爱奇艺/优酷/芒果/哔哩哔哩等）：
+
+```json
+{
+  "cron": {
+    "key": "",
+    "interval_mins": 60,
+    "scan_sites": true,
+    "seed_links": [
+      "https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce",
+      "https://www.iqiyi.com/v_19hly1wd1gg.html",
+      "https://m.youku.com/alipay_video/id_fcad042e84ef43ce8309.html"
+    ]
+  }
+}
+```
+
+> `key` 为空时自动回退用 `updater_key`，再回退 `admin_password`。
+
+### ② 使用方式（任选其一）
+
+- 手动/浏览器**预览**（不写库）：
+
+  ```bash
+  php cron/mapping.php key=你的定时密钥 dry=1
+  # 或
+  curl -s "http://你的域名/cron/mapping.php?key=你的定时密钥&dry=1"
+  ```
+
+- Linux crontab 定时（每小时一次，`quiet` 抑制明细输出，适合 crontab）：
+
+  ```
+  0 * * * *  php /你的绝对路径/cron/mapping.php key=你的定时密钥 quiet
+  ```
+
+- 或通过 URL 定时：
+
+  ```bash
+  curl -s "http://你的域名/cron/mapping.php?key=你的定时密钥" >/dev/null
+  ```
+
+每次运行都会追加记录到 `data/cron_mapping.log`（最多保留 200 条），
+完整使用说明也内置在 **后台 → 帮助 → 定时访问功能**。
 
 ## 🧪 自测
 

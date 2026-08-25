@@ -2,6 +2,25 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-08-25
+
+### ✨ 新增
+
+- **定时自动采集映射**（`cron/mapping.php`）
+  - 按周期自动做两件事，省去手动添加映射：
+    1. **官方种子链接补全**：遍历 `settings.json → cron → seed_links`，对未映射的官方链接自动抓取剧名+集数并写入映射表（已存在则跳过、不覆盖人工配置）
+    2. **资源站库存盘点**：并发拉取资源站最新采集列表，把「在库剧名 + 集数」写入 `mapping.json → stock`
+  - 支持 `dry=1` 预览不写库、`quiet` 抑制明细、`key` 鉴权（回退 updater_key/admin_password）
+  - 每次运行追加记录到 `data/cron_mapping.log`（最多 200 条）
+- **后台新增「帮助」tab**
+  - 内置资源站「映射要求」说明（苹果CMS：按剧名搜索 + `vod_play_url` 集数提取）
+  - 「定时访问功能」使用文档：种子链接配置 / crontab 用法 / dry 预览 / 最近运行记录
+
+### 🧪 实测
+
+- `cron/mapping.php` 实测：7 个默认种子全部命中跳过、资源站盘点正常
+- 临时新增爱奇艺 `v_cix2gal5d8` 种子，自动采集成映射 `vid:cix2gal5d8 → 蝉 第1集`
+
 ## [1.2.1] - 2026-08-25
 
 ### 🐛 修复

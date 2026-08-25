@@ -312,6 +312,7 @@ function renderDashboard()
             <a href="?tab=sites" class="<?= $tab==='sites'?'active':'' ?>">资源站</a>
             <a href="?tab=mapping" class="<?= $tab==='mapping'?'active':'' ?>">映射表</a>
             <a href="?tab=update" class="<?= $tab==='update'?'active':'' ?>">更新</a>
+            <a href="?tab=help" class="<?= $tab==='help'?'active':'' ?>">帮助</a>
             <a href="?tab=settings" class="<?= $tab==='settings'?'active':'' ?>">设置</a>
         </div>
 
@@ -328,6 +329,8 @@ function renderDashboard()
             <?php renderMappingForm($mapping); ?>
         <?php elseif ($tab === 'update'): ?>
             <?php renderUpdateForm(); ?>
+        <?php elseif ($tab === 'help'): ?>
+            <?php renderHelp(); ?>
         <?php elseif ($tab === 'settings'): ?>
             <?php renderSettingsForm($settings); ?>
         <?php endif; ?>
@@ -593,6 +596,94 @@ function renderUpdateForm()
         }).catch(function(e){pre.textContent='请求失败:'+e;});
     }
     </script>
+    <?php
+}
+
+function renderHelp()
+{
+    $st = mxgj_settings();
+    $cronCfg = is_array($st['cron'] ?? null) ? $st['cron'] : [];
+    $cronKey = isset($cronCfg['key']) && trim((string)$cronCfg['key']) !== ''
+        ? trim((string)$cronCfg['key'])
+        : (isset($st['updater_key']) && trim((string)$st['updater_key']) !== ''
+            ? trim((string)$st['updater_key']) : (string)($st['admin_password'] ?? ''));
+    $seeds = isset($cronCfg['seed_links']) && is_array($cronCfg['seed_links']) ? $cronCfg['seed_links'] : [];
+    $cronUrl = 'http://你的域名/cron/mapping.php?key=' . htmlspecialchars($cronKey);
+    $logExists = is_file(MXGJ_DATA . '/cron_mapping.log');
+    $recent = [];
+    if ($logExists) {
+        $lines = array_filter(array_map('trim', @file(MXGJ_DATA . '/cron_mapping.log') ?: []));
+        $recent = array_slice($lines, 0, 5);
+    }
+    ?>
+    <style>
+        .help h2{font-size:16px;margin:26px 0 10px;border-left:4px solid #4f7cff;padding-left:10px}
+        .help h2:first-child{margin-top:0}
+        .help p,.help li{font-size:13px;line-height:1.8;color:#c6cde0}
+        .help code{background:#1b2233;color:#7fc1ff;padding:1px 6px;border-radius:4px}
+        .help pre{background:#0d1118;padding:12px;border-radius:8px;overflow:auto;font-size:12px;color:#9fdc9f}
+        .help .box{background:#10172a;border:1px solid #223;border-radius:8px;padding:14px 16px;margin:10px 0}
+        .help .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+    </style>
+    <div class="help panel">
+
+        <h2>系统简介</h2>
+        <p>沫兮官替系统：输入官方视频链接 → 自动解析「剧名 + 集数」→ 并发向后台配置的资源站搜索 → 返回可播放的 m3u8 地址（JSON）。全程无数据库，配置均存于 <code>config/</code>。</p>
+
+        <h2>资源站「映射要求」说明</h2>
+        <div class="box">
+            <p style="margin:0 0 6px">市面上绝大多数影视资源站使用 <b>苹果 CMS 采集接口</b>（如西瓜等多站），对内容的标识要求是：</p>
+            <ul style="margin:0;padding-left:18px">
+                <li>按<b>剧名</b>搜索：<code>?ac=videolist&wd=剧名</code>（返回 <code>list[]</code>）</li>
+                <li>剧内各集地址在 <code>vod_play_url</code>，格式为 <code>第1集$http://…#第2集$http://#…#第N集$http://</code></li>
+                <li>即：资源站需要的是「<b>剧名 + 集数</b>」，并不关心官方平台的 <code>vid/cid</code></li>
+            </ul>
+            <p style="margin:8px 0 0">因此本系统用「映射表（<code>vid/cid → 剧名+集数</code>）」作为桥：把官方链接的 <code>vid/cid</code> 翻译成资源站能识别的「剧名+集数」，再按集数从 <code>vod_play_url</code> 提取 m3u8。</p>
+        </div>
+
+        <h2>映射如何自动生成</h2>
+        <div class="box">
+            <ul style="margin:0;padding-left:18px">
+                <li><b>首次访问兜底</b>：链接无法直接解析时，系统自动抓取官方页面识别剧名+集数，并<b>自动写入映射表</b>（下次直接命中、不再联网）。</li>
+                <li><b>页面兜底失效</b>：返回 502 时，请到「映射表」手动添加该 <code>vid/cid</code> 对应的剧名与集数。</li>
+                <li><b>剧名差异</b>：官方剧名与资源站不一致时，用「剧名映射」把官方名替换为资源站用的名。</li>
+            </ul>
+        </div>
+
+        <h2>定时访问功能（cron 自动采集映射）</h2>
+        <div class="box">
+            <p>新增 <code>cron/mapping.php</code>：按周期自动做两件事，省去手动一条条加。</p>
+            <ol style="margin:6px 0;padding-left:18px">
+                <li><b>官方种子链接补全</b>：遍历 <code>settings.json → cron → seed_links</code>，对尚未映射的官方链接自动抓取剧名+集数并写入映射表（已存在的跳过、不覆盖人工配置）。</li>
+                <li><b>资源站库存盘点</b>：并发拉取各资源站最新采集列表，把「在库剧名 + 集数范围」写入 <code>mapping.json → stock</code>，方便了解资源站有哪些剧可选。</li>
+            </ol>
+            <p style="margin:10px 0 4px"><b>① 配置种子链接</b></p>
+            <p style="margin:0">编辑 <code>config/settings.json</code> 的 <code>cron.seed_links</code>，把你想追踪的官方剧集链接放进去（支持腾讯/爱奇艺/优酷/芒果/哔哩哔哩等）。当前已配 <?= count($seeds) ?> 条：</p>
+            <pre><?php foreach ($seeds as $s) { echo htmlspecialchars($s) . "\n"; } ?></pre>
+            <p style="margin:10px 0 4px"><b>② 使用方法（两种方式任选）</b></p>
+            <p style="margin:0">· 手动/浏览器测试预览（不写库）：</p>
+            <pre><?= $cronUrl ?>&amp;dry=1</pre>
+            <p style="margin:0">· Linux crontab 定时（每小时一次，<code>quiet</code> 可抑制明细输出）：</p>
+            <pre>0 * * * *  php <?= MXGJ_ROOT ?>/cron/mapping.php key=<?= htmlspecialchars($cronKey) ?> quiet</pre>
+            <p style="margin:0">· 或通过 URL 定时：</p>
+            <pre>curl -s "<?= $cronUrl ?>" >/dev/null</pre>
+        </div>
+
+        <h2>定时任务运行记录</h2>
+        <div class="box">
+            <?php if (!$logExists || $recent === []): ?>
+                <p style="margin:0">暂未执行过定时采集（或日志为空）。运行一次 <code>cron/mapping.php</code> 后会在此显示最近记录。</p>
+            <?php else: ?>
+                <pre><?php foreach ($recent as $line) { echo htmlspecialchars($line) . "\n"; } ?></pre>
+                <p style="margin:6px 0 0;color:#8892ab">完整日志位于 <code>data/cron_mapping.log</code>（最多保留 200 条）</p>
+            <?php endif; ?>
+        </div>
+
+        <h2>版本信息</h2>
+        <div class="box">
+            <p style="margin:0">当前版本：<b>v<?= MXGJ_VERSION ?></b> · 升级与更新说明见 <code>CHANGELOG.md</code> 顶部 / <code>README.md</code> 顶部「📌 更新说明」。</p>
+        </div>
+    </div>
     <?php
 }
 
