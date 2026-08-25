@@ -28,7 +28,7 @@ class Updater
         ];
     }
 
-    /** 加速节点（前缀与直连 github 组合；仅保留当前可达的节点） */
+    /** 加速节点（前缀与直连 github 组合） */
     public static function mirrors(): array
     {
         return [
@@ -36,6 +36,8 @@ class Updater
             'fast.top'       => 'https://ghfast.top/https://github.com',
             'ghproxy.net'    => 'https://ghproxy.net/https://github.com',
             'gh-proxy.com'   => 'https://gh-proxy.com/https://github.com',
+            'mirror.ghproxy' => 'https://mirror.ghproxy.com/https://github.com',
+            '>ghproxy.com'   => 'https://ghproxy.com/https://github.com',
         ];
     }
 
@@ -204,9 +206,6 @@ class Updater
             CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_USERAGENT      => 'MXGJ-Updater',
             CURLOPT_NOBODY         => false,
-            // 跟随 302（如 github raw 跳到 raw.githubusercontent），避免误判不可达
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 5,
         ]);
         $body = curl_exec($ch);
         $err  = curl_error($ch);
