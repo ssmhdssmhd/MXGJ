@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.10.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.11.0-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,12 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.11.0] 2026-08-25 · 播放器页面 player.php（lgzym3u8 / 蓝光资源 MacPlayer）
+- 新增 `player.php`：将「Igzym3u8」播放器配置（苹果CMS MacPlayer / 蓝光资源）**原样加载**渲染真实播放
+  - 调用：`/player.php?url=<播放地址>` 或 `/player.php?u=<base64url 加密地址>`（与表面播放链接同款加密，可作播放入口）
+  - 内置 MacPlayer 运行时：设置 `PlayUrl` → 执行导入 `code`（iframe 指向 `https://vv00.xyz?url=播放地址`）→ `MacPlayer.Show()` 渲染
+  - 可在后台「App 设置」把播放入口路径改为 `player.php`，让表面播放链接直接打开该播放器页面
 
 ### [v1.10.0] 2026-08-25 · App 设置「表面播放链接」（自托管播放入口）
 - 后台「设置」新增 **App 设置（表面播放链接，默认开启）**：返回的播放链接统一伪装为当前域名下的播放入口
@@ -321,7 +327,7 @@ max_sites_per_request = 4     (每次最多并发请求 4 个站)
 | 配置项 | 说明 |
 | ---- | ---- |
 | 启用表面播放链接 | 开关（快捷开关即时生效）；关闭后直接返回真实地址 |
-| 播放入口路径 | 默认 `play.php`，可自定义 |
+| 播放入口路径 | 默认 `play.php`，可自定义；如需浏览器播放页可改为 `player.php` |
 | 播放方式 | **代理转发**（默认，推荐）：本站抓取并重写 m3u8 切片/密钥地址、ts/mp4 二进制流式转发，完全隐藏真实源，APP 原生播放器可直连播放；HTML 播放页自动降级为 302 跳转。<br>**302 跳转**：直接跳转真实地址（省流量，但真实地址在跳转后可见） |
 
 > 若资源站配置了「跟随播放链接」中转前缀（如 `https://vv00.xyz?url=`），系统会自动提取真实地址后再包装，中转域名不会外泄。
@@ -383,6 +389,7 @@ mxgj/
 ├── index.php               # 前台解析 API（入口）
 ├── admin.php               # 后台管理（登录后可配置）
 ├── play.php                # 表面播放入口（App 表面播放链接 /play.php?u=）
+├── player.php              # 播放器页面（lgzym3u8 / 蓝光资源 MacPlayer）
 ├── update.php              # 独立升级入口（update.php?key=升级密钥）
 ├── cron/
 │   └── mapping.php         # 定时自动采集映射（可配 crontab）

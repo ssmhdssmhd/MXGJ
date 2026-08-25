@@ -2,6 +2,17 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.11.0] - 2026-08-25
+
+### ✨ 新增：播放器页面 player.php（lgzym3u8 / 蓝光资源 MacPlayer）
+
+- 新增 `player.php`：将导入的「Igzym3u8」播放器配置（苹果CMS MacPlayer / 蓝光资源）**原样加载**渲染真实播放
+  - 调用：`/player.php?url=<播放地址>`（明文）或 `/player.php?u=<base64url 加密地址>`（与表面播放链接同款加密，可作播放入口）
+  - 页面内置 MacPlayer 最小运行时：设置 `PlayUrl` → 执行导入的 `code`（iframe 指向 `https://vv00.xyz?url=播放地址`）→ `MacPlayer.Show()` 渲染
+  - 深色播放器 UI、顶部来源徽标、加载过渡动画、非法参数 400
+- 浏览器实测：`#player` 成功注入 vv00.xyz iframe（`src` 携带播放地址），页面无 JS 报错
+- 可在后台「App 设置」把播放入口路径改为 `player.php`，让表面播放链接直接打开该播放器页面
+
 ## [1.10.0] - 2026-08-25
 
 ### ✨ 新增：App 设置 - 表面播放链接（自托管播放入口，解决「欺诈伪装后不能播放」）
