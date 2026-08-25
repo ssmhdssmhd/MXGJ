@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.6.0');
+define('MXGJ_VERSION', '1.6.1');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));

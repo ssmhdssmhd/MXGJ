@@ -69,6 +69,7 @@ switch ($ACTION) {
                 'name'     => $name,
                 'url'      => $url,          // 兼容旧字段
                 'template' => $url,          // 标准模板字段
+                'enabled'  => array_key_exists('enabled', $s) ? !empty($s['enabled']) : true, // 启用开关（默认启用）
             ];
         }
         mxgj_write_json($sitesFile, ['sites' => $clean]);
@@ -225,14 +226,31 @@ switch ($ACTION) {
         }
         $entry = ['name' => $name_, 'url' => $tpl_, 'template' => $tpl_];
         if ($hit !== null) {
+            $entry['enabled'] = array_key_exists('enabled', $list[$hit]) ? !empty($list[$hit]['enabled']) : true; // 保留原启用状态
             $list[$hit] = $entry;
             $mode = 'update';
         } else {
+            $entry['enabled'] = true; // 新增默认启用
             $list[] = $entry;
             $mode = 'add';
         }
         mxgj_write_json($sitesFile, ['sites' => $list]);
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($mode === 'add' ? '已添加' : '已修改') . '资源站：' . $name_, 'sites' => count($list)]);
+
+    case 'toggle_site':
+        // 快捷启用/禁用单个资源站（即时生效，无需保存）
+        $tpl_ = trim($_POST['template'] ?? '');
+        $on   = !empty($_POST['enabled']);
+        if ($tpl_ === '') mxgj_json_out(['code' => 400, 'msg' => '缺少资源站模板']);
+        $list = mxgj_sites();
+        $hit  = null;
+        foreach ($list as $i => $s) {
+            if (($s['template'] ?? ($s['url'] ?? '')) === $tpl_) { $hit = $i; break; }
+        }
+        if ($hit === null) mxgj_json_out(['code' => 404, 'msg' => '资源站不存在']);
+        $list[$hit]['enabled'] = $on;
+        mxgj_write_json($sitesFile, ['sites' => $list]);
+        mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '资源站：' . ($list[$hit]['name'] ?? '')]);
 
     case 'do_update':
         // 后台触发的在线更新（dry=1 时仅测速）
@@ -378,6 +396,16 @@ function renderDashboard()
             .stat span{display:block;font-size:12px;color:#8a93a6;margin-top:4px}
             h2{font-size:16px;margin:0 0 16px;color:#fff}
             pre{background:#0d1118;padding:12px;border-radius:8px;overflow:auto;font-size:12px}
+            .center{text-align:center}
+            .row-disabled td{opacity:.5}
+            .row-disabled input[type=text]{text-decoration:line-through}
+            /* 启用/禁用开关 */
+            .toggle{position:relative;display:inline-block;width:44px;height:24px;vertical-align:middle}
+            .toggle input{display:none}
+            .toggle .slider{position:absolute;cursor:pointer;inset:0;background:#3a4460;border-radius:24px;transition:.2s}
+            .toggle .slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+            .toggle input:checked + .slider{background:#2ecc71}
+            .toggle input:checked + .slider:before{transform:translateX(20px)}
         </style>
     </head>
     <body>
@@ -485,7 +513,8 @@ function renderSitesForm($sites)
         <div class="note" style="margin-bottom:16px">
             模板占位符说明：<b>%s</b>=剧名（不转码）、<b>%p</b>=集数、<b>%u/%t</b>=剧名（URL 编码）。<br>
             示例一（JSON 源）：<code>http://api.example.com/vod?wd=%u&ep=%p</code><br>
-            示例二（列表页）：<code>http://your.site/search?wd=%s&page=%p</code>
+            示例二（列表页）：<code>http://your.site/search?wd=%s&page=%p</code><br>
+            每行「启用」开关<b>即时生效</b>（无需保存）：关闭后该资源站不再参与前台搜索与心跳探测。
         </div>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
             <button type="button" class="btn btn-green" onclick="openDetect()">⚡ 检测并自动添加（苹果CMS10采集接口）</button>
@@ -494,11 +523,19 @@ function renderSitesForm($sites)
         <form method="post">
             <input type="hidden" name="action" value="save_sites">
             <table id="site-tbl">
-                <tr><th style="width:170px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th style="width:120px"></th></tr>
+                <tr><th style="width:170px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th style="width:80px">启用</th><th style="width:120px"></th></tr>
                 <?php if ($sites): foreach ($sites as $i => $s): ?>
-                    <tr>
+                    <?php $sEnabled = !array_key_exists('enabled', $s) || !empty($s['enabled']); ?>
+                    <tr class="<?= $sEnabled ? '' : 'row-disabled' ?>">
                         <td><input type="text" name="sites[<?= $i ?>][name]" value="<?= htmlspecialchars($s['name']) ?>"></td>
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
+                        <td class="center">
+                            <label class="toggle">
+                                <input type="checkbox" class="site-toggle" <?= $sEnabled ? 'checked' : '' ?>
+                                       data-tpl="<?= htmlspecialchars($s['template'], ENT_QUOTES) ?>">
+                                <span class="slider" title="<?= $sEnabled ? '已启用：参与搜索' : '已禁用：不参与搜索' ?>"></span>
+                            </label>
+                        </td>
                         <td>
                             <button type="button" class="btn" onclick="openDetect(<?= htmlspecialchars(json_encode([$s['name'], $s['template']])) ?>)">编辑</button>
                             <button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button>
@@ -508,6 +545,7 @@ function renderSitesForm($sites)
                     <tr>
                         <td><input type="text" name="sites[0][name]" placeholder="站点A"></td>
                         <td><input type="text" name="sites[0][template]" placeholder="http://api.example.com/vod?wd=%u&ep=%p"></td>
+                        <td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>
                         <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                     </tr>
                 <?php endif; ?>
@@ -534,9 +572,23 @@ function renderSitesForm($sites)
         var tr=document.createElement('tr');
         tr.innerHTML='<td><input type="text" name="sites['+rowIndex+'][name]" placeholder="站点"></td>'+
             '<td><input type="text" name="sites['+rowIndex+'][template]" placeholder="http://..." onclick="this.select()"></td>'+
+            '<td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>'+
             '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
         tbl.appendChild(tr);rowIndex++;
     }
+    /* ---- 快捷启用/禁用资源站（即时生效，无需保存） ---- */
+    document.addEventListener('change', function(e){
+        var cb=e.target;
+        if(!cb.classList||!cb.classList.contains('site-toggle'))return;
+        var tpl=cb.getAttribute('data-tpl');var on=cb.checked;
+        var tr=cb.closest('tr');
+        var fd=new FormData();fd.append('action','toggle_site');fd.append('template',tpl);fd.append('enabled',on?'1':'');
+        fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
+            if(d.ok){
+                if(tr){tr.classList.toggle('row-disabled',!on);var s=tr.querySelector('.slider');if(s)s.title=(on?'已启用：参与搜索':'已禁用：不参与搜索');}
+            }else{ cb.checked=!on; alert(d.msg||'切换失败'); }
+        }).catch(function(){ cb.checked=!on; alert('网络错误，切换失败'); });
+    });
     function testSite(){
         var title=document.getElementById('tt-title').value;
         var ep=document.getElementById('tt-ep').value;

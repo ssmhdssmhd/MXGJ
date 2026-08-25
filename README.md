@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.6.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.6.1-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,11 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.6.1] 2026-08-25 · 资源站快捷「启用/禁用」开关
+- 后台「资源站」列表每行新增**启用开关**（滑块），点击**即时生效、无需保存**
+- 关闭后该站**不再参与前台搜索与心跳探测**，禁用行置灰标识
+- 新站默认启用，编辑/保存保留启用状态；`sites.json` 每站新增 `enabled` 字段（兼容旧配置）
 
 ### [v1.6.0] 2026-08-25 · 后台「输出返回设置」（自定义返回字段映射）
 - 后台「设置」新增**输出返回设置**：前台返回的 JSON 字段完全由你定义

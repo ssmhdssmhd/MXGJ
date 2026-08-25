@@ -99,6 +99,10 @@ class SiteHealth
         $pool  = [];
 
         foreach ($sites as $site) {
+            // 用户手动禁用（后台「启用」开关）：直接跳过，不参与搜索/心跳
+            if (array_key_exists('enabled', $site) && empty($site['enabled'])) {
+                continue;
+            }
             $k = self::keyFor($site);
             $h = $state['sites'][$k] ?? self::defaultHealth();
             unset($state['sites'][$k]);
@@ -178,6 +182,10 @@ class SiteHealth
         $now    = time();
         $rows   = [];
         foreach ($sites as $site) {
+            // 用户手动禁用：跳过心跳探测
+            if (array_key_exists('enabled', $site) && empty($site['enabled'])) {
+                continue;
+            }
             $k = self::keyFor($site);
             $h = $state['sites'][$k] ?? self::defaultHealth();
             $r = $probes[$k] ?? ['ok' => false, 'ms' => 0];
