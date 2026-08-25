@@ -78,9 +78,12 @@ if ($name !== '') {
 }
 
 if ($name === '') {
+    $mapHint = $parsed['vid'] !== '' ? 'vid=' . $parsed['vid']
+             : ($parsed['cid'] !== '' ? 'cid=' . $parsed['cid'] : '');
     mxgj_json_out([
         'code' => 502,
-        'msg'  => '无法识别该链接对应的剧名，请到后台「映射表」添加 vid/cid 映射',
+        'msg'  => '无法识别该链接对应的剧名，请到后台「映射表」添加映射'
+                . ($mapHint !== '' ? '（' . $mapHint . '）' : ''),
         'url'  => '',
     ], 200);
 }
