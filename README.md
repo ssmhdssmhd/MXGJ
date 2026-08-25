@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.11.1-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.11.2-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,12 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.11.2] 2026-08-25 · 特殊资源站「跟随播放链接」自定义播放入口，原样返回
+- 资源站配置了「跟随播放链接」中转前缀时，返回链接**原样输出、不再做表面/伪装包装**
+  - 如填 `http://你的域名/player.php?url=` → 返回 `http://你的域名/player.php?url=真实地址`
+- 配合 1.11.1：真实地址为 HTML 播放页时，`player.php` 内嵌 `https://vv00.xyz?url=<真实地址>` iframe 播放器，可正常打开播放
+- 未配置前缀的普通资源站仍走「表面播放链接 / 欺诈伪装」
 
 ### [v1.11.1] 2026-08-25 · 修复 play.php 对 HTML 播放页「特殊资源站不能播放」
 - `play.php?u=<加密地址>` 遇 HTML 播放页（如 `https://lgvideo.xyz/player/xxx`）不再 302 跳转，改为**直接渲染内联播放器**（内嵌 `https://vv00.xyz?url=<真实地址>` iframe，与 player.php / lgzym3u8 一致）
@@ -188,6 +194,11 @@ php -S 0.0.0.0:8080 -t .
   2. 自动生成搜索模板 `?ac=videolist&wd=%u` 与站点名称，并预览样本剧名 + 首条真实地址；
   3. 确认后自动**新增**或按名称**修改**，保存到 `config/sites.json`，前台立即并发调用。
 - 每行「编辑」打开同一弹窗预填，便于修正后重新检测/保存。
+
+**跟随播放链接（中转前缀）**：仅该资源站命中时，在真实播放地址前拼接。配置了前缀的资源站为**自定义播放入口（原样返回，不再做表面/伪装包装）**，适合「特殊资源站」：
+
+- 填 `https://vv00.xyz?url=` → 返回 `https://vv00.xyz?url=真实地址`
+- 填 `http://你的域名/player.php?url=` → 返回 `http://你的域名/player.php?url=真实地址`（真实地址为 HTML 播放页时，`player.php` 自动内嵌 vv00.xyz 播放器，可正常打开播放）
 
 **模板占位符**：
 

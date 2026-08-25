@@ -639,6 +639,8 @@ function renderSitesForm($sites)
             示例二（列表页）：<code>http://your.site/search?wd=%s&page=%p</code><br>
             <b>跟随播放链接（中转前缀）</b>：仅该资源站命中时，在真实播放地址前拼接，如 <code>https://vv00.xyz?url=</code>
             → 返回 <code>https://vv00.xyz?url=真实地址</code>。留空则直接返回原地址。<br>
+            配置了前缀的资源站为<b>自定义播放入口（原样返回，不再做表面/伪装包装）</b>，适合「特殊资源站」：
+            如填 <code>http://你的域名/player.php?url=</code> → 返回 <code>http://你的域名/player.php?url=真实地址</code>。<br>
             每行「启用」开关<b>即时生效</b>（无需保存）：关闭后该资源站不再参与前台搜索与心跳探测。
         </div>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">

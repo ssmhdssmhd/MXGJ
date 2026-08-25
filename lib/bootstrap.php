@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.11.1');
+define('MXGJ_VERSION', '1.11.2');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -263,14 +263,33 @@ function mxgj_surface_url(string $url): string
 }
 
 /**
- * 统一链接保护：优先「App-表面播放链接」，其次「安全-欺诈/伪装（替换中转域名）」
+ * 统一链接保护：① 资源站「跟随播放链接」前缀原样返回 → ② App-表面播放链接 → ③ 安全-欺诈/伪装（替换中转域名）
+ *
+ * ① 优先级最高：站点已配置「跟随播放链接」中转前缀（如 http://域名/player.php?url=）时，
+ *    返回 url 已带该站自定义前缀（SiteSearcher 已拼接），直接原样返回、不再做表面/伪装包装，
+ *    便于「特殊资源站」使用自定义播放入口（如 player.php?url=真实地址）。
  */
 function mxgj_protect_url(string $url): string
 {
+    if ($url === '' || strpos($url, '://') === false) {
+        return $url;
+    }
+    // ① 站点已配置「跟随播放链接」中转前缀 → 该站自定义输出，原样返回
+    foreach (mxgj_sites() as $s) {
+        $p = trim((string)($s['proxy'] ?? ''));
+        if ($p === '' || strpos($p, '://') === false) {
+            continue;
+        }
+        if (strpos($url, $p) === 0) {
+            return $url;
+        }
+    }
+    // ② App 表面播放链接
     $app = mxgj_settings()['app'] ?? [];
     if (!empty($app['surface_enable'])) {
         return mxgj_surface_url($url);
     }
+    // ③ 安全-欺诈/伪装（替换中转前缀域名为当前域名）
     return mxgj_obfuscate_url($url);
 }
 
