@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.11.1');
+define('MXGJ_VERSION', '1.12.0');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -263,11 +263,47 @@ function mxgj_surface_url(string $url): string
 }
 
 /**
- * 统一链接保护：优先「App-表面播放链接」，其次「安全-欺诈/伪装（替换中转域名）」
+ * 当前站点完整前缀（scheme://host，含端口）
+ */
+function mxgj_host_prefix(): string
+{
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host === '') {
+        return '';
+    }
+    $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    return $scheme . '://' . $host;
+}
+
+/**
+ * 解析站点「跟随播放链接」前缀：把 {host} 占位符替换为当前域名。
+ * 例：{host}/player.php?url=  →  http://114.134.184.91:9005/player.php?url=
+ */
+function mxgj_resolve_proxy_prefix(string $proxy): string
+{
+    return str_replace('{host}', mxgj_host_prefix(), $proxy);
+}
+
+/**
+ * 统一链接保护：优先级从高到低
+ *  1) 站点「跟随播放链接」命中且前缀指向本站（如 {host}/player.php?url=）→ 保持该站自定义包装
+ *  2) App-表面播放链接（/play.php?u=）
+ *  3) 安全-欺诈/伪装（替换中转域名）
  */
 function mxgj_protect_url(string $url): string
 {
-    $app = mxgj_settings()['app'] ?? [];
+    if ($url === '' || strpos($url, '://') === false) {
+        return $url;
+    }
+    $self = mxgj_host_prefix();
+    $app  = mxgj_settings()['app'] ?? [];
+    // 站点级「跟随播放链接」优先：命中且前缀指向本站时，不再被表面链接改写
+    foreach (mxgj_sites() as $s) {
+        $p = mxgj_resolve_proxy_prefix(trim((string)($s['proxy'] ?? '')));
+        if ($p !== '' && strpos($url, $p) === 0 && $self !== '' && strpos($p, $self) === 0) {
+            return $url;
+        }
+    }
     if (!empty($app['surface_enable'])) {
         return mxgj_surface_url($url);
     }

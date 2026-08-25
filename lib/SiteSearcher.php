@@ -287,7 +287,8 @@ class SiteSearcher
             }
         }
         // 2) 站点级「跟随播放链接」中转前缀（仅配置了 proxy 的资源站命中时生效）
-        $proxy = trim((string)($site['proxy'] ?? ''));
+        //    支持 {host} 占位符 → 自动替换为当前域名（如 {host}/player.php?url=）
+        $proxy = mxgj_resolve_proxy_prefix(trim((string)($site['proxy'] ?? '')));
         if ($proxy !== '') {
             if (substr($proxy, -1) === '=') {
                 // proxy 已自带参数名（如 https://vv00.xyz?url=），直接拼接
