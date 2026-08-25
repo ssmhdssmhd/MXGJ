@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.7.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.8.0-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,13 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.8.0] 2026-08-25 · 通用快捷开关（映射表 / 输出字段 / 设置项）
+- 「快捷开关」升级为**通用机制**：点击即时生效、无需保存，后续新增配置项可直接复用
+  - **映射表**：官方ID / 剧名 / 腾讯cid 每条映射新增「启用」开关，关闭后该条映射不再参与匹配
+  - **输出返回设置**：每条返回字段可单独启用/禁用，关闭后不再出现在返回 JSON
+  - **设置页**：启用心跳检测 / 启用资源站轮训 改为点击即时生效
+- 禁用状态存于 `mapping.json` 的 `disabled` 段 / 字段 `enabled` 标记，完全兼容旧数据
 
 ### [v1.7.0] 2026-08-25 · 后台日志系统
 - 后台新增「**日志**」tab，自动记录**六类日志**（存 `data/logs/*.json`，每类保留 500 条）：

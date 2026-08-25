@@ -53,11 +53,14 @@ $mapping = mxgj_read_json(MXGJ_CONFIG . '/mapping.json', []);
 $name    = $parsed['title'];
 $episode = $parsed['episode'] > 0 ? $parsed['episode'] : $page;
 
-// 3.1 官方ID精确映射：vid / cid → 剧名+集数
+// 3.1 官方ID精确映射：vid / cid → 剧名+集数（仅启用条目生效）
 $epMap = isset($mapping['episode']) && is_array($mapping['episode']) ? $mapping['episode'] : [];
 foreach (['vid:' . $parsed['vid'], 'cid:' . $parsed['cid']] as $key) {
     if ($key === 'vid:' || $key === 'cid:') {
         continue;
+    }
+    if (!mxgj_mapping_enabled($mapping, 'episode', $key)) {
+        continue; // 该映射被快捷禁用
     }
     if (isset($epMap[$key]) && !empty($epMap[$key]['name'])) {
         $name    = $epMap[$key]['name'];
@@ -69,7 +72,7 @@ foreach (['vid:' . $parsed['vid'], 'cid:' . $parsed['cid']] as $key) {
 // 3.2 腾讯 cid → 剧名
 if ($name === '' && $parsed['cid'] !== '') {
     $cidMap = isset($mapping['cid']) && is_array($mapping['cid']) ? $mapping['cid'] : [];
-    if (isset($cidMap[$parsed['cid']])) {
+    if (isset($cidMap[$parsed['cid']]) && mxgj_mapping_enabled($mapping, 'cid', $parsed['cid'])) {
         $name = $cidMap[$parsed['cid']];
     }
 }
@@ -77,7 +80,7 @@ if ($name === '' && $parsed['cid'] !== '') {
 // 3.3 剧名映射（解析出的剧名 → 资源站使用的剧名）
 if ($name !== '') {
     $titleMap = isset($mapping['title']) && is_array($mapping['title']) ? $mapping['title'] : [];
-    if (isset($titleMap[$name])) {
+    if (isset($titleMap[$name]) && mxgj_mapping_enabled($mapping, 'title', $name)) {
         $name = $titleMap[$name];
     }
 }

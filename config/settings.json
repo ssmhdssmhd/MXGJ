@@ -1,24 +1,12 @@
 {
     "admin_password": "moxi123",
+    "updater_key": "",
     "timeout": 15,
     "cache_ttl": 600,
     "replace_domain": "",
-    "cron": {
-        "key": "",
-        "interval_mins": 60,
-        "scan_sites": true,
-        "scan_pages": 1,
-        "timeout": 20,
-        "seed_links": [
-            "https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce",
-            "https://www.iqiyi.com/v_19hly1wd1gg.html",
-            "https://m.youku.com/alipay_video/id_fcad042e84ef43ce8309.html",
-            "https://m.youku.com/alipay_video/id_cbff0b0703e54d659628.html",
-            "https://m.mgtv.com/b/731684/24269945.html",
-            "https://m.mgtv.com/b/857348/24330424.html",
-            "https://www.bilibili.com/bangumi/play/ep431046"
-        ]
-    },
+    "repo_owner": "ssmhdssmhd",
+    "repo_name": "MXGJ",
+    "repo_branch": "main",
     "site_control": {
         "search_interval": 15,
         "heartbeat_enable": true,
@@ -33,11 +21,43 @@
     "output": {
         "show_source": false,
         "fields": [
-            {"k": "code", "v": "code"},
-            {"k": "msg", "v": "url"},
-            {"k": "url", "v": "url"},
-            {"k": "time", "v": "time"},
-            {"k": "KFZ", "v": "沫兮官替系统"}
+            {
+                "k": "code",
+                "v": "code"
+            },
+            {
+                "k": "msg",
+                "v": "url"
+            },
+            {
+                "k": "url",
+                "v": "url"
+            },
+            {
+                "k": "time",
+                "v": "time"
+            },
+            {
+                "k": "KFZ",
+                "v": "沫兮官替系统",
+                "enabled": true
+            }
+        ]
+    },
+    "cron": {
+        "key": "",
+        "interval_mins": 60,
+        "scan_sites": true,
+        "scan_pages": 1,
+        "timeout": 20,
+        "seed_links": [
+            "https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce",
+            "https://www.iqiyi.com/v_19hly1wd1gg.html",
+            "https://m.youku.com/alipay_video/id_fcad042e84ef43ce8309.html",
+            "https://m.youku.com/alipay_video/id_cbff0b0703e54d659628.html",
+            "https://m.mgtv.com/b/731684/24269945.html",
+            "https://m.mgtv.com/b/857348/24330424.html",
+            "https://www.bilibili.com/bangumi/play/ep431046"
         ]
     }
 }

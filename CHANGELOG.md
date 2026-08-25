@@ -2,6 +2,22 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.8.0] - 2026-08-25
+
+### ✨ 新增：通用快捷开关（映射表 / 输出字段 / 设置项，即时生效）
+
+- 将「快捷开关」扩展为**通用机制**，点击即生效、无需保存，后续新增配置项可复用：
+  - **映射表**：官方ID映射 / 剧名映射 / 腾讯cid映射 每条新增「启用」开关
+    - 关闭后该条映射不再参与匹配（排查/临时关闭），前端 `index.php` 查找时跳过
+    - 禁用列表存于 `mapping.json` 新增 `disabled` 段（按区块 title/cid/episode 存键名），完全兼容旧数据
+    - `save_mapping` 保存时保留 `stock`（库存盘点）与 `disabled`，不再丢失
+  - **输出返回设置**：每条返回字段新增「启用」开关，关闭后该字段不再出现在返回 JSON（`mxgj_build_output` 过滤）
+    - `save_settings` 保存时按索引保留开关状态
+  - **设置页**：启用心跳检测 / 启用资源站轮训 两个开关改为**点击即时生效**
+- 新增后台操作：`toggle_mapping` / `toggle_output` / `toggle_setting`
+- 前端统一为通用 `quick-toggle` 开关组件（`data-action` 分发，便于扩展）；禁用行置灰标识
+- 新增辅助函数 `mxgj_mapping_enabled()`（bootstrap.php）
+
 ## [1.7.0] - 2026-08-25
 
 ### ✨ 新增：后台日志系统

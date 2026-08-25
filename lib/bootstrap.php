@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.7.0');
+define('MXGJ_VERSION', '1.8.0');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -114,6 +114,19 @@ function mxgj_sites(): array
 }
 
 /**
+ * 判断某映射条目是否启用（未在 disabled 禁用列表中即启用）
+ *
+ * @param array  $mapping 映射表数据（含可选 disabled 段）
+ * @param string $sec     区块：title / cid / episode
+ * @param string $key     条目键
+ */
+function mxgj_mapping_enabled(array $mapping, string $sec, string $key): bool
+{
+    $disabled = $mapping['disabled'][$sec] ?? [];
+    return is_array($disabled) ? !in_array($key, $disabled, true) : true;
+}
+
+/**
  * 大小写转换（兼容无 mbstring 环境）
  */
 function mxgj_lower(string $s): string
@@ -170,6 +183,10 @@ function mxgj_build_output(array $vars, bool $debug): array
         $k = (string)($f['k'] ?? '');
         $v = (string)($f['v'] ?? '');
         if ($k === '' || $k === 'debug') continue;
+        // 该字段被快捷关闭则跳过（默认启用）
+        if (array_key_exists('enabled', $f) && empty($f['enabled'])) {
+            continue;
+        }
         // 是系统字段：取对应内部值；否则当作常量字符串输出
         $out[$k] = in_array($v, $fMap, true) ? ($vars[$v] ?? '') : $v;
     }

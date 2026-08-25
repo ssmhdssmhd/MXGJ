@@ -81,11 +81,15 @@ switch ($ACTION) {
         exit;
 
     case 'save_mapping':
+        $oldMap = mxgj_read_json($mappingFile, []);
         $mapping = [
             'title' => [],
             'cid'   => [],
             'episode' => [],
         ];
+        // 保留非编辑区块：库存盘点 stock 与快捷禁用列表 disabled
+        if (!empty($oldMap['stock']))    $mapping['stock']    = $oldMap['stock'];
+        if (!empty($oldMap['disabled'])) $mapping['disabled'] = $oldMap['disabled'];
         $titles = $_POST['map_title'] ?? [];
         $targets = $_POST['map_target'] ?? [];
         if (is_array($titles)) {
@@ -149,13 +153,15 @@ switch ($ACTION) {
         // 输出返回设置
         $outKeys = $_POST['out_k'] ?? [];
         $outVals = $_POST['out_v'] ?? [];
+        $outOld  = is_array($st['output']['fields'] ?? null) ? $st['output']['fields'] : []; // 保留快捷开关状态
         $fields  = [];
         if (is_array($outKeys)) {
             foreach ($outKeys as $i => $k) {
                 $k = trim((string)$k);
                 $v = trim((string)($outVals[$i] ?? ''));
                 if ($k === '' || $v === '') continue;
-                $fields[] = ['k' => $k, 'v' => $v];
+                $enabled = isset($outOld[$i]) && array_key_exists('enabled', $outOld[$i]) ? !empty($outOld[$i]['enabled']) : true;
+                $fields[] = ['k' => $k, 'v' => $v, 'enabled' => $enabled];
             }
         }
         if ($fields === []) { // 至少保留 code 与 url，避免输出为空
@@ -269,6 +275,60 @@ switch ($ACTION) {
         Logger::log('operation', ($on ? '启用' : '禁用') . '资源站：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn', ['enabled' => $on]);
         Logger::log('config', ($on ? '启用' : '禁用') . '资源站配置：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '资源站：' . ($list[$hit]['name'] ?? '')]);
+
+    case 'toggle_mapping':
+        // 快捷启用/禁用映射条目（sec=title/cid/episode，key=条目键，enabled=1/0）
+        $sec = trim($_POST['sec'] ?? '');
+        $key = trim($_POST['key'] ?? '');
+        $on  = !empty($_POST['enabled']);
+        if (!in_array($sec, ['title', 'cid', 'episode'], true) || $key === '') {
+            mxgj_json_out(['code' => 400, 'msg' => '参数不合法']);
+        }
+        $map = mxgj_read_json($mappingFile, []);
+        if (!isset($map['disabled']) || !is_array($map['disabled'])) $map['disabled'] = [];
+        if (!isset($map['disabled'][$sec]) || !is_array($map['disabled'][$sec])) $map['disabled'][$sec] = [];
+        // 不存在该条目则报错
+        if (!isset($map[$sec][$key])) mxgj_json_out(['code' => 404, 'msg' => '映射条目不存在']);
+        $d = &$map['disabled'][$sec];
+        $idx = array_search($key, $d, true);
+        if ($on && $idx !== false)     unset($d[$idx]);   // 启用：从禁用列表移除
+        if (!$on && $idx === false)    $d[] = $key;       // 禁用：加入禁用列表
+        $d = array_values($d);
+        mxgj_write_json($mappingFile, $map);
+        Logger::log('operation', ($on ? '启用' : '禁用') . '映射：' . $sec . ' → ' . $key, $on ? 'success' : 'warn');
+        Logger::log('config', ($on ? '启用' : '禁用') . '映射条目：' . $sec . ' → ' . $key, $on ? 'success' : 'warn');
+        mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '映射：' . $key]);
+
+    case 'toggle_output':
+        // 快捷启用/禁用输出返回字段（按索引定位）
+        $idx  = (int)($_POST['idx'] ?? -1);
+        $on   = !empty($_POST['enabled']);
+        $st   = mxgj_settings();
+        $fields = is_array($st['output']['fields'] ?? null) ? $st['output']['fields'] : [];
+        if (!isset($fields[$idx])) mxgj_json_out(['code' => 404, 'msg' => '字段不存在']);
+        $fields[$idx]['enabled'] = $on;
+        $st['output']['fields'] = $fields;
+        mxgj_write_json($settingsFile, $st);
+        Logger::log('operation', ($on ? '启用' : '禁用') . '输出字段：' . ($fields[$idx]['k'] ?? ''), $on ? 'success' : 'warn');
+        Logger::log('config', ($on ? '启用' : '禁用') . '输出字段「' . ($fields[$idx]['k'] ?? '') . '」', $on ? 'success' : 'warn');
+        mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '输出字段：' . ($fields[$idx]['k'] ?? '')]);
+
+    case 'toggle_setting':
+        // 快捷开关设置项（当前支持：site_control 的 heartbeat_enable / rotation_enable）
+        $name = trim($_POST['name'] ?? '');
+        $on   = !empty($_POST['enabled']);
+        if (!in_array($name, ['heartbeat_enable', 'rotation_enable'], true)) {
+            mxgj_json_out(['code' => 400, 'msg' => '不支持的设置项']);
+        }
+        $st = mxgj_settings();
+        $sc = is_array($st['site_control'] ?? null) ? $st['site_control'] : [];
+        $sc[$name] = $on;
+        $st['site_control'] = $sc;
+        mxgj_write_json($settingsFile, $st);
+        $labels = ['heartbeat_enable' => '心跳检测', 'rotation_enable' => '资源站轮训'];
+        Logger::log('operation', ($on ? '开启' : '关闭') . '设置：' . ($labels[$name] ?? $name), $on ? 'success' : 'warn');
+        Logger::log('config', ($on ? '开启' : '关闭') . '设置「' . ($labels[$name] ?? $name) . '」', $on ? 'success' : 'warn');
+        mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已开启' : '已关闭') . '：' . ($labels[$name] ?? $name)]);
 
     case 'log_clear':
         // 清空日志（type=all 清空全部；否则清空指定类型）
@@ -568,7 +628,7 @@ function renderSitesForm($sites)
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
                         <td class="center">
                             <label class="toggle">
-                                <input type="checkbox" class="site-toggle" <?= $sEnabled ? 'checked' : '' ?>
+                                <input type="checkbox" class="quick-toggle" data-action="site" <?= $sEnabled ? 'checked' : '' ?>
                                        data-tpl="<?= htmlspecialchars($s['template'], ENT_QUOTES) ?>">
                                 <span class="slider" title="<?= $sEnabled ? '已启用：参与搜索' : '已禁用：不参与搜索' ?>"></span>
                             </label>
@@ -613,17 +673,21 @@ function renderSitesForm($sites)
             '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
         tbl.appendChild(tr);rowIndex++;
     }
-    /* ---- 快捷启用/禁用资源站（即时生效，无需保存） ---- */
+    /* ---- 通用快捷开关（即时生效，无需保存）：资源站 / 映射 / 输出字段 / 设置项 ---- */
     document.addEventListener('change', function(e){
         var cb=e.target;
-        if(!cb.classList||!cb.classList.contains('site-toggle'))return;
-        var tpl=cb.getAttribute('data-tpl');var on=cb.checked;
-        var tr=cb.closest('tr');
-        var fd=new FormData();fd.append('action','toggle_site');fd.append('template',tpl);fd.append('enabled',on?'1':'');
+        if(!cb.classList||!cb.classList.contains('quick-toggle'))return;
+        var on=cb.checked, act=cb.getAttribute('data-action'), tr=cb.closest('tr');
+        var fd=new FormData();
+        fd.append('enabled',on?'1':'');
+        if(act==='site'){ fd.append('action','toggle_site'); fd.append('template',cb.getAttribute('data-tpl')); }
+        else if(act==='mapping'){ fd.append('action','toggle_mapping'); fd.append('sec',cb.getAttribute('data-sec')); fd.append('key',cb.getAttribute('data-key')); }
+        else if(act==='output'){ fd.append('action','toggle_output'); fd.append('idx',cb.getAttribute('data-idx')); }
+        else if(act==='setting'){ fd.append('action','toggle_setting'); fd.append('name',cb.getAttribute('data-name')); }
+        else{ return; }
         fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
-            if(d.ok){
-                if(tr){tr.classList.toggle('row-disabled',!on);var s=tr.querySelector('.slider');if(s)s.title=(on?'已启用：参与搜索':'已禁用：不参与搜索');}
-            }else{ cb.checked=!on; alert(d.msg||'切换失败'); }
+            if(d.ok){ if(tr)tr.classList.toggle('row-disabled',!on); }
+            else{ cb.checked=!on; alert(d.msg||'切换失败'); }
         }).catch(function(){ cb.checked=!on; alert('网络错误，切换失败'); });
     });
     function testSite(){
@@ -733,12 +797,18 @@ function renderMappingForm($mapping)
         <form method="post">
             <input type="hidden" name="action" value="save_mapping">
             <table>
-                <tr><th style="width:240px">ID（vid:xxx 或 cid:xxx）</th><th>剧名</th><th style="width:90px">集数</th><th style="width:60px"></th></tr>
-                <?php if ($episode): $i=0; foreach ($episode as $k => $v): ?>
-                    <tr>
+                <tr><th style="width:240px">ID（vid:xxx 或 cid:xxx）</th><th>剧名</th><th style="width:90px">集数</th><th style="width:60px">启用</th><th style="width:60px"></th></tr>
+                <?php if ($episode): $i=0; foreach ($episode as $k => $v): $on = mxgj_mapping_enabled($mapping, 'episode', $k); ?>
+                    <tr class="<?= $on ? '' : 'row-disabled' ?>">
                         <td><input type="text" name="map_id[]" value="<?= htmlspecialchars($k) ?>"></td>
                         <td><input type="text" name="map_ename[]" value="<?= htmlspecialchars($v['name'] ?? '') ?>"></td>
                         <td><input type="number" name="map_ep[]" value="<?= (int)($v['episode'] ?? 0) ?>" min="1"></td>
+                        <td class="center">
+                            <label class="toggle">
+                                <input type="checkbox" class="quick-toggle" data-action="mapping" data-sec="episode" data-key="<?= htmlspecialchars($k, ENT_QUOTES) ?>" <?= $on ? 'checked' : '' ?>>
+                                <span class="slider"></span>
+                            </label>
+                        </td>
                         <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                     </tr>
                 <?php $i++; endforeach; else: ?>
@@ -746,6 +816,7 @@ function renderMappingForm($mapping)
                         <td><input type="text" name="map_id[]" placeholder="vid:k4102szvyce"></td>
                         <td><input type="text" name="map_ename[]" placeholder="庆余年"></td>
                         <td><input type="number" name="map_ep[]" value="2" min="1"></td>
+                        <td class="center"><input type="checkbox" checked disabled title="新条目默认启用"></td>
                         <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                     </tr>
                 <?php endif; ?>
@@ -754,15 +825,22 @@ function renderMappingForm($mapping)
             <h2 style="margin-top:24px">剧名映射</h2>
             <div class="note" style="margin-bottom:16px">
                 当官方链接解析出的剧名与资源站使用的剧名不一致时使用。
-                格式：<b>解析出的剧名</b> → <b>资源站剧名</b>。
+                格式：<b>解析出的剧名</b> → <b>资源站剧名</b>。<br>
+                <b>启用开关</b>：点击即时生效，关闭后该映射不再参与匹配（排查/临时关闭）。
             </div>
             <table>
-                <tr><th>解析出的剧名</th><th>资源站剧名</th><th style="width:60px"></th></tr>
+                <tr><th>解析出的剧名</th><th>资源站剧名</th><th style="width:60px">启用</th><th style="width:60px"></th></tr>
                 <?php if ($titles): ?>
-                    <?php $i=0; foreach ($titles as $k => $v): ?>
-                        <tr>
+                    <?php $i=0; foreach ($titles as $k => $v): $on = mxgj_mapping_enabled($mapping, 'title', $k); ?>
+                        <tr class="<?= $on ? '' : 'row-disabled' ?>">
                             <td><input type="text" name="map_target[]" value="<?= htmlspecialchars($k) ?>"></td>
                             <td><input type="text" name="map_title[]" value="<?= htmlspecialchars($v) ?>"></td>
+                            <td class="center">
+                                <label class="toggle">
+                                    <input type="checkbox" class="quick-toggle" data-action="mapping" data-sec="title" data-key="<?= htmlspecialchars($k, ENT_QUOTES) ?>" <?= $on ? 'checked' : '' ?>>
+                                    <span class="slider"></span>
+                                </label>
+                            </td>
                             <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                         </tr>
                     <?php $i++; endforeach; ?>
@@ -770,6 +848,7 @@ function renderMappingForm($mapping)
                     <tr>
                         <td><input type="text" name="map_target[]" placeholder="解析出的剧名"></td>
                         <td><input type="text" name="map_title[]" placeholder="资源站剧名"></td>
+                        <td class="center"><input type="checkbox" checked disabled title="新条目默认启用"></td>
                         <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                     </tr>
                 <?php endif; ?>
@@ -777,12 +856,18 @@ function renderMappingForm($mapping)
 
             <h2 style="margin-top:24px">腾讯 cid 映射（仅剧名）</h2>
             <table>
-                <tr><th>腾讯 cid</th><th>剧名（资源站使用）</th><th style="width:60px"></th></tr>
+                <tr><th>腾讯 cid</th><th>剧名（资源站使用）</th><th style="width:60px">启用</th><th style="width:60px"></th></tr>
                 <?php if ($cids): ?>
-                    <?php $i=0; foreach ($cids as $k => $v): ?>
-                        <tr>
+                    <?php $i=0; foreach ($cids as $k => $v): $on = mxgj_mapping_enabled($mapping, 'cid', $k); ?>
+                        <tr class="<?= $on ? '' : 'row-disabled' ?>">
                             <td><input type="text" name="map_cid[]" value="<?= htmlspecialchars($k) ?>"></td>
                             <td><input type="text" name="map_cid_target[]" value="<?= htmlspecialchars($v) ?>"></td>
+                            <td class="center">
+                                <label class="toggle">
+                                    <input type="checkbox" class="quick-toggle" data-action="mapping" data-sec="cid" data-key="<?= htmlspecialchars($k, ENT_QUOTES) ?>" <?= $on ? 'checked' : '' ?>>
+                                    <span class="slider"></span>
+                                </label>
+                            </td>
                             <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                         </tr>
                     <?php $i++; endforeach; ?>
@@ -790,6 +875,7 @@ function renderMappingForm($mapping)
                     <tr>
                         <td><input type="text" name="map_cid[]" placeholder="mzc00200zx8psx0"></td>
                         <td><input type="text" name="map_cid_target[]" placeholder="庆余年"></td>
+                        <td class="center"><input type="checkbox" checked disabled title="新条目默认启用"></td>
                         <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                     </tr>
                 <?php endif; ?>
@@ -1065,9 +1151,9 @@ function renderSettingsForm($settings)
             <div><label>被禁用冷却时间（秒，到期自动恢复）</label><input type="number" name="sc_cooldown_seconds" value="<?= (int)($sc['cooldown_seconds'] ?? 600) ?>" min="0"></div>
             <div><label>轮训周期（秒，每隔多久切换命中顺序）</label><input type="number" name="sc_rotation_interval" value="<?= (int)($sc['rotation_interval'] ?? 300) ?>" min="10"></div>
             <div><label>每次最多并发请求几个资源站（0=不限制）</label><input type="number" name="sc_max_sites_per_request" value="<?= (int)($sc['max_sites_per_request'] ?? 0) ?>" min="0"></div>
-            <div class="full"><label style="margin-bottom:6px">开关</label>
-                <label style="margin-right:18px"><input type="checkbox" name="sc_heartbeat_enable" value="1" <?= !empty($sc['heartbeat_enable']) ? 'checked' : '' ?>> 启用心跳检测</label>
-                <label><input type="checkbox" name="sc_rotation_enable" value="1" <?= !empty($sc['rotation_enable']) ? 'checked' : '' ?>> 启用资源站轮训</label>
+            <div class="full"><label style="margin-bottom:6px">开关（点击即时生效，无需保存）</label>
+                <label style="margin-right:18px" class="toggle-label"><input type="checkbox" name="sc_heartbeat_enable" value="1" class="quick-toggle" data-action="setting" data-name="heartbeat_enable" <?= !empty($sc['heartbeat_enable']) ? 'checked' : '' ?>> 启用心跳检测</label>
+                <label class="toggle-label"><input type="checkbox" name="sc_rotation_enable" value="1" class="quick-toggle" data-action="setting" data-name="rotation_enable" <?= !empty($sc['rotation_enable']) ? 'checked' : '' ?>> 启用资源站轮训</label>
             </div>
 
             <div class="full" style="margin-top:8px">
@@ -1081,17 +1167,24 @@ function renderSettingsForm($settings)
                 </div>
                 <label style="margin:0"><input type="checkbox" name="out_show_source" value="1" <?= !empty($output['show_source']) ? 'checked' : '' ?>> 在返回中附带原始请求链接（默认隐藏）</label>
                 <table id="out-tbl" style="margin-top:8px">
-                    <tr><th style="width:140px">键名 k（输出字段）</th><th>值来源/常量 v</th><th style="width:60px">操作</th></tr>
-                    <?php if (!empty($output['fields'])): foreach ($output['fields'] as $i => $f): ?>
-                        <tr>
+                    <tr><th style="width:140px">键名 k（输出字段）</th><th>值来源/常量 v</th><th style="width:60px">启用</th><th style="width:60px">操作</th></tr>
+                    <?php if (!empty($output['fields'])): foreach ($output['fields'] as $i => $f): $on = !array_key_exists('enabled', $f) || !empty($f['enabled']); ?>
+                        <tr class="<?= $on ? '' : 'row-disabled' ?>">
                             <td><input type="text" name="out_k[]" value="<?= htmlspecialchars($f['k']) ?>" placeholder="如 url / JM / JJ"></td>
                             <td><input type="text" name="out_v[]" value="<?= htmlspecialchars($f['v']) ?>" placeholder="如 code / url / title / episode / 常量文本" list="src-list"></td>
+                            <td class="center">
+                                <label class="toggle">
+                                    <input type="checkbox" class="quick-toggle" data-action="output" data-idx="<?= $i ?>" <?= $on ? 'checked' : '' ?>>
+                                    <span class="slider"></span>
+                                </label>
+                            </td>
                             <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                         </tr>
                     <?php endforeach; else: ?>
                         <tr>
                             <td><input type="text" name="out_k[]" placeholder="url"></td>
                             <td><input type="text" name="out_v[]" value="url" list="src-list"></td>
+                            <td class="center"><input type="checkbox" checked disabled title="新字段默认启用"></td>
                             <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                         </tr>
                     <?php endif; ?>
@@ -1159,6 +1252,7 @@ function renderSettingsForm($settings)
         var tr=document.createElement('tr');
         tr.innerHTML='<td><input type="text" name="out_k[]" placeholder="如 url / JM / JJ"></td>'+
             '<td><input type="text" name="out_v[]" placeholder="如 code / url / title / episode / 常量文本" list="src-list"></td>'+
+            '<td class="center"><input type="checkbox" checked disabled title="新字段默认启用"></td>'+
             '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
         t.appendChild(tr);
     }
