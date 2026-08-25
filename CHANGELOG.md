@@ -2,17 +2,6 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [1.12.0] - 2026-08-25
-
-### ✨ 新增：资源站「跟随播放链接」支持 `{host}` 占位符 + 站点级优先
-
-- **`{host}` 占位符**：资源站「跟随播放链接」可填 `{host}/player.php?url=`，自动替换为当前域名
-  - 例：填 `{host}/player.php?url=` → 返回 `https://你的域名/player.php?url=真实地址`
-  - 特殊资源站（如返回 HTML 播放页 `https://lgvideo.xyz/player/xxx`）可由此套用本站 `player.php` 播放器
-- **站点级「跟随播放链接」优先**：某站配置的前缀命中且指向本站时，返回保持该站自定义包装，
-  不再被「App 表面播放链接」改写；外部中转（如 vv00.xyz）仍走表面链接隐藏
-- 后台「资源站」页说明与占位符同步更新（`{host}/player.php?url=` 示例）
-
 ## [1.11.1] - 2026-08-25
 
 ### 🔧 修复：play.php 对 HTML 播放页「特殊资源站不能播放」

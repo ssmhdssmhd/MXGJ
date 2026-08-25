@@ -639,8 +639,6 @@ function renderSitesForm($sites)
             示例二（列表页）：<code>http://your.site/search?wd=%s&page=%p</code><br>
             <b>跟随播放链接（中转前缀）</b>：仅该资源站命中时，在真实播放地址前拼接，如 <code>https://vv00.xyz?url=</code>
             → 返回 <code>https://vv00.xyz?url=真实地址</code>。留空则直接返回原地址。<br>
-            支持 <code>{host}</code> 占位符（自动替换为当前域名）：填 <code>{host}/player.php?url=</code>
-            → 返回 <code>https://你的域名/player.php?url=真实地址</code>（特殊资源站可由此套用本站播放器）。<br>
             每行「启用」开关<b>即时生效</b>（无需保存）：关闭后该资源站不再参与前台搜索与心跳探测。
         </div>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
@@ -656,7 +654,7 @@ function renderSitesForm($sites)
                     <tr class="<?= $sEnabled ? '' : 'row-disabled' ?>">
                         <td><input type="text" name="sites[<?= $i ?>][name]" value="<?= htmlspecialchars($s['name']) ?>"></td>
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
-                        <td><input type="text" name="sites[<?= $i ?>][proxy]" value="<?= htmlspecialchars($s['proxy'] ?? '') ?>" placeholder="如 https://vv00.xyz?url= 或 {host}/player.php?url= （留空不使用）"></td>
+                        <td><input type="text" name="sites[<?= $i ?>][proxy]" value="<?= htmlspecialchars($s['proxy'] ?? '') ?>" placeholder="如 https://vv00.xyz?url= （留空不使用）"></td>
                         <td class="center">
                             <label class="toggle">
                                 <input type="checkbox" class="quick-toggle" data-action="site" <?= $sEnabled ? 'checked' : '' ?>
