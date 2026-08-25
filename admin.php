@@ -182,6 +182,14 @@ switch ($ACTION) {
         $sec = is_array($st['security'] ?? null) ? $st['security'] : [];
         $sec['obfuscate_enable'] = !empty($_POST['sec_obfuscate_enable']);
         $st['security'] = $sec;
+        // App 设置（表面播放链接）
+        $ap = is_array($st['app'] ?? null) ? $st['app'] : [];
+        $ap['surface_enable'] = !empty($_POST['app_surface_enable']);
+        $ap['surface_path']   = trim($_POST['app_surface_path'] ?? '') !== ''
+            ? trim($_POST['app_surface_path'])
+            : 'play.php';
+        $ap['surface_mode']   = (($_POST['app_surface_mode'] ?? 'proxy') === 'redirect') ? 'redirect' : 'proxy';
+        $st['app'] = $ap;
         mxgj_write_json($settingsFile, $st);
         Logger::log('operation', '保存系统设置', 'success');
         Logger::log('config', '系统设置保存成功', 'success', ['timeout' => $st['timeout'], 'cache_ttl' => $st['cache_ttl'], 'output_fields' => count($fields)]);
@@ -335,6 +343,11 @@ switch ($ACTION) {
             $sec['obfuscate_enable'] = $on;
             $st['security'] = $sec;
             $labels = ['obfuscate_enable' => '欺诈/伪装'];
+        } elseif ($name === 'app_surface_enable') {
+            $ap = is_array($st['app'] ?? null) ? $st['app'] : [];
+            $ap['surface_enable'] = $on;
+            $st['app'] = $ap;
+            $labels = ['app_surface_enable' => '表面播放链接'];
         } else {
             mxgj_json_out(['code' => 400, 'msg' => '不支持的设置项']);
         }
@@ -1148,6 +1161,7 @@ function renderSettingsForm($settings)
     $sc   = is_array($settings['site_control'] ?? null) ? $settings['site_control'] : [];
     $output = is_array($settings['output'] ?? null) ? $settings['output'] : [];
     $security = is_array($settings['security'] ?? null) ? $settings['security'] : [];
+    $app      = is_array($settings['app'] ?? null) ? $settings['app'] : [];
     $siteHealth = SiteHealth::healthTable();
     $hbResult = $_SESSION['heartbeat_result'] ?? null;
     unset($_SESSION['heartbeat_result']);
@@ -1217,11 +1231,35 @@ function renderSettingsForm($settings)
             </div>
 
             <div class="full" style="margin-top:8px">
+                <h3 style="margin:0 0 4px;font-size:14px">App 设置（表面播放链接，推荐开启）</h3>
+                <div class="note" style="margin:4px 0 8px">
+                    开启后，返回的<b>播放链接统一伪装为当前域名下的播放入口</b>：
+                    <code>https://当前域名/play.php?u=加密地址</code>。<br>
+                    该链接<b>表面是一个链接</b>，浏览器打开即可播放，也能被 APP 识别并直接播放，同时<b>隐藏真实播放地址</b>。
+                    播放方式：<b>代理转发</b>=本站转发视频流并重写 m3u8 切片，完全隐藏真实源、APP 可直接播放（推荐）；
+                    <b>302 跳转</b>=直接跳转到真实地址（省流量，但真实地址在跳转后可见）。HTML 播放页在代理模式下会自动降级为跳转。
+                </div>
+                <label style="margin:0">
+                    <input type="checkbox" name="app_surface_enable" value="1" class="quick-toggle" data-action="setting" data-name="app_surface_enable" <?= !empty($app['surface_enable']) ? 'checked' : '' ?>>
+                    启用表面播放链接（返回统一为本站播放入口）
+                </label>
+                <div style="margin-top:8px"><label>播放入口路径</label><input type="text" name="app_surface_path" value="<?= htmlspecialchars($app['surface_path'] ?? 'play.php') ?>" placeholder="play.php"></div>
+                <div style="margin-top:8px">
+                    <label>播放方式</label>
+                    <select name="app_surface_mode">
+                        <option value="proxy" <?= (($app['surface_mode'] ?? 'proxy') === 'proxy') ? 'selected' : '' ?>>代理转发（隐藏真实地址，APP 可直接播放，推荐）</option>
+                        <option value="redirect" <?= (($app['surface_mode'] ?? 'proxy') === 'redirect') ? 'selected' : '' ?>>302 跳转（省流量）</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="full" style="margin-top:8px">
                 <h3 style="margin:0 0 4px;font-size:14px">安全设置（欺诈/伪装）</h3>
                 <div class="note" style="margin:4px 0 8px">
                     开启后，返回链接中「跟随播放链接」的<b>中转前缀域名会被伪装为当前系统域名</b>，避免对外暴露真实中转/播放站点。
                     例：<code>https://vv00.xyz?url=真实地址</code> → <code>https://当前域名?url=真实地址</code>。
-                    仅替换链接开头的中转域名，<b>不触碰真实播放地址参数，不影响正常播放</b>；<b>默认关闭</b>，按需开启。
+                    仅替换链接开头的中转域名，<b>不触碰真实播放地址参数</b>；若需「可正常打开播放的表面链接」，请优先使用上方 <b>App 设置</b>。
+                    <b>默认关闭</b>，按需开启。
                 </div>
                 <label style="margin:0">
                     <input type="checkbox" name="sec_obfuscate_enable" value="1" class="quick-toggle" data-action="setting" data-name="obfuscate_enable" <?= !empty($security['obfuscate_enable']) ? 'checked' : '' ?>>

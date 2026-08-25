@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.9.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.10.0-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,17 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.10.0] 2026-08-25 · App 设置「表面播放链接」（自托管播放入口）
+- 后台「设置」新增 **App 设置（表面播放链接，默认开启）**：返回的播放链接统一伪装为当前域名下的播放入口
+  - `https://当前域名/play.php?u=<base64url 加密的真实播放地址>` —— **表面是一个链接**，浏览器打开即可播放，也能被 APP 识别并直接播放，同时隐藏真实播放地址
+- 新增**播放入口 `play.php`**：
+  - **代理转发（默认，推荐）**：本站抓取并重写 m3u8 切片/密钥地址、ts/mp4 二进制流式转发，完全隐藏真实源，APP 原生播放器可直连播放；HTML 播放页自动降级为 302 跳转
+  - **302 跳转**：直接跳转真实地址（省流量）
+- 修复：此前「欺诈/伪装」仅替换中转域名，替换后 `https://当前域名?url=...` 无播放入口、无法播放；现由 `play.php` 保证链接可正常打开播放
+
+### [v1.9.1] 2026-08-25 · 调整「欺诈/伪装」默认关闭
+- 「安全设置-欺诈/伪装」默认**关闭**（`security.obfuscate_enable` 默认 `false`），按需开启
 
 ### [v1.9.0] 2026-08-25 · 资源站「跟随播放链接」+ 安全设置（欺诈/伪装）
 - **资源站单独配置「跟随播放链接」中转前缀**：每行可填如 `https://vv00.xyz?url=`，仅该站命中时自动拼接到真实播放地址前
@@ -100,6 +111,7 @@
 | 🗺️ 映射表 | `vid/cid → 剧名+集数` 精确映射，命中后**自动固化**、下次免联网 |
 | 🧩 模板系统 | `%s / %u / %t / %p` 占位符，兼容 **JSON / JSONP / 纯文本 / 苹果CMS 列表** |
 | 🧪 资源站检测 | 粘贴苹果CMS10采集接口即自动探测、生成模板、一键保存 |
+| 🛡️ 表面播放链接 | 返回统一为当前域名 `/play.php?u=` 播放入口，可正常打开播放、APP 可识别，隐藏真实地址 |
 | 📦 缓存 | 搜索结果文件缓存，降低对资源站的重复请求 |
 | 🕰️ 定时采集 | `cron/mapping.php` 自动补全映射 + 盘点资源站库存，省去手动 |
 | 🔍 频率控制 | 搜索节流 + 心跳探测 + 轮训分批，防被资源站屏蔽 |
@@ -217,17 +229,19 @@ GET /index.php?key=<密钥>&url=<官方视频链接>[&page=<集数>][&debug=1][&
 /index.php?key=YOUR_KEY&url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce
 ```
 
-**返回**：
+**返回**（App 表面播放链接默认开启，`url/msg` 为当前域名的播放入口，解码后才是真实地址）：
 
 ```json
 {
   "code": 200,
-  "url": "https://cdn.example.com/play/2/index.m3u8",
-  "msg": "success",
-  "episode": 2,
-  "source": "https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce"
+  "url": "https://你的域名/play.php?u=aHR0cHM6Ly9jZG4uZXhhbXBsZS5jb20vcGxheS8yL2luZGV4Lm0zdTg",
+  "msg": "https://你的域名/play.php?u=aHR0cHM6Ly9jZG4uZXhhbXBsZS5jb20vcGxheS8yL2luZGV4Lm0zdTg",
+  "time": 1206.6,
+  "KFZ": "沫兮官替系统"
 }
 ```
+
+> 打开 `url` 即可正常播放（浏览器/APP 均可）；若在后台关闭「App 表面播放链接」，则直接返回真实 m3u8 地址。
 
 **状态码约定**：
 
@@ -295,6 +309,24 @@ max_sites_per_request = 4     (每次最多并发请求 4 个站)
 
 运行状态存于 `data/site_health.json`，后台 **设置 → 资源站健康状态** 可实时查看并「立即心跳探测 / 重置」。
 
+### 🛡️ App 设置 - 表面播放链接（推荐开启）
+
+后台 **设置 → App 设置（表面播放链接，默认开启）**：前台返回的播放链接统一伪装为**当前域名下的播放入口**。
+
+```
+真实地址:  http://114.134.184.91:9005/player/cRCj3u9a
+表面链接:  https://你的域名/play.php?u=aHR0cDovLzExNC4xMzQuMTg0LjkxOjkwMDUvcGxheWVyL2NSQ2ozdTlh
+```
+
+| 配置项 | 说明 |
+| ---- | ---- |
+| 启用表面播放链接 | 开关（快捷开关即时生效）；关闭后直接返回真实地址 |
+| 播放入口路径 | 默认 `play.php`，可自定义 |
+| 播放方式 | **代理转发**（默认，推荐）：本站抓取并重写 m3u8 切片/密钥地址、ts/mp4 二进制流式转发，完全隐藏真实源，APP 原生播放器可直连播放；HTML 播放页自动降级为 302 跳转。<br>**302 跳转**：直接跳转真实地址（省流量，但真实地址在跳转后可见） |
+
+> 若资源站配置了「跟随播放链接」中转前缀（如 `https://vv00.xyz?url=`），系统会自动提取真实地址后再包装，中转域名不会外泄。
+> 原「安全设置-欺诈/伪装」仅替换中转域名为当前域名（不保证可播放）；需要「表面是一个链接且可正常打开播放」时请使用本功能。
+
 ### 🔄 在线自动更新
 
 后台「更新」页一键更新到 GitHub 最新代码：
@@ -325,6 +357,9 @@ http://你的域名/update.php?key=升级密钥&dry=1   # 仅测速排查
 | `replace_domain` | `""` | 域名替换/中转前缀，留空则直接返回资源站地址 |
 | `cron` | `{...}` | 定时采集配置（`seed_links`、盘点开关等） |
 | `site_control` | `{...}` | 频率控制配置（搜索/心跳/轮训） |
+| `output` | `{...}` | 输出返回设置（字段映射，默认 `code`/`msg`(=url)/`url`/`time`/`KFZ`） |
+| `security` | `{...}` | 安全设置（`obfuscate_enable` 欺诈/伪装，默认关闭） |
+| `app` | `{...}` | App 设置（`surface_enable` 表面播放链接，默认开启；`surface_mode` 播放方式） |
 
 `replace_domain` 示例：配置 `https://your-proxy.com/m3u8/` 后，
 返回的 `url` 自动变为 `https://your-proxy.com/m3u8/play/2/index.m3u8`（去掉资源站原域名）。
@@ -347,6 +382,7 @@ return 'your_secret_key';
 mxgj/
 ├── index.php               # 前台解析 API（入口）
 ├── admin.php               # 后台管理（登录后可配置）
+├── play.php                # 表面播放入口（App 表面播放链接 /play.php?u=）
 ├── update.php              # 独立升级入口（update.php?key=升级密钥）
 ├── cron/
 │   └── mapping.php         # 定时自动采集映射（可配 crontab）
@@ -384,12 +420,13 @@ php tests/run_test.php
 预期输出（全部 PASS）：
 
 ```text
-【主流程】腾讯链接 → 庆余年第2集
+【主流程】腾讯链接 → 庆余年第2集（App 表面播放链接）
   请求耗时: 1.21s (阈值 2.2s)      ← 两站各延迟1.2s，串行约2.4s，证明多线程并发
   [PASS] 返回 code=200
-  [PASS] url 命中 1080p 资源(第2集)
+  [PASS] url 为本站表面播放链接(/play.php?u=)
+  [PASS] 表面链接解码后命中 1080p 资源(第2集)
   ...
-结果: 8 通过 / 0 失败
+结果: 9 通过 / 0 失败
 ```
 
 ---

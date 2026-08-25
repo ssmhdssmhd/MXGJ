@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.9.1');
+define('MXGJ_VERSION', '1.10.0');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -99,6 +99,12 @@ function mxgj_settings(): array
             'security'       => [
                 'obfuscate_enable' => false, // 欺诈/伪装：将返回链接中的中转前缀域名伪装为当前系统域名（默认关闭）
             ],
+            // App 设置（表面播放链接）
+            'app'            => [
+                'surface_enable' => true,        // 表面播放链接：返回统一伪装为本站 /play.php?u= 播放入口（默认开启）
+                'surface_path'   => 'play.php',  // 播放入口文件（可自定义路径）
+                'surface_mode'   => 'proxy',     // 播放方式：proxy=代理转发(隐藏真实地址,APP可直接播放) / redirect=302跳转
+            ],
         ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
     }
     return $settings;
@@ -180,6 +186,92 @@ function mxgj_obfuscate_url(string $url): string
         }
     }
     return $url;
+}
+
+/**
+ * URL 安全的 base64 编码（去掉 +/ 与末尾 =，适合放查询参数）
+ */
+function mxgj_b64url(string $s): string
+{
+    return rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
+}
+
+/**
+ * URL 安全的 base64 解码，失败返回空字符串
+ */
+function mxgj_b64url_decode(string $s): string
+{
+    $s = strtr(trim($s), '-_', '+/');
+    $pad = strlen($s) % 4;
+    if ($pad > 0) {
+        $s .= str_repeat('=', 4 - $pad);
+    }
+    $dec = base64_decode($s, true);
+    return $dec === false ? '' : $dec;
+}
+
+/**
+ * 表面播放链接：把真实播放地址伪装为本站播放入口（如 /play.php?u=加密地址）。
+ *
+ * 开启 App「表面播放链接」后，前台返回的 url/msg 统一替换为本站播放入口，
+ * 该入口可正常打开播放（浏览器/APP 均可识别），并隐藏真实播放地址。
+ * 若真实地址前带有「跟随播放链接」中转前缀（如 https://vv00.xyz?url=真实地址），
+ * 会自动提取出真实地址后再包装，避免中转域名外泄。
+ *
+ * @param string $url 待伪装链接
+ * @return string 伪装后的表面链接（未开启/无法伪装时原样返回）
+ */
+function mxgj_surface_url(string $url): string
+{
+    $app = mxgj_settings()['app'] ?? [];
+    if (empty($app['surface_enable'])) {
+        return $url; // 表面播放链接开关被关闭
+    }
+    if ($url === '' || strpos($url, '://') === false) {
+        return $url;
+    }
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host === '') {
+        return $url; // 无当前域名（如 CLI），无法生成表面链接
+    }
+    $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $self   = $scheme . '://' . $host;
+    $path   = trim((string)($app['surface_path'] ?? 'play.php'), '/');
+    $entry  = $self . '/' . $path . '?u=';
+
+    // 幂等：已是本站播放入口则不再重复包装
+    if (strpos($url, $entry) === 0 || strpos($url, $self . '/' . $path . '?url=') === 0) {
+        return $url;
+    }
+
+    // 从「跟随播放链接」中转前缀提取真实播放地址
+    $real = $url;
+    foreach (mxgj_sites() as $s) {
+        $p = trim((string)($s['proxy'] ?? ''));
+        if ($p === '' || strpos($p, '://') === false) {
+            continue;
+        }
+        if (strpos($url, $p) === 0) {
+            $rest = substr($url, strlen($p));
+            if (strpos($rest, 'http') === 0) {
+                $real = $rest;
+                break;
+            }
+        }
+    }
+    return $entry . mxgj_b64url($real);
+}
+
+/**
+ * 统一链接保护：优先「App-表面播放链接」，其次「安全-欺诈/伪装（替换中转域名）」
+ */
+function mxgj_protect_url(string $url): string
+{
+    $app = mxgj_settings()['app'] ?? [];
+    if (!empty($app['surface_enable'])) {
+        return mxgj_surface_url($url);
+    }
+    return mxgj_obfuscate_url($url);
 }
 
 /**
