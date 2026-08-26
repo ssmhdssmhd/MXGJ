@@ -2,17 +2,6 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [1.12.0] - 2026-08-25
-
-### ✨ 新增：资源站「播放入口 player_entry」（特殊资源站单独返回形式）
-
-- 后台「资源站」每行新增**播放入口（可选）**字段（`sites.json` 每站新增 `player_entry`）
-  - 仅该资源站命中时生效：返回 `本站/<入口>?url=真实播放地址`（如 `player.php`，可正常打开播放、适配返回 HTML 播放页的特殊资源站）
-  - 例：命中特殊站点 → `{"url":"http://域名:9005/player.php?url=https://lgvideo.xyz/player/cRCj3u9a"}`
-  - 留空则该站走默认加密表面链接 `本站/play.php?u=<base64url>`
-- 实现：`mxgj_surface_url($url,$site)` / `mxgj_protect_url($url,$site)` 支持站点级入口，`index.php` 按命中站点查找并传入；新增 `mxgj_find_site()`；`save_sites`/`save_site_one` 均保存/保留 `player_entry`
-- 测试：特殊站点返回 `player.php?url=`、普通站点返回 `play.php?u=`（7/7 通过），主套件 9/9 通过
-
 ## [1.11.1] - 2026-08-25
 
 ### 🔧 修复：play.php 对 HTML 播放页「特殊资源站不能播放」

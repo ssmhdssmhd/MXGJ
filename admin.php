@@ -72,7 +72,6 @@ switch ($ACTION) {
                 'url'      => $url,          // 兼容旧字段
                 'template' => $url,          // 标准模板字段
                 'proxy'    => trim($s['proxy'] ?? ''), // 跟随播放链接（中转前缀），仅该站启用
-                'player_entry' => trim($s['player_entry'] ?? ''), // 站点级播放入口（如 player.php），留空用默认表面链接
                 'enabled'  => array_key_exists('enabled', $s) ? !empty($s['enabled']) : true, // 启用开关（默认启用）
             ];
         }
@@ -262,13 +261,11 @@ switch ($ACTION) {
         if ($hit !== null) {
             $entry['enabled'] = array_key_exists('enabled', $list[$hit]) ? !empty($list[$hit]['enabled']) : true; // 保留原启用状态
             $entry['proxy']   = (string)($list[$hit]['proxy'] ?? ''); // 保留跟随播放链接
-            $entry['player_entry'] = (string)($list[$hit]['player_entry'] ?? ''); // 保留站点级播放入口
             $list[$hit] = $entry;
             $mode = 'update';
         } else {
             $entry['enabled'] = true; // 新增默认启用
             $entry['proxy']   = trim($_POST['proxy'] ?? ''); // 跟随播放链接（中转前缀）
-            $entry['player_entry'] = trim($_POST['player_entry'] ?? ''); // 站点级播放入口
             $list[] = $entry;
             $mode = 'add';
         }
@@ -642,8 +639,6 @@ function renderSitesForm($sites)
             示例二（列表页）：<code>http://your.site/search?wd=%s&page=%p</code><br>
             <b>跟随播放链接（中转前缀）</b>：仅该资源站命中时，在真实播放地址前拼接，如 <code>https://vv00.xyz?url=</code>
             → 返回 <code>https://vv00.xyz?url=真实地址</code>。留空则直接返回原地址。<br>
-            <b>播放入口（可选）</b>：仅该资源站命中时生效，返回 <code>本站/该入口?url=真实播放地址</code>（如 <code>player.php</code>，
-            可正常打开播放、适配特殊资源站返回的 HTML 播放页）。留空则用全局「表面播放链接」。<br>
             每行「启用」开关<b>即时生效</b>（无需保存）：关闭后该资源站不再参与前台搜索与心跳探测。
         </div>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
@@ -653,14 +648,13 @@ function renderSitesForm($sites)
         <form method="post">
             <input type="hidden" name="action" value="save_sites">
             <table id="site-tbl">
-                <tr><th style="width:130px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>播放入口（可选，留空用默认）</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
+                <tr><th style="width:130px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
                 <?php if ($sites): foreach ($sites as $i => $s): ?>
                     <?php $sEnabled = !array_key_exists('enabled', $s) || !empty($s['enabled']); ?>
                     <tr class="<?= $sEnabled ? '' : 'row-disabled' ?>">
                         <td><input type="text" name="sites[<?= $i ?>][name]" value="<?= htmlspecialchars($s['name']) ?>"></td>
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
                         <td><input type="text" name="sites[<?= $i ?>][proxy]" value="<?= htmlspecialchars($s['proxy'] ?? '') ?>" placeholder="如 https://vv00.xyz?url= （留空不使用）"></td>
-                        <td><input type="text" name="sites[<?= $i ?>][player_entry]" value="<?= htmlspecialchars($s['player_entry'] ?? '') ?>" placeholder="如 player.php （留空用默认）"></td>
                         <td class="center">
                             <label class="toggle">
                                 <input type="checkbox" class="quick-toggle" data-action="site" <?= $sEnabled ? 'checked' : '' ?>
@@ -678,7 +672,6 @@ function renderSitesForm($sites)
                         <td><input type="text" name="sites[0][name]" placeholder="站点A"></td>
                         <td><input type="text" name="sites[0][template]" placeholder="http://api.example.com/vod?wd=%u&ep=%p"></td>
                         <td><input type="text" name="sites[0][proxy]" placeholder="如 https://vv00.xyz?url="></td>
-                        <td><input type="text" name="sites[0][player_entry]" placeholder="如 player.php "></td>
                         <td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>
                         <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                     </tr>

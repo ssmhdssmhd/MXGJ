@@ -148,12 +148,10 @@ if ($cachedIsHit) {
 }
 
 // 7. 组装返回（按后台「输出返回设置」自定义字段映射，默认隐藏 source；按「安全-欺诈设置」伪装中转域名）
-//    命中站点配置了 player_entry（特殊资源站播放入口）时，url/msg 返回 本站/<入口>?url=真实播放地址
-$winSite = mxgj_find_site($result['site'] ?? '');
 $vars = [
     'code'    => $result['code'],
-    'msg'     => mxgj_protect_url($result['msg'] ?? '', $winSite),
-    'url'     => mxgj_protect_url($result['url'] ?? '', $winSite),
+    'msg'     => mxgj_protect_url($result['msg'] ?? ''),
+    'url'     => mxgj_protect_url($result['url'] ?? ''),
     'title'   => $name,
     'episode' => $episode,
     'site'    => $result['site'] ?? '',
