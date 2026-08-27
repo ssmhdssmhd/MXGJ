@@ -979,17 +979,25 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
 </nav>
 <script>
 var __autoDirty=null, __saveTimer=null;
+function __setSaveStatus(text,color){
+    var el=document.getElementById('save-status'),dot=document.getElementById('save-indicator');
+    if(el)el.textContent=text;
+    if(dot){
+        dot.style.background=color||'#4ade80';
+        dot.style.boxShadow='0 0 8px rgba('+(color==='#fbbf24'?'251,191,36':color==='#ef4444'?'239,68,68':'74,222,128')+',0.5)';
+    }
+}
 function __markDirty(e){
     if(e.target.closest('.quick-toggle'))return;
     var f=e.target.form||(e.target.closest?e.target.closest('form'):null);
-    if(f&&f.classList&&f.classList.contains('auto-save'))__autoDirty=f;
+    if(f&&f.classList&&f.classList.contains('auto-save')){ __autoDirty=f; __setSaveStatus('有未保存的修改','#fbbf24'); }
 }
 function __trySave(){
     if(__saveTimer)clearTimeout(__saveTimer);
     __saveTimer=setTimeout(function(){
         var f=__autoDirty;if(!f)return;
         __autoDirty=null;__saveTimer=null;
-        try{f.submit();}catch(err){}
+        try{ __setSaveStatus('保存中...','#fbbf24'); f.submit(); }catch(err){ __setSaveStatus('保存失败','#ef4444'); }
     },250);
 }
 document.addEventListener('input',__markDirty);
@@ -1174,10 +1182,22 @@ function renderSitesForm($sites)
             <button type="button" class="btn" style="background:#6366f1" onclick="openTemplatePicker()">📋 从模板生成（选框架→填host）</button>
         </div>
         <div class="note" style="margin:0 0 16px;padding:8px 12px;font-size:12px;color:#7fc1ff">
-            已取消「保存」按钮 —— 修改后<b>点击页面空白处即自动保存</b>，保存时自动清理缓存、站点健康与日志。
+            💡 修改任意字段后，<b>点击页面空白处自动保存</b>；也可点击下方 <b>「💾 立即保存」</b> 按钮手动触发。保存时自动清理缓存、站点健康与日志。
         </div>
         <form method="post" class="auto-save" id="form-sites">
             <input type="hidden" name="action" value="save_sites">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding:12px 16px;background:linear-gradient(135deg,#1e293b 0%,#1e1b4b 100%);border-radius:10px;border:1px solid rgba(99,102,241,0.25)">
+                <div style="display:flex;align-items:center;gap:10px">
+                    <span id="save-indicator" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#4ade80;box-shadow:0 0 8px rgba(74,222,128,0.5)"></span>
+                    <span style="font-size:13px;color:#cbd5e1">状态：<b id="save-status">已就绪</b></span>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center">
+                    <button type="button" class="btn" onclick="addRow()" style="background:#22c55e;color:#fff">➕ 添加资源站</button>
+                    <button type="submit" id="btn-save-top" style="padding:10px 24px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:10px;font-weight:600;font-size:14px;cursor:pointer;box-shadow:0 4px 14px rgba(99,102,241,0.4);transition:transform 0.15s,box-shadow 0.2s">
+                        💾 立即保存
+                    </button>
+                </div>
+            </div>
             <table id="site-tbl">
                 <tr><th style="width:110px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>特殊调用方法</th><th style="width:80px">特殊站</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
                 <?php if ($sites): foreach ($sites as $i => $s): ?>
@@ -1238,9 +1258,6 @@ function renderSitesForm($sites)
                     </tr>
                 <?php endif; ?>
             </table>
-            <div style="margin:16px 0">
-                <button type="button" class="btn" onclick="addRow()">+ 添加资源站（手动）</button>
-            </div>
         </form>
 
         <h3>单条资源站测试</h3>
@@ -1546,7 +1563,7 @@ function renderMappingForm($mapping)
             填写 ID = <code>vid:k4102szvyce</code>，剧名 = <code>庆余年</code>，集数 = <code>2</code>。
         </div>
         <div class="note" style="margin:0 0 16px;padding:8px 12px;font-size:12px;color:#7fc1ff">
-            已取消「保存」按钮 —— 修改后<b>点击页面空白处即自动保存</b>，保存时自动清理缓存、站点健康与日志。
+            💡 修改任意字段后，<b>点击页面空白处自动保存</b>；也可点击下方 <b>「💾 立即保存」</b> 按钮手动触发。保存时自动清理缓存、站点健康与日志。
         </div>
         <form method="post" class="auto-save" id="form-mapping">
             <input type="hidden" name="action" value="save_mapping">
