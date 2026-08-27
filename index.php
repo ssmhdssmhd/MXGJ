@@ -148,13 +148,13 @@ if ($cachedIsHit) {
 }
 
 // 7. 组装返回
-//    - 特殊资源站（is_special=true）自动套 本地/player.php 播放器，无需手动拼接
+//    - 特殊资源站（is_special=true）自动套 本地//player/ 播放器，无需手动拼接
 //    - 专用字段：is_special / player_url / raw_url / site_special
 $isSpecial  = !empty($result['site_special']);
 $rawPlayUrl = $result['raw_url'] ?? $result['url'] ?? '';  // finalizeUrl 前的原始地址
 $playerUrl  = $rawPlayUrl !== '' ? mxgj_player_url($rawPlayUrl) : '';
 
-// 最终对外面向的 url：特殊站走 player.php，否则按 SiteSearcher 返回值（可能已带 proxy）
+// 最终对外面向的 url：特殊站走 /player/，否则按 SiteSearcher 返回值（可能已带 proxy）
 $finalUrl = $result['url'] ?? '';
 if ($isSpecial && $playerUrl !== '') {
     $finalUrl = $playerUrl;

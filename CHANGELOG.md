@@ -6,9 +6,9 @@
 
 **新增**：
 - 后台资源站列表新增「特殊站」开关（is_special 字段）
-- 特殊资源站返回的 URL 自动套「当前域名/player.php?url=原始地址」，无需手动拼接
+- 特殊资源站返回的 URL 自动套「当前域名/player/?url=原始地址」，无需手动拼接
 - JSON 返回新增专用字段：is_special / site_special / player_url / raw_url
-- 命中特殊站时，主字段 url 也自动替换为 player.php 播放器入口
+- 命中特殊站时，主字段 url 也自动替换为 /player/ 播放器入口
 - 非特殊站不受影响，保持原有行为
 
 **技术细节**：

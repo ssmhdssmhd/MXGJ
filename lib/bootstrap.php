@@ -208,13 +208,13 @@ function mxgj_current_host(): string
 }
 
 /**
- * 用本地 player.php 包装播放地址，方便直接调用本地播放器
+ * 用本地 /player/ 播放器包装播放地址，方便直接调用本地播放器
  * $rawUrl 是资源站返回的原始播放地址
  */
 function mxgj_player_url(string $rawUrl): string
 {
     $host = mxgj_current_host();
-    return $host . '/player.php?url=' . rawurlencode($rawUrl);
+    return $host . '/player/?url=' . rawurlencode($rawUrl);
 }
 
 /**

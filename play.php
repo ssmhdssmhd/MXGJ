@@ -133,7 +133,7 @@ function mxgj_play_fetch(string $url, string $ua): string
  *
  * 真实地址是「HTML 播放页」（如 https://lgvideo.xyz/player/xxx）时，
  * 302 跳转会拿到 HTML 页、APP 原生播放器无法播放；这里直接渲染
- * 与 player.php / lgzym3u8 播放器一致的 vv00.xyz iframe 播放器，
+ * 与 /player/ / lgzym3u8 播放器一致的 vv00.xyz iframe 播放器，
  * 保证表面链接可正常打开播放（浏览器 / APP webview 均可）。
  */
 function mxgj_play_render_player(string $real): void

@@ -77,7 +77,7 @@ switch ($ACTION) {
                 'template'   => $url,          // 标准模板字段
                 'proxy'      => trim($s['proxy'] ?? ''), // 跟随播放链接（中转前缀），仅该站启用
                 'enabled'    => array_key_exists('enabled', $s) ? !empty($s['enabled']) : true, // 启用开关（默认启用）
-                'is_special' => array_key_exists('is_special', $s) ? !empty($s['is_special']) : false, // 特殊资源站：返回 URL 自动套本地 player.php 播放器
+                'is_special' => array_key_exists('is_special', $s) ? !empty($s['is_special']) : false, // 特殊资源站：返回 URL 自动套本地 /player/ 播放器
                 // 特殊调用方法（可留空走默认）
                 'method'     => $method,       // get=GET（默认） / post=POST（特殊调用）
                 'headers'    => trim($s['headers'] ?? ''), // 自定义请求头：每行 `Key: Value`
@@ -717,7 +717,7 @@ function renderSitesForm($sites)
                             <input type="text" name="sites[<?= $i ?>][post]" value="<?= htmlspecialchars($s['post'] ?? '') ?>" placeholder="POST体（如 wd=%u&ep=%p）">
                         </td>
                         <td class="center">
-                            <label class="toggle" title="开启后：该站返回的 URL 自动套 本地/player.php 播放器">
+                            <label class="toggle" title="开启后：该站返回的 URL 自动套 本地//player/ 播放器">
                                 <input type="checkbox" name="sites[<?= $i ?>][is_special]" value="1" <?= $sSpecial ? 'checked' : '' ?>>
                                 <span class="slider"></span>
                             </label>
