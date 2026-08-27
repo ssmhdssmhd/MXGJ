@@ -1,6 +1,17 @@
 # 更新日志 (CHANGELOG)
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+## [v1.16.3] 2026-08-27 · 移动端响应式修复 · 底部 Tab 栏
+
+**重构**：
+- 修复手机端布局错乱：body 不再 overflow:hidden，layout 改 min-height 替代 height:100vh
+- 桌面端侧边栏改为 position:fixed + main margin-left 布局（滚动时侧边栏不跟随）
+- 手机端（≤768px）侧边栏隐藏，底部 Tab 栏导航（概览/资源站/映射/日志/设置）
+- 手机端表格横向可滚动（overflow-x:auto + -webkit-overflow-scrolling）
+- 手机端 form-grid 自动单列，统计卡片 1fr 1fr 两列
+- 顶栏简化：隐藏版本标签和退出按钮，面包屑 ellipsis 截断
+- 支持 iOS 安全区（env(safe-area-inset-bottom)）
+
 ## [v1.16.2] 2026-08-27 · 后台侧边栏分组 + 自动保存优化 + 映射表添加按钮
 
 **改进**：
