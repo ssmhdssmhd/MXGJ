@@ -488,133 +488,171 @@ function renderDashboard()
     $saved = isset($_GET['saved']);
     $cleared = isset($_GET['cleared']);
     ?>
-    <!DOCTYPE html>
-    <html lang="zh">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>沫兮官替系统 - 后台</title>
-        <style>
-            *{box-sizing:border-box}
-            body{font-family:system-ui,-apple-system,Segoe UI,Microsoft YaHei,sans-serif;background:#0f1420;color:#e6e9f0;margin:0}
-            .wrap{max-width:960px;margin:0 auto;padding:24px}
-            header{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid #223;margin-bottom:20px}
-            header h1{font-size:18px;margin:0;color:#fff}
-            .logo{color:#4f7cff}
-            .tabs{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
-            .tabs a{padding:8px 16px;border-radius:8px;text-decoration:none;color:#b8c0d2;background:#1b2233;font-size:14px}
-            .tabs a.active{background:#4f7cff;color:#fff}
-            .panel{background:#1b2233;border-radius:12px;padding:20px}
-            table{width:100%;border-collapse:collapse;font-size:14px}
-            td,th{padding:10px 8px;border-bottom:1px solid #242e48;text-align:left}
-            th{color:#8a93a6;font-weight:600;font-size:12px}
-            .site-special{min-width:300px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
-            .site-special select{min-width:0}
-            input[type=text],input[type=password],input[type=number],select{width:100%;padding:8px 10px;border:1px solid #2c3550;background:#12172a;color:#e6e9f0;border-radius:6px;font-size:13px}
-            .btn{padding:10px 18px;border:0;border-radius:8px;background:#4f7cff;color:#fff;font-size:14px;cursor:pointer}
-            .btn-green{background:#2ecc71}.btn-danger{background:#e74c3c}
-            .btn:hover{opacity:.9}
-            .small{font-size:12px;color:#8a93a6}
-            .note{background:#243352;border-radius:8px;padding:12px;font-size:13px;line-height:1.7}
-            .toast{display:none;position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#2ecc71;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px}
-            .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-            .form-grid .full{grid-column:1/-1}
-            label{display:block;font-size:12px;color:#8a93a6;margin-bottom:6px}
-            .stat-cards{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}
-            .stat{background:#1b2233;border-radius:12px;padding:18px 22px;min-width:160px}
-            .stat b{font-size:26px;color:#fff}
-            .stat span{display:block;font-size:12px;color:#8a93a6;margin-top:4px}
-            h2{font-size:16px;margin:0 0 16px;color:#fff}
-            pre{background:#0d1118;padding:12px;border-radius:8px;overflow:auto;font-size:12px}
-            .center{text-align:center}
-            .row-disabled td{opacity:.5}
-            .row-disabled input[type=text]{text-decoration:line-through}
-            /* 启用/禁用开关 */
-            .toggle{position:relative;display:inline-block;width:44px;height:24px;vertical-align:middle}
-            .toggle input{display:none}
-            .toggle .slider{position:absolute;cursor:pointer;inset:0;background:#3a4460;border-radius:24px;transition:.2s}
-            .toggle .slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
-            .toggle input:checked + .slider{background:#2ecc71}
-            .toggle input:checked + .slider:before{transform:translateX(20px)}
-        </style>
-    </head>
-    <body>
-    <div class="wrap">
-        <header>
-            <h1><span class="logo">◆</span> <?= MXGJ_NAME ?> <span class="small">v<?= MXGJ_VERSION ?></span></h1>
-            <form method="post" style="margin:0"><input type="hidden" name="action" value="logout"><button class="btn btn-danger">退出登录</button></form>
-        </header>
-
-        <div class="tabs">
-            <a href="?tab=dashboard" class="<?= $tab==='dashboard'?'active':'' ?>">概览</a>
-            <a href="?tab=sites" class="<?= $tab==='sites'?'active':'' ?>">资源站</a>
-            <a href="?tab=mapping" class="<?= $tab==='mapping'?'active':'' ?>">映射表</a>
-            <a href="?tab=update" class="<?= $tab==='update'?'active':'' ?>">更新</a>
-            <a href="?tab=logs" class="<?= $tab==='logs'?'active':'' ?>">日志</a>
-            <a href="?tab=help" class="<?= $tab==='help'?'active':'' ?>">帮助</a>
-            <a href="?tab=settings" class="<?= $tab==='settings'?'active':'' ?>">设置</a>
-        </div>
-
-        <div class="toast" id="toast">保存成功</div>
-
-        <?php if ($saved): ?><script>document.getElementById('toast').style.display='block';setTimeout(()=>document.getElementById('toast').style.display='none',2000);</script><?php endif; ?>
-        <?php if ($cleared): ?><script>alert('缓存已清空');</script><?php endif; ?>
-
-        <?php if ($tab === 'dashboard'): ?>
-            <?php renderOverview($sites, $cacheCnt, $mapping); ?>
-        <?php elseif ($tab === 'sites'): ?>
-            <?php renderSitesForm($sites); ?>
-        <?php elseif ($tab === 'mapping'): ?>
-            <?php renderMappingForm($mapping); ?>
-        <?php elseif ($tab === 'update'): ?>
-            <?php renderUpdateForm(); ?>
-        <?php elseif ($tab === 'logs'): ?>
-            <?php renderLogs(); ?>
-        <?php elseif ($tab === 'help'): ?>
-            <?php renderHelp(); ?>
-        <?php elseif ($tab === 'settings'): ?>
-            <?php renderSettingsForm($settings); ?>
-        <?php endif; ?>
-    </div>
-
-    <script>
-    /* ---- 自动保存：点击页面空白处，自动提交有改动的表单（去除「保存」按钮） ---- */
-    var __autoDirty = null;
-    document.addEventListener('change', function (e) {
-        if (e.target.closest('.quick-toggle')) { return; } // 快捷开关已即时保存，跳过
-        var f = e.target.form || (e.target.closest ? e.target.closest('form') : null);
-        if (f && f.classList && f.classList.contains('auto-save')) {
-            __autoDirty = f;
-        }
-    });
-    document.addEventListener('click', function (e) {
-        if (e.target.closest('.quick-toggle')) { return; } // 快捷开关已即时保存，跳过
-        var inForm = e.target.closest ? e.target.closest('form.auto-save') : null;
-        if (inForm) {
-            // 表单内功能按钮（增/删行）也算一次改动，稍后点空白一并保存
-            if (e.target.closest('button[type="button"]')) { __autoDirty = inForm; }
-            return; // 在表单内点击不触发保存
-        }
-        // 表单外：点击链接/按钮/输入等交互元素不保存，仅“空白”区域点击触发
-        if (e.target.closest('a,button,input,select,textarea')) { return; }
-        if (__autoDirty) {
-            var f = __autoDirty;
-            __autoDirty = null;
-            try { f.submit(); } catch (err) { /* 忽略 */ }
-        }
-    });
-    </script>
-    </body></html>
     <?php
+    $tabLabels = [
+        'dashboard' => ['label' => '概览',     'icon' => '📊', 'crumb' => '首页'],
+        'sites'     => ['label' => '资源站',   'icon' => '🌐', 'crumb' => '资源站管理'],
+        'mapping'   => ['label' => '映射表',   'icon' => '🗂️', 'crumb' => '映射管理'],
+        'update'    => ['label' => '在线更新', 'icon' => '⬆️', 'crumb' => '系统更新'],
+        'logs'      => ['label' => '日志',     'icon' => '📋', 'crumb' => '日志中心'],
+        'help'      => ['label' => '帮助',     'icon' => '❓', 'crumb' => '使用帮助'],
+        'settings'  => ['label' => '设置',     'icon' => '⚙️', 'crumb' => '系统设置'],
+    ];
+    $currentLabel = $tabLabels[$tab]['label'] ?? '概览';
+    $currentIcon  = $tabLabels[$tab]['icon']  ?? '📊';
+    $currentCrumb = $tabLabels[$tab]['crumb'] ?? '首页';
+    ?>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title><?= MXGJ_NAME ?> · <?= $currentLabel ?></title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1f2937;font-size:14px;overflow:hidden}
+a{color:inherit;text-decoration:none}
+.layout{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:220px;background:linear-gradient(180deg,#1a2332 0%,#0f1826 100%);color:#e5e7eb;display:flex;flex-direction:column;flex-shrink:0;box-shadow:2px 0 8px rgba(0,0,0,.08)}
+.sidebar-logo{padding:20px 20px 24px;border-bottom:1px solid rgba(255,255,255,.06)}
+.sidebar-logo .brand{font-size:16px;font-weight:700;color:#fff;display:flex;align-items:center;gap:10px}
+.sidebar-logo .brand .dot{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#4f7cff,#6366f1);display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff}
+.sidebar-logo .ver{font-size:11px;color:#6b7a94;margin-top:6px;padding-left:42px}
+.nav{flex:1;padding:12px 10px;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;color:#9ca3af;cursor:pointer;font-size:14px;transition:all .15s;margin-bottom:2px}
+.nav-item:hover{background:rgba(255,255,255,.05);color:#fff}
+.nav-item.active{background:linear-gradient(135deg,#4f7cff,#6366f1);color:#fff;box-shadow:0 4px 12px rgba(79,124,255,.35)}
+.nav-item .icon{font-size:16px;width:20px;text-align:center}
+.sidebar-footer{padding:14px 18px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:#4b5563;line-height:1.6}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:56px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.breadcrumb{display:flex;align-items:center;gap:8px;font-size:14px;color:#6b7280}
+.breadcrumb .sep{color:#d1d5db}
+.breadcrumb .current{color:#111827;font-weight:600}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.topbar-right .version-tag{background:#eef2ff;color:#4f7cff;font-size:12px;padding:4px 10px;border-radius:12px;font-weight:500}
+.user-area{display:flex;align-items:center;gap:10px}
+.user-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#4f7cff,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:600}
+.logout-btn{background:none;border:none;color:#6b7280;font-size:13px;cursor:pointer;padding:6px 10px;border-radius:6px}
+.logout-btn:hover{background:#f3f4f6;color:#e74c3c}
+.content{flex:1;overflow-y:auto;padding:24px}
+.page-title{font-size:20px;font-weight:700;color:#111827;margin-bottom:4px}
+.page-subtitle{font-size:13px;color:#6b7280;margin-bottom:20px}
+.panel{background:#fff;border-radius:12px;padding:22px;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid #f3f4f6;margin-bottom:16px}
+.panel h2{font-size:16px;font-weight:700;color:#111827;margin:0 0 14px}
+.panel h3{font-size:14px;font-weight:600;color:#374151;margin:0 0 10px}
+.stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
+.stat-card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid #f3f4f6;display:flex;align-items:center;gap:16px}
+.stat-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;flex-shrink:0}
+.stat-icon.green{background:linear-gradient(135deg,#10b981,#059669)}
+.stat-icon.blue{background:linear-gradient(135deg,#3b82f6,#2563eb)}
+.stat-icon.orange{background:linear-gradient(135deg,#f59e0b,#d97706)}
+.stat-icon.red{background:linear-gradient(135deg,#ef4444,#dc2626)}
+.stat-icon.purple{background:linear-gradient(135deg,#8b5cf6,#7c3aed)}
+.stat-info b{font-size:28px;color:#111827;display:block;font-weight:700}
+.stat-info span{font-size:12px;color:#6b7280}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:11px 10px;border-bottom:1px solid #f3f4f6;text-align:left}
+th{color:#6b7280;font-weight:600;font-size:12px;background:#fafbfc;white-space:nowrap}
+tr:hover td{background:#fafbfc}
+.site-special{min-width:300px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.site-special select{min-width:0}
+input[type=text],input[type=password],input[type=number],select,textarea{width:100%;padding:8px 12px;border:1px solid #e5e7eb;background:#fff;color:#1f2937;border-radius:6px;font-size:13px;outline:none;transition:border-color .15s,box-shadow .15s}
+input[type=text]:focus,input[type=password]:focus,input[type=number]:focus,select:focus{border-color:#4f7cff;box-shadow:0 0 0 3px rgba(79,124,255,.12)}
+label{display:block;font-size:12px;color:#6b7280;margin-bottom:6px;font-weight:500}
+.btn{padding:8px 18px;border:0;border-radius:6px;background:#4f7cff;color:#fff;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s}
+.btn:hover{background:#3f6ce8;transform:translateY(-1px);box-shadow:0 4px 10px rgba(79,124,255,.25)}
+.btn:active{transform:translateY(0)}
+.btn-green{background:#10b981}.btn-green:hover{background:#059669;box-shadow:0 4px 10px rgba(16,185,129,.25)}
+.btn-danger{background:#ef4444}.btn-danger:hover{background:#dc2626;box-shadow:0 4px 10px rgba(239,68,68,.25)}
+.small{font-size:12px;color:#6b7280}
+.note{background:#f0f4ff;border-left:3px solid #4f7cff;border-radius:6px;padding:12px 14px;font-size:13px;line-height:1.7;color:#374151}
+pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflow:auto;font-size:12px;line-height:1.6}
+.toast{display:none;position:fixed;top:72px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;z-index:999;box-shadow:0 6px 20px rgba(16,185,129,.3)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.form-grid .full{grid-column:1/-1}
+.center{text-align:center}
+.row-disabled td{opacity:.45}
+.row-disabled input[type=text]{text-decoration:line-through}
+.toggle{position:relative;display:inline-block;width:40px;height:22px;vertical-align:middle}
+.toggle input{display:none}
+.toggle .slider{position:absolute;cursor:pointer;inset:0;background:#d1d5db;border-radius:22px;transition:.2s}
+.toggle .slider:before{content:'';position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.toggle input:checked + .slider{background:#10b981}
+.toggle input:checked + .slider:before{transform:translateX(18px)}
+@media(max-width:900px){.sidebar{width:64px}.sidebar-logo .brand span:not(.dot),.sidebar-logo .ver,.nav-item span:not(.icon),.sidebar-footer{display:none}.stat-cards{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+<div class="sidebar-logo">
+<div class="brand"><span class="dot">◆</span> <?= MXGJ_NAME ?></div>
+<div class="ver">v<?= MXGJ_VERSION ?> · 后台管理</div>
+</div>
+<nav class="nav">
+<a class="nav-item <?= $tab==='dashboard'?'active':'' ?>" href="?tab=dashboard"><span class="icon">📊</span><span>概览</span></a>
+<a class="nav-item <?= $tab==='sites'?'active':'' ?>" href="?tab=sites"><span class="icon">🌐</span><span>资源站</span></a>
+<a class="nav-item <?= $tab==='mapping'?'active':'' ?>" href="?tab=mapping"><span class="icon">🗂️</span><span>映射表</span></a>
+<a class="nav-item <?= $tab==='update'?'active':'' ?>" href="?tab=update"><span class="icon">⬆️</span><span>在线更新</span></a>
+<a class="nav-item <?= $tab==='logs'?'active':'' ?>" href="?tab=logs"><span class="icon">📋</span><span>日志</span></a>
+<a class="nav-item <?= $tab==='help'?'active':'' ?>" href="?tab=help"><span class="icon">❓</span><span>帮助</span></a>
+<a class="nav-item <?= $tab==='settings'?'active':'' ?>" href="?tab=settings"><span class="icon">⚙️</span><span>设置</span></a>
+</nav>
+<div class="sidebar-footer">Git 仓库<br>ssmhdssmhd/MXGJ</div>
+</aside>
+<div class="main">
+<div class="topbar">
+<div class="breadcrumb"><span>🏠</span><span class="sep">/</span><span><?= $currentCrumb ?></span><span class="sep">/</span><span class="current"><?= $currentLabel ?></span></div>
+<div class="topbar-right">
+<span class="version-tag">v<?= MXGJ_VERSION ?></span>
+<div class="user-area">
+<div class="user-avatar">MX</div>
+<form method="post" style="margin:0"><input type="hidden" name="action" value="logout"><button class="logout-btn" type="submit">退出</button></form>
+</div>
+</div>
+</div>
+<div class="content">
+<div class="page-title"><?= $currentIcon ?> <?= $currentLabel ?></div>
+<div class="page-subtitle"><?= $currentCrumb ?></div>
+<div class="toast" id="toast">保存成功</div>
+<?php if ($saved): ?><script>document.getElementById('toast').style.display='block';setTimeout(()=>document.getElementById('toast').style.display='none',2000);</script><?php endif; ?>
+<?php if ($cleared): ?><script>alert('缓存已清空');</script><?php endif; ?>
+<?php if ($tab === 'dashboard'): ?>
+<?php renderOverview($sites, $cacheCnt, $mapping); ?>
+<?php elseif ($tab === 'sites'): ?>
+<?php renderSitesForm($sites); ?>
+<?php elseif ($tab === 'mapping'): ?>
+<?php renderMappingForm($mapping); ?>
+<?php elseif ($tab === 'update'): ?>
+<?php renderUpdateForm(); ?>
+<?php elseif ($tab === 'logs'): ?>
+<?php renderLogs(); ?>
+<?php elseif ($tab === 'help'): ?>
+<?php renderHelp(); ?>
+<?php elseif ($tab === 'settings'): ?>
+<?php renderSettingsForm($settings); ?>
+<?php endif; ?>
+</div>
+</div>
+</div>
+<script>
+var __autoDirty=null;
+document.addEventListener('change',function(e){if(e.target.closest('.quick-toggle'))return;var f=e.target.form||(e.target.closest?e.target.closest('form'):null);if(f&&f.classList&&f.classList.contains('auto-save'))__autoDirty=f;});
+document.addEventListener('click',function(e){if(e.target.closest('.quick-toggle'))return;var inForm=e.target.closest?e.target.closest('form.auto-save'):null;if(inForm){if(e.target.closest('button[type="button"]'))__autoDirty=inForm;return;}if(e.target.closest('a,button,input,select,textarea'))return;if(__autoDirty){var f=__autoDirty;__autoDirty=null;try{f.submit();}catch(err){}}});
+</script>
+</body></html>
+
+<?php
 }
 
 function renderOverview($sites, $cacheCnt, $mapping)
 {
     ?>
     <div class="stat-cards">
-        <div class="stat"><b><?= count($sites) ?></b><span>资源站</span></div>
-        <div class="stat"><b><?= $cacheCnt ?></b><span>缓存文件</span></div>
-        <div class="stat"><b><?= count($mapping['title'] ?? []) + count($mapping['cid'] ?? []) ?></b><span>映射条目</span></div>
+        <div class="stat-card"><div class="stat-icon green">🌐</div><div class="stat-info"><b><?= count($sites) ?></b><span>资源站</span></div></div>
+        <div class="stat-card"><div class="stat-icon orange">💾</div><div class="stat-info"><b><?= $cacheCnt ?></b><span>缓存文件</span></div></div>
+        <div class="stat-card"><div class="stat-icon purple">🗂️</div><div class="stat-info"><b><?= count($mapping['title'] ?? []) + count($mapping['cid'] ?? []) ?></b><span>映射条目</span></div></div>
     </div>
 
     <div class="panel" style="margin-bottom:16px">
