@@ -14,7 +14,7 @@
  * 调用：/play.php?u=<base64url>  （兼容 ?url=<原始地址>）
  */
 
-require __DIR__ . '/lib/bootstrap.php';
+require_once __DIR__ . '/lib/bootstrap.php';
 
 // 表面播放链接功能已移除，此入口固定为「代理转发」模式，可作独立的手动播放入口
 $mode = 'proxy';

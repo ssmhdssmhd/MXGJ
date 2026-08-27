@@ -15,7 +15,7 @@
  *  4. 命中返回 code=200 + m3u8 地址；否则返回明确错误码
  */
 
-require __DIR__ . '/lib/bootstrap.php';
+require_once __DIR__ . '/lib/bootstrap.php';
 
 $debug = !empty($_GET['debug']);
 $page  = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;

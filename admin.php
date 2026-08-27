@@ -11,7 +11,7 @@
  * 密码默认 moxi123，登录后请在「设置」页修改。
  */
 
-require __DIR__ . '/lib/bootstrap.php';
+require_once __DIR__ . '/lib/bootstrap.php';
 
 session_start();
 

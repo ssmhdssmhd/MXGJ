@@ -11,7 +11,7 @@
  * 功能：增删改查 / 苹果CMS XML导入 / 在线预览 / 一键设默认 / 导出配置
  */
 
-require __DIR__ . '/../lib/bootstrap.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
 
 session_start();
 

@@ -12,7 +12,7 @@
  * 新版前台入口：/player/play.php?code=xxx&url=xxx
  */
 
-require __DIR__ . '/lib/bootstrap.php';
+require_once __DIR__ . '/lib/bootstrap.php';
 
 // 读取播放地址（优先明文 url，其次 base64url 加密的 u）
 $playUrl = trim((string)($_GET['url'] ?? ''));

@@ -11,7 +11,7 @@
  *   /player/play.php?code=<播放器编码>&u=<base64url地址>    （加密地址）
  */
 
-require __DIR__ . '/../lib/bootstrap.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
 
 // 1. 读取播放地址
 $playUrl = trim((string)($_GET['url'] ?? ''));

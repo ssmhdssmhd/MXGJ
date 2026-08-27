@@ -12,7 +12,7 @@
  *  - 支持 ?dry=1 仅测速不执行，便于排查
  */
 
-require __DIR__ . '/lib/bootstrap.php';
+require_once __DIR__ . '/lib/bootstrap.php';
 
 header('Content-Type: text/plain; charset=utf-8');
 

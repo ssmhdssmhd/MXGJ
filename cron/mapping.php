@@ -18,7 +18,7 @@
  * 详细使用说明见「后台 -> 帮助 -> 定时访问功能」。
  */
 
-require __DIR__ . '/../lib/bootstrap.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
 
 header('Content-Type: text/plain; charset=utf-8');
 $isCli = PHP_SAPI === 'cli';

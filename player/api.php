@@ -10,7 +10,7 @@
  * GET  /player/api.php?default=1    → 默认播放器详情
  */
 
-require __DIR__ . '/../lib/bootstrap.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
