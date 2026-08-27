@@ -4,9 +4,9 @@
  *
  * 步骤：
  *  1. 备份现有资源站配置，写入指向本地模拟站(动态端口)的测试配置
- *  2. 启动 3 个服务：主接口 + 两个模拟资源站（均延迟 1.2s，用于验证多线程并发）
+ *  2. 启动服务：主接口 + 三个模拟资源站（A=纯文本720p / B=JSON1080p / C=POST特殊调用480p，均延迟1.2s验证多线程并发）
  *  3. 用腾讯官方链接调用主接口，验证多线程搜索返回 庆余年 第2集 的 m3u8
- *  4. 验证错误分支与并发耗时
+ *  4. 验证「特殊资源站(POST调用方法)」以 POST 收到 `wd=%u&ep=%p` 请求体
  *  5. 清理服务与恢复配置
  *
  * 运行：php tests/run_test.php
@@ -79,13 +79,16 @@ function check(string $name, bool $ok, string $detail = '')
 $mainPort  = freePort();
 $mockAPort = freePort();
 $mockBPort = freePort();
-echo "端口: main={$mainPort} mockA={$mockAPort} mockB={$mockBPort}\n";
+$mockCPort = freePort();
+echo "端口: main={$mainPort} mockA={$mockAPort} mockB={$mockBPort} mockC(Post)={$mockCPort}\n";
 
 $backup = file_exists($sitesFile) ? file_get_contents($sitesFile) : null;
 $testSites = [
     'sites' => [
         ['name' => '模拟资源站A(纯文本,720p)', 'template' => "http://127.0.0.1:{$mockAPort}/vod?wd=%u&ep=%p&fmt=text"],
         ['name' => '模拟资源站B(JSON,1080p)',  'template' => "http://127.0.0.1:{$mockBPort}/vod?wd=%u&ep=%p"],
+        // 特殊调用方法：POST + POST体（wd=%u&ep=%p）
+        ['name' => '模拟资源站C(POST特殊调用,480p)', 'template' => "http://127.0.0.1:{$mockCPort}/vod", 'method' => 'post', 'post' => 'wd=%u&ep=%p'],
     ],
 ];
 file_put_contents($sitesFile, json_encode($testSites, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
@@ -110,6 +113,7 @@ function startServer(int $port, string $docroot, string $router = '', string $cw
 $servers[] = startServer($mainPort, $ROOT);
 $servers[] = startServer($mockAPort, $ROOT . '/tests', $ROOT . '/tests/mock_site.php', $ROOT);
 $servers[] = startServer($mockBPort, $ROOT . '/tests', $ROOT . '/tests/mock_site.php', $ROOT);
+$servers[] = startServer($mockCPort, $ROOT . '/tests', $ROOT . '/tests/mock_site.php', $ROOT);
 
 function stopAll(array $servers)
 {
@@ -121,13 +125,14 @@ function stopAll(array $servers)
     }
 }
 
-register_shutdown_function(function () use (&$servers, $sitesFile, $backup) {
+register_shutdown_function(function () use (&$servers, $sitesFile, $backup, $ROOT) {
     stopAll($servers);
     if ($backup !== null) {
         file_put_contents($sitesFile, $backup);
     } else {
         @unlink($sitesFile);
     }
+    @unlink($ROOT . '/data/proof_post.txt');
 });
 
 /* 3. 等待主接口就绪 */
@@ -166,8 +171,14 @@ $inner   = surface_inner($surface);
 check('url 为本站表面播放链接(/play.php?u=)', $surface !== '' && strpos($surface, '/play.php?u=') !== false, $surface);
 check('表面链接解码后命中 1080p 资源(第2集)', strpos($inner, $expect) !== false, $inner);
 check('msg 等于 url（均为表面播放链接）', ($json['msg'] ?? '') === $surface, $json['msg'] ?? '');
-check('并发耗时 < 2.2s(两站各延迟1.2s, 串行约2.4s)', $elapsed < 2.2, round($elapsed, 2) . 's');
+check('并发耗时 < 2.9s(3站各延迟1.2s, 串行约4.8s)' , $elapsed < 2.9, round($elapsed, 2) . 's');
 echo '  返回内容: ' . $res['body'] . "\n";
+
+// 特殊调用方法验证：POST 资源站应收到 `wd=%u&ep=%p` 请求体
+$proofFile = $ROOT . '/data/proof_post.txt';
+$proofBody = is_file($proofFile) ? (string)file_get_contents($proofFile) : '';
+$proofOk   = $proofBody !== '' && strpos($proofBody, 'wd=') !== false && strpos($proofBody, 'ep=2') !== false;
+check('特殊资源站(POST调用方法)收到 wd=%u&ep=%p 请求体', $proofOk, $proofBody === '' ? '未收到POST请求' : '请求体=' . $proofBody);
 
 /* 5. 错误分支 */
 echo "\n【错误分支】\n";

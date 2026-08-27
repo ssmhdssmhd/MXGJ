@@ -2,7 +2,23 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [1.11.1] - 2026-08-25
+## [1.12.0] - 2026-08-26
+
+### ✨ 新增：资源站「特殊调用方法」（GET/POST / 自定义Header / POST体 / 返回解析模式）
+
+部分资源站不可按普通 GET+模板的方式搜索，本版本为每个资源站新增一组**特殊调用方法**配置（存于 `sites.json` 每条站点级字段）：
+
+| 字段 | 取值 | 含义 |
+| ---- | ---- | ---- |
+| `method` | `get`（默认）/ `post` | HTTP 调用方法，`post` 时走特殊 POST 提交 |
+| `headers` | 每行 `Key: Value` 或关联数组 | 自定义请求头（Referer/Cookie/Auth 等），发送时附带 |
+| `post` | 含 `%u/%s/%p` 的模板 | POST 请求体；`method=post` 且留空时默认 `wd=%u&ep=%p` |
+| `parse` | 空（自动）/ `json` / `text` / `apple` | 强制返回解析模式，防止自动识别误判 |
+
+- **后台「资源站」表新增「特殊调用方法」列**：每行可直接选 GET/POST、返回解析模式，并填写自定义 Header 与 POST 请求体；手动添加/编辑行同步支持
+- **前台搜索自动路由**（`lib/SiteSearcher.php`）：新增 `buildRequest()`/`normalizeHeaders()`，`makeHandle()` 支持 POST + 自定义头 + 请求体，`parseBody()` 支持强制解析模式
+- **兼容性**：旧配置无新字段时全部走默认 GET+自动解析，行为不变；苹果CMS 检测/自动添加弹窗（`save_site_one`）在修改已有站时**保留**原特殊调用配置，不会覆盖
+- 自测新增「特殊资源站(POST调用方法)收到 `wd=%u&ep=%p` 请求体」用例（10/10 通过）
 
 ### 🔧 修复：play.php 对 HTML 播放页「特殊资源站不能播放」
 

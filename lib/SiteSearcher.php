@@ -41,16 +41,18 @@ class SiteSearcher
         $handles = [];
         foreach ($pool as $item) {
             $site = $item['site'];
-            $url  = self::buildUrl($site, $title, $episode);
-            if ($url === '') {
+            // 特殊调用方法：GET/POST、自定义请求头、POST 请求体、返回解析模式
+            $req  = self::buildRequest($site, $title, $episode);
+            if ($req['url'] === '') {
                 continue;
             }
             $handles[] = [
-                'ch'    => self::makeHandle($url, $timeout),
+                'ch'    => self::makeHandle($req['url'], $timeout, $req),
                 'site'  => $site,
                 'key'   => $item['key'],
                 't0'    => microtime(true),
-                'url'   => $url,
+                'url'   => $req['url'],
+                'parse' => $req['parse'],
             ];
         }
 
@@ -82,7 +84,7 @@ class SiteSearcher
                 $errors[] = ($h['site']['name'] ?? $h['url']) . '：' . $err;
             }
             if ($body !== false && $body !== '') {
-                $parsed = self::parseBody($body, $episode);
+                $parsed = self::parseBody($body, $episode, (string)($h['parse'] ?? ''));
                 if ($parsed['url'] !== '') {
                     $parsed['site'] = $h['site']['name'] ?? $h['url'];
                     $parsed['url']  = self::finalizeUrl($parsed['url'], $h['site']);
@@ -144,12 +146,85 @@ class SiteSearcher
     }
 
     /**
-     * 生成 curl 句柄
+     * 由资源站配置构建一次请求描述（特殊调用方法）
+     *
+     * 支持如下资源站级字段：
+     *   - method  : get|post    HTTP 调用方法（默认 get）
+     *   - headers : 自定义请求头（关联数组，或每行 `Key: Value` 的文本）
+     *   - post    : POST 请求体模板，含占位符 %u/%s/%p（method=post 时生效，留空默认 wd=%u&ep=%p）
+     *   - parse   : 返回解析模式覆盖，空/auto=自动识别，json/text/apple=强制指定
+     *
+     * @return array{url:string,method:string,headers:array,post:string,parse:string}
      */
-    protected static function makeHandle(string $url, int $timeout)
+    protected static function buildRequest(array $site, string $title, int $episode): array
     {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
+        $method = mxgj_lower(trim((string)($site['method'] ?? '')));
+        if (!in_array($method, ['post'], true)) { $method = 'get'; }
+
+        $parse = mxgj_lower(trim((string)($site['parse'] ?? '')));
+        if (!in_array($parse, ['json', 'text', 'apple'], true)) { $parse = ''; }
+
+        $url  = self::buildUrl($site, $title, $episode);
+
+        // POST 请求体
+        $post = trim((string)($site['post'] ?? ''));
+        if ($method === 'post' && $post === '') {
+            $post = 'wd=%u&ep=%p'; // 未填时按苹果CMS搜索体默认
+        }
+        if ($post !== '') {
+            $post = str_replace(['%U', '%T'], [rawurlencode($title), $title], $post);
+            $post = str_replace(['%u', '%t'], [urlencode($title), $title], $post);
+            $post = str_replace(['%s', '%S', '%p'], [$title, $title, $episode], $post);
+        }
+
+        return [
+            'url'    => $url,
+            'method' => $method,
+            'headers'=> self::normalizeHeaders($site),
+            'post'   => $post,
+            'parse'  => $parse,
+        ];
+    }
+
+    /* 规范自定义请求头：兼容关联数组 或 每行 `Key: Value` 的纯文本 */
+    protected static function normalizeHeaders(array $site): array
+    {
+        $h = $site['headers'] ?? '';
+        $out = [];
+        if (is_array($h)) {
+            foreach ($h as $k => $v) {
+                if ($k !== '' && !is_int($k)) { $out[$k] = (string)$v; }
+            }
+            return $out;
+        }
+        $h = trim((string)$h);
+        if ($h === '') { return []; }
+        foreach (preg_split('/\r\n|\r|\n/', $h) as $line) {
+            $line = trim($line);
+            if ($line === '') { continue; }
+            $p = strpos($line, ':');
+            if ($p === false) { continue; }
+            $k = trim(substr($line, 0, $p));
+            $v = trim(substr($line, $p + 1));
+            if ($k !== '') { $out[$k] = $v; }
+        }
+        return $out;
+    }
+
+    /**
+     * 生成 curl 句柄（支持 GET/POST + 自定义请求头 + POST 请求体）
+     */
+    protected static function makeHandle(string $url, int $timeout, array $req = [])
+    {
+        $headers = ['Accept: application/json, text/plain, */*', 'Referer: ' . self::origin($url)];
+        $custom  = (isset($req['headers']) && is_array($req['headers'])) ? $req['headers'] : [];
+        foreach ($custom as $k => $v) {
+            $headers[] = $k . ': ' . $v;
+        }
+        if (($req['method'] ?? 'get') === 'post') {
+            $headers[] = 'Content-Type: application/x-www-form-urlencoded';
+        }
+        $opts = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => $timeout,
             CURLOPT_CONNECTTIMEOUT => min(8, $timeout),
@@ -158,8 +233,14 @@ class SiteSearcher
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-            CURLOPT_HTTPHEADER     => ['Accept: application/json, text/plain, */*', 'Referer: ' . self::origin($url)],
-        ]);
+            CURLOPT_HTTPHEADER     => $headers,
+        ];
+        if (($req['method'] ?? 'get') === 'post') {
+            $opts[CURLOPT_POST]  = true;
+            $opts[CURLOPT_POSTFIELDS] = (string)($req['post'] ?? '');
+        }
+        $ch = curl_init($url);
+        curl_setopt_array($ch, $opts);
         return $ch;
     }
 
@@ -180,12 +261,21 @@ class SiteSearcher
      *
      * @param string $body    响应正文
      * @param int    $episode 目标集数（用于苹果CMS列表内按集数提取）
+     * @param string $mode    返回解析模式覆盖：''=自动识别，json/text/apple=强制指定
      */
-    protected static function parseBody(string $body, int $episode = 0): array
+    protected static function parseBody(string $body, int $episode = 0, string $mode = ''): array
     {
         $body = ltrim($body, "\xEF\xBB\xBF \t\r\n");
         if ($body === '') {
             return ['url' => '', 'msg' => '返回为空', 'w' => 0];
+        }
+        // 强制纯文本模式：整段即播放地址
+        if ($mode === 'text') {
+            $body = trim($body);
+            if (strpos($body, 'http') === 0 || substr($body, -5) === '.m3u8') {
+                return ['url' => $body, 'msg' => '', 'w' => 0];
+            }
+            return ['url' => '', 'msg' => '非标准返回', 'w' => 0];
         }
         // 兼容 JSONP：xx({...})
         if (preg_match('~\{.*\}~s', $body, $m)) {
@@ -193,6 +283,11 @@ class SiteSearcher
         }
         $data = json_decode($body, true);
         if (is_array($data)) {
+            // 强制苹果CMS列表模式（返回本身就是 list[] 时也直接可用）
+            if ($mode === 'apple') {
+                $src = (isset($data['list']) && is_array($data['list'])) ? $data['list'] : $data;
+                return ['url' => self::extractAppleList($src, $episode), 'msg' => '', 'w' => 0];
+            }
             $url = $data['url'] ?? $data['m3u8'] ?? ($data['data']['url'] ?? '');
             $w   = $data['w'] ?? $data['width'] ?? ($data['data']['w'] ?? 0);
             $msg = $data['msg'] ?? $data['message'] ?? '';
@@ -206,7 +301,15 @@ class SiteSearcher
                     return ['url' => $hit, 'msg' => '', 'w' => 0];
                 }
             }
+            // 强制 JSON 模式：已确认是 JSON 但无播放地址
+            if ($mode === 'json') {
+                return ['url' => '', 'msg' => $msg !== '' ? (string)$msg : '返回JSON但无播放地址', 'w' => (int)$w];
+            }
             return ['url' => '', 'msg' => (string)$msg, 'w' => (int)$w];
+        }
+        // 强制 JSON 模式：不是 JSON 则直接失败
+        if ($mode === 'json') {
+            return ['url' => '', 'msg' => '返回内容不是JSON', 'w' => 0];
         }
         // 纯文本：以 http 开头或以 .m3u8 结尾
         $body = trim($body);

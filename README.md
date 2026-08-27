@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.11.1-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.12.0-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,16 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.12.0] 2026-08-26 · 资源站「特殊调用方法」（GET/POST · 自定义Header · POST体 · 返回解析模式）
+- 为每个资源站新增**特殊调用方法**配置（后台「资源站」表新增「特殊调用方法」列）：
+  - **调用方法**：`GET`（默认）或 `POST`（特殊，走 POST 提交搜索）
+  - **自定义Header**：每行 `Key: Value`，发送时附带（Referer / Cookie / Auth 等）
+  - **POST体**：含占位符 `%u/%s/%p` 的请求体；`method=POST` 且留空时默认 `wd=%u&ep=%p`
+  - **返回解析**：自动 / JSON / 纯文本 / 苹果CMS，强制指定防误判
+- 前台搜索自动路由到对应调用方法（`lib/SiteSearcher.php` 新增 `buildRequest`/`normalizeHeaders`，`makeHandle` 支持 POST，`parseBody` 支持强制模式）
+- 旧配置无新字段时全部走默认 GET+自动解析，**完全兼容**；苹果CMS 检测弹窗修改已有站时保留原特殊配置
+- 自测新增「特殊资源站(POST调用方法)收到 `wd=%u&ep=%p` 请求体」用例（10/10 通过）
 
 ### [v1.11.1] 2026-08-25 · 修复 play.php 对 HTML 播放页「特殊资源站不能播放」
 - `play.php?u=<加密地址>` 遇 HTML 播放页（如 `https://lgvideo.xyz/player/xxx`）不再 302 跳转，改为**直接渲染内联播放器**（内嵌 `https://vv00.xyz?url=<真实地址>` iframe，与 player.php / lgzym3u8 一致）
@@ -122,6 +132,7 @@
 | 🗺️ 映射表 | `vid/cid → 剧名+集数` 精确映射，命中后**自动固化**、下次免联网 |
 | 🧩 模板系统 | `%s / %u / %t / %p` 占位符，兼容 **JSON / JSONP / 纯文本 / 苹果CMS 列表** |
 | 🧪 资源站检测 | 粘贴苹果CMS10采集接口即自动探测、生成模板、一键保存 |
+| 🧬 特殊调用方法 | 资源站级可配 `GET/POST`、自定义请求头、POST 请求体、返回解析模式（自动/JSON/纯文本/苹果CMS） |
 | 🛡️ 表面播放链接 | 返回统一为当前域名 `/play.php?u=` 播放入口，可正常打开播放、APP 可识别，隐藏真实地址 |
 | 📦 缓存 | 搜索结果文件缓存，降低对资源站的重复请求 |
 | 🕰️ 定时采集 | `cron/mapping.php` 自动补全映射 + 盘点资源站库存，省去手动 |
@@ -199,6 +210,31 @@ php -S 0.0.0.0:8080 -t .
 | `%p`   | 集数             | `2`                          |
 
 示例（苹果 CMS10 类）：`https://your-cms.com/api.php/provide/vod/?ac=videolist&wd=%u`
+
+**特殊调用方法**（针对不能用普通 GET 搜索的「特殊资源站」）：
+
+后台「资源站」表每行「特殊调用方法」列可个性化配置该站如何被调用：
+
+| 配置 | 说明 |
+| ---- | ---- |
+| 调用方法 | `GET`（默认）/ `POST`（特殊：以 POST 提交搜索请求） |
+| 自定义Header | 每行 `Key: Value`，发送时附带（如 `Cookie`、`Authorization`、`X-Token`） |
+| POST体 | 含占位符 `%u/%s/%p` 的请求体模板；`method=POST` 且留空时默认 `wd=%u&ep=%p` |
+| 返回解析 | `自动`（默认）/ `JSON` / `纯文本` / `苹果CMS`，强制指定解析方式防误判 |
+
+例如某站要求 `POST https://special-cms.com/api/search`、请求体 `key=%u&page=%p`、需带 Token：
+
+```json
+{
+  "name": "特殊资源站",
+  "template": "https://special-cms.com/api/search",
+  "method": "post",
+  "headers": "X-Api-Token: abc123",
+  "post": "key=%u&page=%p"
+}
+```
+
+> 旧配置不带这些字段时，全部自动走默认 `GET` + `自动解析`，行为与之前完全一致。
 
 ### ② 配置官方链接映射
 
@@ -433,12 +469,12 @@ php tests/run_test.php
 
 ```text
 【主流程】腾讯链接 → 庆余年第2集（App 表面播放链接）
-  请求耗时: 1.21s (阈值 2.2s)      ← 两站各延迟1.2s，串行约2.4s，证明多线程并发
+  请求耗时: 1.21s (阈值 2.9s)      ← 多站各延迟1.2s，串行约4.8s，证明多线程并发
   [PASS] 返回 code=200
   [PASS] url 为本站表面播放链接(/play.php?u=)
   [PASS] 表面链接解码后命中 1080p 资源(第2集)
   ...
-结果: 9 通过 / 0 失败
+结果: 10 通过 / 0 失败
 ```
 
 ---

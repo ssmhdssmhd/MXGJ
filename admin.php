@@ -67,12 +67,21 @@ switch ($ACTION) {
             $name = trim($s['name'] ?? '');
             $url  = trim($s['template'] ?? ($s['url'] ?? ''));
             if ($name === '' || $url === '') continue;
+            $method = mxgj_lower(trim($s['method'] ?? ''));
+            if (!in_array($method, ['post'], true)) $method = 'get';
+            $parse = mxgj_lower(trim($s['parse'] ?? ''));
+            if (!in_array($parse, ['json', 'text', 'apple'], true)) $parse = '';
             $clean[] = [
                 'name'     => $name,
                 'url'      => $url,          // 兼容旧字段
                 'template' => $url,          // 标准模板字段
                 'proxy'    => trim($s['proxy'] ?? ''), // 跟随播放链接（中转前缀），仅该站启用
                 'enabled'  => array_key_exists('enabled', $s) ? !empty($s['enabled']) : true, // 启用开关（默认启用）
+                // 特殊调用方法（可留空走默认）
+                'method'   => $method,       // get=GET（默认） / post=POST（特殊调用）
+                'headers'  => trim($s['headers'] ?? ''), // 自定义请求头：每行 `Key: Value`
+                'post'     => trim($s['post'] ?? ''),     // POST 请求体模板（含 %u/%s/%p）
+                'parse'    => $parse,        // 返回解析模式：空/json/text/apple
             ];
         }
         mxgj_write_json($sitesFile, ['sites' => $clean]);
@@ -258,9 +267,23 @@ switch ($ACTION) {
             }
         }
         $entry = ['name' => $name_, 'url' => $tpl_, 'template' => $tpl_];
+        // 特殊调用方法（可留空走默认）
+        $method = mxgj_lower(trim($_POST['method'] ?? ''));
+        if (!in_array($method, ['post'], true)) $method = 'get';
+        $parse = mxgj_lower(trim($_POST['parse'] ?? ''));
+        if (!in_array($parse, ['json', 'text', 'apple'], true)) $parse = '';
+        $entry['method']  = $method;
+        $entry['headers'] = trim($_POST['headers'] ?? '');
+        $entry['post']    = trim($_POST['post'] ?? '');
+        $entry['parse']   = $parse;
         if ($hit !== null) {
             $entry['enabled'] = array_key_exists('enabled', $list[$hit]) ? !empty($list[$hit]['enabled']) : true; // 保留原启用状态
             $entry['proxy']   = (string)($list[$hit]['proxy'] ?? ''); // 保留跟随播放链接
+            // 保留原有特殊调用方法配置（弹窗未提交这些字段时不覆盖）
+            $entry['method']  = (string)($list[$hit]['method'] ?? $entry['method']);
+            $entry['headers'] = (string)($list[$hit]['headers'] ?? $entry['headers']);
+            $entry['post']    = (string)($list[$hit]['post'] ?? $entry['post']);
+            $entry['parse']   = (string)($list[$hit]['parse'] ?? $entry['parse']);
             $list[$hit] = $entry;
             $mode = 'update';
         } else {
@@ -500,6 +523,8 @@ function renderDashboard()
             table{width:100%;border-collapse:collapse;font-size:14px}
             td,th{padding:10px 8px;border-bottom:1px solid #242e48;text-align:left}
             th{color:#8a93a6;font-weight:600;font-size:12px}
+            .site-special{min-width:300px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+            .site-special select{min-width:0}
             input[type=text],input[type=password],input[type=number],select{width:100%;padding:8px 10px;border:1px solid #2c3550;background:#12172a;color:#e6e9f0;border-radius:6px;font-size:13px}
             .btn{padding:10px 18px;border:0;border-radius:8px;background:#4f7cff;color:#fff;font-size:14px;cursor:pointer}
             .btn-green{background:#2ecc71}.btn-danger{background:#e74c3c}
@@ -639,6 +664,9 @@ function renderSitesForm($sites)
             示例二（列表页）：<code>http://your.site/search?wd=%s&page=%p</code><br>
             <b>跟随播放链接（中转前缀）</b>：仅该资源站命中时，在真实播放地址前拼接，如 <code>https://vv00.xyz?url=</code>
             → 返回 <code>https://vv00.xyz?url=真实地址</code>。留空则直接返回原地址。<br>
+            <b>特殊调用方法</b>：（默认 GET）如资源站要求 POST 提交、自定义请求头或特殊返回格式，可在「调用方法」列选择
+            <code>POST</code> 并填写「POST体」（如 <code>wd=%u&ep=%p</code>，含占位符）、「自定义Header」（每行 <code>Key: Value</code>）、
+            「返回解析」（自动 / JSON / 纯文本 / 苹果CMS）。<br>
             每行「启用」开关<b>即时生效</b>（无需保存）：关闭后该资源站不再参与前台搜索与心跳探测。
         </div>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
@@ -648,13 +676,29 @@ function renderSitesForm($sites)
         <form method="post">
             <input type="hidden" name="action" value="save_sites">
             <table id="site-tbl">
-                <tr><th style="width:130px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
+                <tr><th style="width:110px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>特殊调用方法</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
                 <?php if ($sites): foreach ($sites as $i => $s): ?>
                     <?php $sEnabled = !array_key_exists('enabled', $s) || !empty($s['enabled']); ?>
+                    <?php $sMethod = mxgj_lower(trim($s['method'] ?? '')); ?>
+                    <?php $sParse  = mxgj_lower(trim($s['parse'] ?? '')); ?>
                     <tr class="<?= $sEnabled ? '' : 'row-disabled' ?>">
                         <td><input type="text" name="sites[<?= $i ?>][name]" value="<?= htmlspecialchars($s['name']) ?>"></td>
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
                         <td><input type="text" name="sites[<?= $i ?>][proxy]" value="<?= htmlspecialchars($s['proxy'] ?? '') ?>" placeholder="如 https://vv00.xyz?url= （留空不使用）"></td>
+                        <td class="site-special">
+                            <select name="sites[<?= $i ?>][method]" title="HTTP 调用方法">
+                                <option value="get" <?= $sMethod === 'post' ? '' : 'selected' ?>>GET</option>
+                                <option value="post" <?= $sMethod === 'post' ? 'selected' : '' ?>>POST</option>
+                            </select>
+                            <select name="sites[<?= $i ?>][parse]" title="返回解析模式（留空=自动识别）">
+                                <option value="" <?= $sParse === '' ? 'selected' : '' ?>>自动</option>
+                                <option value="json" <?= $sParse === 'json' ? 'selected' : '' ?>>JSON</option>
+                                <option value="text" <?= $sParse === 'text' ? 'selected' : '' ?>>纯文本</option>
+                                <option value="apple" <?= $sParse === 'apple' ? 'selected' : '' ?>>苹果CMS</option>
+                            </select>
+                            <input type="text" name="sites[<?= $i ?>][headers]" value="<?= htmlspecialchars($s['headers'] ?? '') ?>" placeholder="自定义Header（每行 Key: Value）">
+                            <input type="text" name="sites[<?= $i ?>][post]" value="<?= htmlspecialchars($s['post'] ?? '') ?>" placeholder="POST体（如 wd=%u&ep=%p）">
+                        </td>
                         <td class="center">
                             <label class="toggle">
                                 <input type="checkbox" class="quick-toggle" data-action="site" <?= $sEnabled ? 'checked' : '' ?>
@@ -672,6 +716,12 @@ function renderSitesForm($sites)
                         <td><input type="text" name="sites[0][name]" placeholder="站点A"></td>
                         <td><input type="text" name="sites[0][template]" placeholder="http://api.example.com/vod?wd=%u&ep=%p"></td>
                         <td><input type="text" name="sites[0][proxy]" placeholder="如 https://vv00.xyz?url="></td>
+                        <td class="site-special">
+                            <select name="sites[0][method]"><option value="get" selected>GET</option><option value="post">POST</option></select>
+                            <select name="sites[0][parse]"><option value="">自动</option><option value="json">JSON</option><option value="text">纯文本</option><option value="apple">苹果CMS</option></select>
+                            <input type="text" name="sites[0][headers]" placeholder="自定义Header（每行 Key: Value）">
+                            <input type="text" name="sites[0][post]" placeholder="POST体（如 wd=%u&ep=%p）">
+                        </td>
                         <td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>
                         <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                     </tr>
@@ -700,6 +750,12 @@ function renderSitesForm($sites)
         tr.innerHTML='<td><input type="text" name="sites['+rowIndex+'][name]" placeholder="站点"></td>'+
             '<td><input type="text" name="sites['+rowIndex+'][template]" placeholder="http://..." onclick="this.select()"></td>'+
             '<td><input type="text" name="sites['+rowIndex+'][proxy]" placeholder="如 https://vv00.xyz?url="></td>'+
+            '<td class="site-special">'+
+                '<select name="sites['+rowIndex+'][method]"><option value="get" selected>GET</option><option value="post">POST</option></select>'+
+                '<select name="sites['+rowIndex+'][parse]"><option value="">自动</option><option value="json">JSON</option><option value="text">纯文本</option><option value="apple">苹果CMS</option></select>'+
+                '<input type="text" name="sites['+rowIndex+'][headers]" placeholder="自定义Header（每行 Key: Value）">'+
+                '<input type="text" name="sites['+rowIndex+'][post]" placeholder="POST体（如 wd=%u&ep=%p）">'+
+            '</td>'+
             '<td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>'+
             '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
         tbl.appendChild(tr);rowIndex++;
