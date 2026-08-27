@@ -456,14 +456,89 @@ function renderLogin()
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <title>沫兮官替系统 - 登录</title>
         <style>
-            body{font-family:system-ui,-apple-system,Segoe UI,Microsoft YaHei,sans-serif;background:#0f1420;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-            .card{background:#1b2233;padding:40px;border-radius:12px;width:320px;box-shadow:0 10px 40px rgba(0,0,0,.4)}
-            h1{color:#fff;font-size:20px;margin:0 0 6px}
-            p{color:#8a93a6;font-size:13px;margin:0 0 24px}
-            input{width:100%;box-sizing:border-box;padding:12px;border:1px solid #2c3550;background:#12172a;color:#fff;border-radius:8px;margin-bottom:16px;font-size:14px}
-            button{width:100%;padding:12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;font-size:15px;cursor:pointer}
-            button:hover{background:#3f6ce8}
-        </style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1f2937;font-size:14px;overflow:hidden}
+a{color:inherit;text-decoration:none}
+.layout{display:flex;height:100vh;overflow:hidden}
+/* ====== 侧边栏 ====== */
+.sidebar{width:208px;background:#1e2533;color:#e5e7eb;display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid #2a3347}
+.sidebar-brand{padding:20px 16px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(255,255,255,.06)}
+.logo-box{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#4f7cff,#6366f1);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;flex-shrink:0}
+.brand-info{flex:1;min-width:0}
+.brand-name{font-size:15px;font-weight:700;color:#fff;line-height:1.2}
+.brand-ver{font-size:11px;color:#6b7a94;margin-top:3px}
+.sidebar-scroll{flex:1;overflow-y:auto;padding:10px 8px}
+.sidebar-scroll::-webkit-scrollbar{width:4px}
+.sidebar-scroll::-webkit-scrollbar-thumb{background:#2a3347;border-radius:2px}
+.nav-group{margin-bottom:14px}
+.nav-group-title{font-size:11px;font-weight:600;color:#4b5b76;text-transform:uppercase;letter-spacing:.8px;padding:6px 10px 8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;color:#9ca3af;font-size:13.5px;transition:all .12s;margin-bottom:2px}
+.nav-item:hover{background:rgba(255,255,255,.05);color:#e5e7eb}
+.nav-item.active{background:#4f7cff;color:#fff}
+.nav-item .icon{font-size:15px;width:18px;text-align:center}
+.sidebar-foot{padding:14px 16px;border-top:1px solid rgba(255,255,255,.06);text-align:center}
+.foot-text{font-size:10.5px;color:#4b5b76}
+/* ====== 主区域 ====== */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:54px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.breadcrumb{display:flex;align-items:center;gap:8px;font-size:13.5px;color:#6b7280}
+.breadcrumb .sep{color:#d1d5db}
+.breadcrumb .current{color:#111827;font-weight:600}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.topbar-right .version-tag{background:#eef2ff;color:#4f7cff;font-size:12px;padding:4px 10px;border-radius:12px;font-weight:500}
+.user-area{display:flex;align-items:center;gap:10px}
+.user-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#4f7cff,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600}
+.logout-btn{background:none;border:none;color:#6b7280;font-size:12.5px;cursor:pointer;padding:6px 10px;border-radius:6px}
+.logout-btn:hover{background:#f3f4f6;color:#e74c3c}
+.content{flex:1;overflow-y:auto;padding:24px;background:#f5f7fa}
+.page-title{font-size:19px;font-weight:700;color:#111827;margin-bottom:3px}
+.page-subtitle{font-size:12.5px;color:#6b7280;margin-bottom:18px}
+.panel{background:#fff;border-radius:10px;padding:20px;box-shadow:0 1px 2px rgba(0,0,0,.04);border:1px solid #ebeef2;margin-bottom:16px}
+.panel h2{font-size:15.5px;font-weight:700;color:#111827;margin:0 0 14px}
+.panel h3{font-size:14px;font-weight:600;color:#374151;margin:0 0 10px}
+.stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
+.stat-card{background:#fff;border-radius:10px;padding:18px;box-shadow:0 1px 2px rgba(0,0,0,.04);border:1px solid #ebeef2;display:flex;align-items:center;gap:14px}
+.stat-icon{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;flex-shrink:0}
+.stat-icon.green{background:linear-gradient(135deg,#10b981,#059669)}
+.stat-icon.blue{background:linear-gradient(135deg,#3b82f6,#2563eb)}
+.stat-icon.orange{background:linear-gradient(135deg,#f59e0b,#d97706)}
+.stat-icon.red{background:linear-gradient(135deg,#ef4444,#dc2626)}
+.stat-icon.purple{background:linear-gradient(135deg,#8b5cf6,#7c3aed)}
+.stat-info b{font-size:26px;color:#111827;display:block;font-weight:700}
+.stat-info span{font-size:12px;color:#6b7280}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:10px 10px;border-bottom:1px solid #f0f2f5;text-align:left}
+th{color:#6b7280;font-weight:600;font-size:12px;background:#fafbfc;white-space:nowrap}
+tr:hover td{background:#fafbfc}
+.site-special{min-width:300px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.site-special select{min-width:0}
+input[type=text],input[type=password],input[type=number],select,textarea{width:100%;padding:7px 10px;border:1px solid #e5e7eb;background:#fff;color:#1f2937;border-radius:6px;font-size:13px;outline:none;transition:border-color .15s,box-shadow .15s}
+input[type=text]:focus,input[type=password]:focus,input[type=number]:focus,select:focus{border-color:#4f7cff;box-shadow:0 0 0 3px rgba(79,124,255,.12)}
+label{display:block;font-size:12px;color:#6b7280;margin-bottom:6px;font-weight:500}
+.btn{padding:7px 16px;border:0;border-radius:6px;background:#4f7cff;color:#fff;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s}
+.btn:hover{background:#3f6ce8;box-shadow:0 2px 6px rgba(79,124,255,.2)}
+.btn:active{transform:scale(.98)}
+.btn-green{background:#10b981}.btn-green:hover{background:#059669}
+.btn-danger{background:#ef4444}.btn-danger:hover{background:#dc2626}
+.small{font-size:12px;color:#6b7280}
+.note{background:#f0f4ff;border-left:3px solid #4f7cff;border-radius:6px;padding:12px 14px;font-size:13px;line-height:1.7;color:#374151}
+pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflow:auto;font-size:12px;line-height:1.6}
+.toast{display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#10b981;color:#fff;padding:10px 22px;border-radius:8px;font-size:14px;z-index:999;box-shadow:0 6px 18px rgba(16,185,129,.3)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.form-grid .full{grid-column:1/-1}
+.center{text-align:center}
+.row-disabled td{opacity:.45}
+.row-disabled input[type=text]{text-decoration:line-through}
+.toggle{position:relative;display:inline-block;width:38px;height:20px;vertical-align:middle}
+.toggle input{display:none}
+.toggle .slider{position:absolute;cursor:pointer;inset:0;background:#d1d5db;border-radius:20px;transition:.2s}
+.toggle .slider:before{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.toggle input:checked + .slider{background:#10b981}
+.toggle input:checked + .slider:before{transform:translateX(18px)}
+.add-row-btn{margin-top:10px;padding:6px 14px;background:#f0f4ff;border:1px dashed #4f7cff;color:#4f7cff;border-radius:6px;font-size:12.5px;cursor:pointer;transition:all .15s}
+.add-row-btn:hover{background:#e0e8ff;border-style:solid}
+@media(max-width:900px){.sidebar{width:56px}.sidebar-brand{justify-content:center;padding:16px 8px}.brand-info{display:none}.nav-group-title{display:none}.nav-item{justify-content:center;padding:8px}.nav-item span:not(.icon){display:none}.sidebar-foot{display:none}.stat-cards{grid-template-columns:1fr 1fr}}
+</style>
     </head>
     <body>
         <form class="card" method="post">
@@ -586,20 +661,34 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
 <body>
 <div class="layout">
 <aside class="sidebar">
-<div class="sidebar-logo">
-<div class="brand"><span class="dot">◆</span> <?= MXGJ_NAME ?></div>
-<div class="ver">v<?= MXGJ_VERSION ?> · 后台管理</div>
-</div>
-<nav class="nav">
-<a class="nav-item <?= $tab==='dashboard'?'active':'' ?>" href="?tab=dashboard"><span class="icon">📊</span><span>概览</span></a>
-<a class="nav-item <?= $tab==='sites'?'active':'' ?>" href="?tab=sites"><span class="icon">🌐</span><span>资源站</span></a>
-<a class="nav-item <?= $tab==='mapping'?'active':'' ?>" href="?tab=mapping"><span class="icon">🗂️</span><span>映射表</span></a>
-<a class="nav-item <?= $tab==='update'?'active':'' ?>" href="?tab=update"><span class="icon">⬆️</span><span>在线更新</span></a>
-<a class="nav-item <?= $tab==='logs'?'active':'' ?>" href="?tab=logs"><span class="icon">📋</span><span>日志</span></a>
-<a class="nav-item <?= $tab==='help'?'active':'' ?>" href="?tab=help"><span class="icon">❓</span><span>帮助</span></a>
-<a class="nav-item <?= $tab==='settings'?'active':'' ?>" href="?tab=settings"><span class="icon">⚙️</span><span>设置</span></a>
-</nav>
-<div class="sidebar-footer">Git 仓库<br>ssmhdssmhd/MXGJ</div>
+  <div class="sidebar-brand">
+    <div class="logo-box">◆</div>
+    <div class="brand-info">
+      <div class="brand-name"><?= MXGJ_NAME ?></div>
+      <div class="brand-ver">v<?= MXGJ_VERSION ?></div>
+    </div>
+  </div>
+  <div class="sidebar-scroll">
+    <div class="nav-group">
+      <div class="nav-group-title">概览</div>
+      <a class="nav-item <?= $tab==='dashboard'?'active':'' ?>" href="?tab=dashboard"><span class="icon">📊</span><span>数据概览</span></a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-title">资源配置</div>
+      <a class="nav-item <?= $tab==='sites'?'active':'' ?>" href="?tab=sites"><span class="icon">🌐</span><span>资源站</span></a>
+      <a class="nav-item <?= $tab==='mapping'?'active':'' ?>" href="?tab=mapping"><span class="icon">🗂️</span><span>映射表</span></a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-title">系统</div>
+      <a class="nav-item <?= $tab==='update'?'active':'' ?>" href="?tab=update"><span class="icon">⬆️</span><span>在线更新</span></a>
+      <a class="nav-item <?= $tab==='logs'?'active':'' ?>" href="?tab=logs"><span class="icon">📋</span><span>日志中心</span></a>
+      <a class="nav-item <?= $tab==='settings'?'active':'' ?>" href="?tab=settings"><span class="icon">⚙️</span><span>系统设置</span></a>
+      <a class="nav-item <?= $tab==='help'?'active':'' ?>" href="?tab=help"><span class="icon">❓</span><span>使用帮助</span></a>
+    </div>
+  </div>
+  <div class="sidebar-foot">
+    <span class="foot-text">MXGJ · 沫兮官替系统</span>
+  </div>
 </aside>
 <div class="main">
 <div class="topbar">
@@ -637,9 +726,32 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
 </div>
 </div>
 <script>
-var __autoDirty=null;
-document.addEventListener('change',function(e){if(e.target.closest('.quick-toggle'))return;var f=e.target.form||(e.target.closest?e.target.closest('form'):null);if(f&&f.classList&&f.classList.contains('auto-save'))__autoDirty=f;});
-document.addEventListener('click',function(e){if(e.target.closest('.quick-toggle'))return;var inForm=e.target.closest?e.target.closest('form.auto-save'):null;if(inForm){if(e.target.closest('button[type="button"]'))__autoDirty=inForm;return;}if(e.target.closest('a,button,input,select,textarea'))return;if(__autoDirty){var f=__autoDirty;__autoDirty=null;try{f.submit();}catch(err){}}});
+var __autoDirty=null, __saveTimer=null;
+function __markDirty(e){
+    if(e.target.closest('.quick-toggle'))return;
+    var f=e.target.form||(e.target.closest?e.target.closest('form'):null);
+    if(f&&f.classList&&f.classList.contains('auto-save'))__autoDirty=f;
+}
+function __trySave(){
+    if(__saveTimer)clearTimeout(__saveTimer);
+    __saveTimer=setTimeout(function(){
+        var f=__autoDirty;if(!f)return;
+        __autoDirty=null;__saveTimer=null;
+        try{f.submit();}catch(err){}
+    },250);
+}
+document.addEventListener('input',__markDirty);
+document.addEventListener('change',__markDirty);
+document.addEventListener('click',function(e){
+    if(e.target.closest('.quick-toggle'))return;
+    var inForm=e.target.closest?e.target.closest('form.auto-save'):null;
+    if(inForm){
+        if(e.target.closest('button[type="button"]')){ __autoDirty=inForm; }
+        return;
+    }
+    __trySave();
+});
+window.addEventListener('blur',function(){ __trySave(); });
 </script>
 </body></html>
 
@@ -973,6 +1085,8 @@ function renderMappingForm($mapping)
                 <?php endif; ?>
             </table>
 
+            <button type="button" class="add-row-btn" onclick="addEpisodeRow()">＋ 添加集数映射</button>
+
             <h2 style="margin-top:24px">剧名映射</h2>
             <div class="note" style="margin-bottom:16px">
                 当官方链接解析出的剧名与资源站使用的剧名不一致时使用。
@@ -1005,6 +1119,8 @@ function renderMappingForm($mapping)
                 <?php endif; ?>
             </table>
 
+            <button type="button" class="add-row-btn" onclick="addTitleRow()">＋ 添加剧名映射</button>
+
             <h2 style="margin-top:24px">腾讯 cid 映射（仅剧名）</h2>
             <table>
                 <tr><th>腾讯 cid</th><th>剧名（资源站使用）</th><th style="width:60px">启用</th><th style="width:60px"></th></tr>
@@ -1031,6 +1147,38 @@ function renderMappingForm($mapping)
                     </tr>
                 <?php endif; ?>
             </table>
+
+            <button type="button" class="add-row-btn" onclick="addCidRow()">＋ 添加 cid 映射</button>
+    <script>
+    function addEpisodeRow(){
+        var tbl=document.querySelectorAll('#form-mapping table')[0];
+        var tr=document.createElement('tr');
+        tr.innerHTML='<td><input type="text" name="map_id[]" placeholder="vid:xxx"></td>'+
+            '<td><input type="text" name="map_ename[]" placeholder="剧名"></td>'+
+            '<td><input type="number" name="map_ep[]" value="1" min="1"></td>'+
+            '<td class="center"><input type="checkbox" checked disabled></td>'+
+            '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
+        tbl.appendChild(tr);
+    }
+    function addTitleRow(){
+        var tbl=document.querySelectorAll('#form-mapping table')[1];
+        var tr=document.createElement('tr');
+        tr.innerHTML='<td><input type="text" name="map_target[]" placeholder="解析出的剧名"></td>'+
+            '<td><input type="text" name="map_title[]" placeholder="资源站剧名"></td>'+
+            '<td class="center"><input type="checkbox" checked disabled></td>'+
+            '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
+        tbl.appendChild(tr);
+    }
+    function addCidRow(){
+        var tbl=document.querySelectorAll('#form-mapping table')[2];
+        var tr=document.createElement('tr');
+        tr.innerHTML='<td><input type="text" name="map_cid[]" placeholder="腾讯cid"></td>'+
+            '<td><input type="text" name="map_cid_target[]" placeholder="剧名"></td>'+
+            '<td class="center"><input type="checkbox" checked disabled></td>'+
+            '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
+        tbl.appendChild(tr);
+    }
+    </script>
         </form>
     </div>
     <?php
