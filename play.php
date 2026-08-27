@@ -16,9 +16,9 @@
 
 require __DIR__ . '/lib/bootstrap.php';
 
-$app = mxgj_settings()['app'] ?? [];
-$mode = (($app['surface_mode'] ?? 'proxy') === 'proxy') ? 'proxy' : 'redirect';
-$path = trim((string)($app['surface_path'] ?? 'play.php'), '/');
+// 表面播放链接功能已移除，此入口固定为「代理转发」模式，可作独立的手动播放入口
+$mode = 'proxy';
+$path = 'play.php';
 
 // 读取目标地址（优先加密参数 u，兼容明文 url）
 $u = trim((string)($_GET['u'] ?? ''));

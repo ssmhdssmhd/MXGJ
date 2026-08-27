@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.12.0');
+define('MXGJ_VERSION', '1.13.0');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -95,16 +95,6 @@ function mxgj_settings(): array
                     ['k' => 'KFZ',  'v' => '沫兮官替系统'], // 开发者(常量)
                 ],
             ],
-            // 安全设置（欺诈/伪装）
-            'security'       => [
-                'obfuscate_enable' => false, // 欺诈/伪装：将返回链接中的中转前缀域名伪装为当前系统域名（默认关闭）
-            ],
-            // App 设置（表面播放链接）
-            'app'            => [
-                'surface_enable' => true,        // 表面播放链接：返回统一伪装为本站 /play.php?u= 播放入口（默认开启）
-                'surface_path'   => 'play.php',  // 播放入口文件（可自定义路径）
-                'surface_mode'   => 'proxy',     // 播放方式：proxy=代理转发(隐藏真实地址,APP可直接播放) / redirect=302跳转
-            ],
         ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
     }
     return $settings;
@@ -137,58 +127,6 @@ function mxgj_mapping_enabled(array $mapping, string $sec, string $key): bool
 }
 
 /**
- * 欺诈/伪装：把返回链接中「资源站跟随播放链接」的中转前缀域名替换为当前系统域名。
- *
- * 例：中转前缀为 https://vv00.xyz?url= ，返回 url 为
- *     https://vv00.xyz?url=https://.../index.m3u8
- * 开启后输出为：
- *     https://当前域名?url=https://.../index.m3u8
- * 仅替换开头的域名部分，不触碰真实播放地址参数，保证正常播放；默认关闭，按需开启。
- *
- * @param string $url 待伪装链接
- * @return string 伪装后的链接（未开启/无需伪装时原样返回）
- */
-function mxgj_obfuscate_url(string $url): string
-{
-    $sec = mxgj_settings()['security'] ?? [];
-    if (empty($sec['obfuscate_enable'])) {
-        return $url; // 欺诈/伪装开关被关闭
-    }
-    if ($url === '' || strpos($url, '://') === false) {
-        return $url;
-    }
-    $host = $_SERVER['HTTP_HOST'] ?? '';
-    if ($host === '') {
-        return $url;
-    }
-    $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $self   = $scheme . '://' . $host;
-
-    // 收集所有资源站配置的「跟随播放链接」中转域名
-    $domains = [];
-    foreach (mxgj_sites() as $s) {
-        $p = trim((string)($s['proxy'] ?? ''));
-        if ($p === '' || strpos($p, '://') === false) {
-            continue;
-        }
-        $parts = parse_url($p);
-        if (empty($parts['scheme']) || empty($parts['host'])) {
-            continue;
-        }
-        $domains[$parts['scheme'] . '://' . $parts['host']] = true;
-    }
-    if ($domains === []) {
-        return $url;
-    }
-    foreach (array_keys($domains) as $d) {
-        if (strpos($url, $d) === 0) {
-            return $self . substr($url, strlen($d));
-        }
-    }
-    return $url;
-}
-
-/**
  * URL 安全的 base64 编码（去掉 +/ 与末尾 =，适合放查询参数）
  */
 function mxgj_b64url(string $s): string
@@ -208,70 +146,6 @@ function mxgj_b64url_decode(string $s): string
     }
     $dec = base64_decode($s, true);
     return $dec === false ? '' : $dec;
-}
-
-/**
- * 表面播放链接：把真实播放地址伪装为本站播放入口（如 /play.php?u=加密地址）。
- *
- * 开启 App「表面播放链接」后，前台返回的 url/msg 统一替换为本站播放入口，
- * 该入口可正常打开播放（浏览器/APP 均可识别），并隐藏真实播放地址。
- * 若真实地址前带有「跟随播放链接」中转前缀（如 https://vv00.xyz?url=真实地址），
- * 会自动提取出真实地址后再包装，避免中转域名外泄。
- *
- * @param string $url 待伪装链接
- * @return string 伪装后的表面链接（未开启/无法伪装时原样返回）
- */
-function mxgj_surface_url(string $url): string
-{
-    $app = mxgj_settings()['app'] ?? [];
-    if (empty($app['surface_enable'])) {
-        return $url; // 表面播放链接开关被关闭
-    }
-    if ($url === '' || strpos($url, '://') === false) {
-        return $url;
-    }
-    $host = $_SERVER['HTTP_HOST'] ?? '';
-    if ($host === '') {
-        return $url; // 无当前域名（如 CLI），无法生成表面链接
-    }
-    $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $self   = $scheme . '://' . $host;
-    $path   = trim((string)($app['surface_path'] ?? 'play.php'), '/');
-    $entry  = $self . '/' . $path . '?u=';
-
-    // 幂等：已是本站播放入口则不再重复包装
-    if (strpos($url, $entry) === 0 || strpos($url, $self . '/' . $path . '?url=') === 0) {
-        return $url;
-    }
-
-    // 从「跟随播放链接」中转前缀提取真实播放地址
-    $real = $url;
-    foreach (mxgj_sites() as $s) {
-        $p = trim((string)($s['proxy'] ?? ''));
-        if ($p === '' || strpos($p, '://') === false) {
-            continue;
-        }
-        if (strpos($url, $p) === 0) {
-            $rest = substr($url, strlen($p));
-            if (strpos($rest, 'http') === 0) {
-                $real = $rest;
-                break;
-            }
-        }
-    }
-    return $entry . mxgj_b64url($real);
-}
-
-/**
- * 统一链接保护：优先「App-表面播放链接」，其次「安全-欺诈/伪装（替换中转域名）」
- */
-function mxgj_protect_url(string $url): string
-{
-    $app = mxgj_settings()['app'] ?? [];
-    if (!empty($app['surface_enable'])) {
-        return mxgj_surface_url($url);
-    }
-    return mxgj_obfuscate_url($url);
 }
 
 /**
@@ -374,4 +248,40 @@ function mxgj_auto_mapping(array $parsed, string $name, int $episode): bool
     }
     $mapping['episode'][$key] = ['name' => $name, 'episode' => (int)$episode];
     return mxgj_write_json($file, $mapping);
+}
+
+/**
+ * 保存配置后自动清理运行时数据（缓存 / 站点健康 / 日志 / 心跳锁）
+ *
+ * 无数据库，所有运行期产生的临时数据均可安全清空，让新配置立即生效。
+ * Web 环境下 PHP 每次请求都会重载代码，无需真正重启进程。
+ *
+ * @return array 已清理的项目清单
+ */
+function mxgj_purge_runtime(): array
+{
+    $cleaned = [];
+
+    // 1) 搜索缓存
+    foreach (glob(MXGJ_CACHE . '/*.cache') ?: [] as $f) {
+        @unlink($f);
+    }
+    $cleaned['cache'] = MXGJ_CACHE;
+
+    // 2) 站点健康状态 + 心跳锁
+    @unlink(MXGJ_DATA . '/site_health.json');
+    @unlink(MXGJ_DATA . '/heartbeat.lock');
+    $cleaned['health'] = 'site_health';
+
+    // 3) 日志（含所属系统目录）
+    foreach (glob(MXGJ_DATA . '/logs/*.json') ?: [] as $f) {
+        @unlink($f);
+    }
+    $cleaned['logs'] = MXGJ_DATA . '/logs';
+
+    // 4) 定时采集运行日志
+    @unlink(MXGJ_DATA . '/cron_mapping.log');
+    $cleaned['cron'] = 'cron_mapping.log';
+
+    return $cleaned;
 }

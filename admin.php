@@ -87,6 +87,7 @@ switch ($ACTION) {
         mxgj_write_json($sitesFile, ['sites' => $clean]);
         Logger::log('operation', '保存资源站列表（共 ' . count($clean) . ' 个）', 'success');
         Logger::log('config', '资源站配置保存成功：' . count($clean) . ' 个站点', 'success', ['sites' => $clean]);
+        mxgj_purge_runtime(); // 保存后自动清理运行时数据
         header('Location: admin.php?tab=sites&saved=1');
         exit;
 
@@ -136,6 +137,7 @@ switch ($ACTION) {
         mxgj_write_json($mappingFile, $mapping);
         Logger::log('operation', '保存映射表（title ' . count($mapping['title']) . ' / cid ' . count($mapping['cid']) . ' / episode ' . count($mapping['episode']) . '）', 'success');
         Logger::log('config', '映射表配置保存成功', 'success', ['count' => ['title' => count($mapping['title']), 'cid' => count($mapping['cid']), 'episode' => count($mapping['episode'])]]);
+        mxgj_purge_runtime(); // 保存后自动清理运行时数据
         header('Location: admin.php?tab=mapping&saved=1');
         exit;
 
@@ -187,21 +189,11 @@ switch ($ACTION) {
             'show_source' => !empty($_POST['out_show_source']),
             'fields'      => $fields,
         ];
-        // 安全设置（欺诈/伪装）
-        $sec = is_array($st['security'] ?? null) ? $st['security'] : [];
-        $sec['obfuscate_enable'] = !empty($_POST['sec_obfuscate_enable']);
-        $st['security'] = $sec;
-        // App 设置（表面播放链接）
-        $ap = is_array($st['app'] ?? null) ? $st['app'] : [];
-        $ap['surface_enable'] = !empty($_POST['app_surface_enable']);
-        $ap['surface_path']   = trim($_POST['app_surface_path'] ?? '') !== ''
-            ? trim($_POST['app_surface_path'])
-            : 'play.php';
-        $ap['surface_mode']   = (($_POST['app_surface_mode'] ?? 'proxy') === 'redirect') ? 'redirect' : 'proxy';
-        $st['app'] = $ap;
         mxgj_write_json($settingsFile, $st);
         Logger::log('operation', '保存系统设置', 'success');
         Logger::log('config', '系统设置保存成功', 'success', ['timeout' => $st['timeout'], 'cache_ttl' => $st['cache_ttl'], 'output_fields' => count($fields)]);
+        // 自动清理运行时数据（缓存 / 站点健康 / 日志），让新配置立即生效
+        mxgj_purge_runtime();
         // 更换密码后重登
         header('Location: admin.php?tab=settings&saved=1');
         exit;
@@ -352,7 +344,7 @@ switch ($ACTION) {
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '输出字段：' . ($fields[$idx]['k'] ?? '')]);
 
     case 'toggle_setting':
-        // 快捷开关设置项（site_control 的心跳/轮训、security 的欺诈伪装）
+        // 快捷开关设置项（site_control 的心跳/轮训）
         $name = trim($_POST['name'] ?? '');
         $on   = !empty($_POST['enabled']);
         $st   = mxgj_settings();
@@ -361,16 +353,6 @@ switch ($ACTION) {
             $sc[$name] = $on;
             $st['site_control'] = $sc;
             $labels = ['heartbeat_enable' => '心跳检测', 'rotation_enable' => '资源站轮训'];
-        } elseif ($name === 'obfuscate_enable') {
-            $sec = is_array($st['security'] ?? null) ? $st['security'] : [];
-            $sec['obfuscate_enable'] = $on;
-            $st['security'] = $sec;
-            $labels = ['obfuscate_enable' => '欺诈/伪装'];
-        } elseif ($name === 'app_surface_enable') {
-            $ap = is_array($st['app'] ?? null) ? $st['app'] : [];
-            $ap['surface_enable'] = $on;
-            $st['app'] = $ap;
-            $labels = ['app_surface_enable' => '表面播放链接'];
         } else {
             mxgj_json_out(['code' => 400, 'msg' => '不支持的设置项']);
         }
@@ -591,6 +573,34 @@ function renderDashboard()
             <?php renderSettingsForm($settings); ?>
         <?php endif; ?>
     </div>
+
+    <script>
+    /* ---- 自动保存：点击页面空白处，自动提交有改动的表单（去除「保存」按钮） ---- */
+    var __autoDirty = null;
+    document.addEventListener('change', function (e) {
+        if (e.target.closest('.quick-toggle')) { return; } // 快捷开关已即时保存，跳过
+        var f = e.target.form || (e.target.closest ? e.target.closest('form') : null);
+        if (f && f.classList && f.classList.contains('auto-save')) {
+            __autoDirty = f;
+        }
+    });
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('.quick-toggle')) { return; } // 快捷开关已即时保存，跳过
+        var inForm = e.target.closest ? e.target.closest('form.auto-save') : null;
+        if (inForm) {
+            // 表单内功能按钮（增/删行）也算一次改动，稍后点空白一并保存
+            if (e.target.closest('button[type="button"]')) { __autoDirty = inForm; }
+            return; // 在表单内点击不触发保存
+        }
+        // 表单外：点击链接/按钮/输入等交互元素不保存，仅“空白”区域点击触发
+        if (e.target.closest('a,button,input,select,textarea')) { return; }
+        if (__autoDirty) {
+            var f = __autoDirty;
+            __autoDirty = null;
+            try { f.submit(); } catch (err) { /* 忽略 */ }
+        }
+    });
+    </script>
     </body></html>
     <?php
 }
@@ -673,7 +683,10 @@ function renderSitesForm($sites)
             <button type="button" class="btn btn-green" onclick="openDetect()">⚡ 检测并自动添加（苹果CMS10采集接口）</button>
             <span class="note" style="margin:0;color:#8892ab">只需粘贴采集接口地址，系统自动探测并生成搜索模板，保存后即可被前台调用。</span>
         </div>
-        <form method="post">
+        <div class="note" style="margin:0 0 16px;padding:8px 12px;font-size:12px;color:#7fc1ff">
+            已取消「保存」按钮 —— 修改后<b>点击页面空白处即自动保存</b>，保存时自动清理缓存、站点健康与日志。
+        </div>
+        <form method="post" class="auto-save" id="form-sites">
             <input type="hidden" name="action" value="save_sites">
             <table id="site-tbl">
                 <tr><th style="width:110px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>特殊调用方法</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
@@ -729,7 +742,6 @@ function renderSitesForm($sites)
             </table>
             <div style="margin:16px 0">
                 <button type="button" class="btn" onclick="addRow()">+ 添加资源站（手动）</button>
-                <button type="submit" class="btn btn-green">保存资源站</button>
             </div>
         </form>
 
@@ -881,7 +893,10 @@ function renderMappingForm($mapping)
             示例：官方链接 <code>.../play?cid=mzc00200zx8psx0&vid=k4102szvyce</code> 为庆余年第2集，
             填写 ID = <code>vid:k4102szvyce</code>，剧名 = <code>庆余年</code>，集数 = <code>2</code>。
         </div>
-        <form method="post">
+        <div class="note" style="margin:0 0 16px;padding:8px 12px;font-size:12px;color:#7fc1ff">
+            已取消「保存」按钮 —— 修改后<b>点击页面空白处即自动保存</b>，保存时自动清理缓存、站点健康与日志。
+        </div>
+        <form method="post" class="auto-save" id="form-mapping">
             <input type="hidden" name="action" value="save_mapping">
             <table>
                 <tr><th style="width:240px">ID（vid:xxx 或 cid:xxx）</th><th>剧名</th><th style="width:90px">集数</th><th style="width:60px">启用</th><th style="width:60px"></th></tr>
@@ -967,7 +982,6 @@ function renderMappingForm($mapping)
                     </tr>
                 <?php endif; ?>
             </table>
-            <div style="margin-top:16px"><button type="submit" class="btn btn-green">保存映射</button></div>
         </form>
     </div>
     <?php
@@ -1216,15 +1230,16 @@ function renderSettingsForm($settings)
 {
     $sc   = is_array($settings['site_control'] ?? null) ? $settings['site_control'] : [];
     $output = is_array($settings['output'] ?? null) ? $settings['output'] : [];
-    $security = is_array($settings['security'] ?? null) ? $settings['security'] : [];
-    $app      = is_array($settings['app'] ?? null) ? $settings['app'] : [];
     $siteHealth = SiteHealth::healthTable();
     $hbResult = $_SESSION['heartbeat_result'] ?? null;
     unset($_SESSION['heartbeat_result']);
     ?>
     <div class="panel">
         <h2>系统设置</h2>
-        <form method="post" class="form-grid">
+        <div class="note" style="margin:0 0 16px;padding:8px 12px;font-size:12px;color:#7fc1ff">
+            已取消「保存」按钮 —— 每次修改后<b>点击页面空白处即自动保存</b>，保存时会自动清理缓存、站点健康与日志。
+        </div>
+        <form method="post" class="form-grid auto-save" id="form-settings">
             <input type="hidden" name="action" value="save_settings">
             <div><label>请求超时（秒）</label><input type="number" name="timeout" value="<?= (int)$settings['timeout'] ?>" min="1" max="60"></div>
             <div><label>缓存时长（秒，0=关闭）</label><input type="number" name="cache_ttl" value="<?= (int)$settings['cache_ttl'] ?>" min="0"></div>
@@ -1286,44 +1301,6 @@ function renderSettingsForm($settings)
                 <button type="button" class="btn" style="margin-top:8px" onclick="addOutRow()">+ 添加返回字段</button>
             </div>
 
-            <div class="full" style="margin-top:8px">
-                <h3 style="margin:0 0 4px;font-size:14px">App 设置（表面播放链接，推荐开启）</h3>
-                <div class="note" style="margin:4px 0 8px">
-                    开启后，返回的<b>播放链接统一伪装为当前域名下的播放入口</b>：
-                    <code>https://当前域名/play.php?u=加密地址</code>。<br>
-                    该链接<b>表面是一个链接</b>，浏览器打开即可播放，也能被 APP 识别并直接播放，同时<b>隐藏真实播放地址</b>。
-                    播放方式：<b>代理转发</b>=本站转发视频流并重写 m3u8 切片，完全隐藏真实源、APP 可直接播放（推荐）；
-                    <b>302 跳转</b>=直接跳转到真实地址（省流量，但真实地址在跳转后可见）。HTML 播放页在代理模式下会自动降级为跳转。
-                </div>
-                <label style="margin:0">
-                    <input type="checkbox" name="app_surface_enable" value="1" class="quick-toggle" data-action="setting" data-name="app_surface_enable" <?= !empty($app['surface_enable']) ? 'checked' : '' ?>>
-                    启用表面播放链接（返回统一为本站播放入口）
-                </label>
-                <div style="margin-top:8px"><label>播放入口路径</label><input type="text" name="app_surface_path" value="<?= htmlspecialchars($app['surface_path'] ?? 'play.php') ?>" placeholder="play.php"></div>
-                <div style="margin-top:8px">
-                    <label>播放方式</label>
-                    <select name="app_surface_mode">
-                        <option value="proxy" <?= (($app['surface_mode'] ?? 'proxy') === 'proxy') ? 'selected' : '' ?>>代理转发（隐藏真实地址，APP 可直接播放，推荐）</option>
-                        <option value="redirect" <?= (($app['surface_mode'] ?? 'proxy') === 'redirect') ? 'selected' : '' ?>>302 跳转（省流量）</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="full" style="margin-top:8px">
-                <h3 style="margin:0 0 4px;font-size:14px">安全设置（欺诈/伪装）</h3>
-                <div class="note" style="margin:4px 0 8px">
-                    开启后，返回链接中「跟随播放链接」的<b>中转前缀域名会被伪装为当前系统域名</b>，避免对外暴露真实中转/播放站点。
-                    例：<code>https://vv00.xyz?url=真实地址</code> → <code>https://当前域名?url=真实地址</code>。
-                    仅替换链接开头的中转域名，<b>不触碰真实播放地址参数</b>；若需「可正常打开播放的表面链接」，请优先使用上方 <b>App 设置</b>。
-                    <b>默认关闭</b>，按需开启。
-                </div>
-                <label style="margin:0">
-                    <input type="checkbox" name="sec_obfuscate_enable" value="1" class="quick-toggle" data-action="setting" data-name="obfuscate_enable" <?= !empty($security['obfuscate_enable']) ? 'checked' : '' ?>>
-                    启用欺诈/伪装（将中转前缀域名替换为当前域名）
-                </label>
-            </div>
-
-            <div class="full"><button type="submit" class="btn btn-green">保存设置</button></div>
         </form>
     </div>
 

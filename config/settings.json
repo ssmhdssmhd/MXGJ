@@ -44,14 +44,6 @@
             }
         ]
     },
-    "security": {
-        "obfuscate_enable": false
-    },
-    "app": {
-        "surface_enable": true,
-        "surface_path": "play.php",
-        "surface_mode": "proxy"
-    },
     "cron": {
         "key": "",
         "interval_mins": 60,

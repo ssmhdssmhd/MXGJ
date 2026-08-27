@@ -33,27 +33,6 @@ function http_get(string $url, int $timeout = 10): array
     return ['body' => $body, 'error' => $err];
 }
 
-/** URL 安全 base64 解码（与 lib/bootstrap.php 一致） */
-function b64url_decode(string $s): string
-{
-    $s = strtr(trim($s), '-_', '+/');
-    $pad = strlen($s) % 4;
-    if ($pad > 0) {
-        $s .= str_repeat('=', 4 - $pad);
-    }
-    $d = base64_decode($s, true);
-    return $d === false ? '' : $d;
-}
-
-/** 从表面播放链接(/play.php?u=xxx)中解码出真实地址 */
-function surface_inner(string $surfaceUrl): string
-{
-    if (preg_match('~[?&]u=([^&]+)~', $surfaceUrl, $m)) {
-        return b64url_decode($m[1]);
-    }
-    return '';
-}
-
 /** 申请一个空闲端口 */
 function freePort(): int
 {
@@ -161,17 +140,16 @@ $res = http_get($url);
 $elapsed = microtime(true) - $t0;
 $json = json_decode($res['body'], true);
 
-echo "\n【主流程】腾讯链接 → 庆余年第2集（App 表面播放链接）\n";
-echo '  请求耗时: ' . round($elapsed, 2) . "s (阈值 2.2s)\n";
+echo "\n【主流程】腾讯链接 → 庆余年第2集（直接返回真实地址）\n";
+echo '  请求耗时: ' . round($elapsed, 2) . "s (阈值 2.9s)\n";
 check('HTTP 无错误', $res['error'] === '', $res['error']);
 check('返回 code=200', isset($json['code']) && $json['code'] === 200, json_encode($json));
-$expect = "127.0.0.1:{$mockBPort}/vod/qingyounian/2/index.m3u8";
-$surface = $json['url'] ?? '';
-$inner   = surface_inner($surface);
-check('url 为本站表面播放链接(/play.php?u=)', $surface !== '' && strpos($surface, '/play.php?u=') !== false, $surface);
-check('表面链接解码后命中 1080p 资源(第2集)', strpos($inner, $expect) !== false, $inner);
-check('msg 等于 url（均为表面播放链接）', ($json['msg'] ?? '') === $surface, $json['msg'] ?? '');
-check('并发耗时 < 2.9s(3站各延迟1.2s, 串行约4.8s)' , $elapsed < 2.9, round($elapsed, 2) . 's');
+// 表面播放链接已移除：前台直接返回真实 m3u8 地址
+$expect = "http://127.0.0.1:{$mockBPort}/vod/qingyounian/2/index.m3u8";
+$realUrl = $json['url'] ?? '';
+check('url 直接返回真实 1080p 播放地址', strpos($realUrl, $expect) !== false, $realUrl);
+check('msg 等于 url（均为真实地址）', ($json['msg'] ?? '') === $realUrl, $json['msg'] ?? '');
+check('并发耗时 < 2.9s(3站各延迟1.2s, 串行约4.8s)', $elapsed < 2.9, round($elapsed, 2) . 's');
 echo '  返回内容: ' . $res['body'] . "\n";
 
 // 特殊调用方法验证：POST 资源站应收到 `wd=%u&ep=%p` 请求体

@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.12.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.13.0-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,15 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.13.0] 2026-08-26 · 移除 App/安全设置 + 后台改为「点击空白处自动保存并自动清理」
+- **彻底移除「表面播放链接（App设置）」与「安全设置（欺诈/伪装）」**：
+  - 删除 `app` / `security` 配置段、后台对应区块、`mxgj_surface_url` / `mxgj_protect_url` / `mxgj_obfuscate_url`
+  - 前台 `index.php` **直接返回真实 m3u8 地址**，不再伪装为 `/play.php?u=...`
+  - `play.php` 固定为「代理转发」模式，可继续作独立播放入口
+- **取消所有「保存」按钮，改为点击页面空白处自动保存**（设置 / 资源站 / 映射表）
+- **保存时自动清理运行时数据**（搜索缓存、站点健康、日志），Web 环境 PHP 每次请求自动重载，无需真正重启进程
+- 自测 9/9 通过
 
 ### [v1.12.0] 2026-08-26 · 资源站「特殊调用方法」（GET/POST · 自定义Header · POST体 · 返回解析模式）
 - 为每个资源站新增**特殊调用方法**配置（后台「资源站」表新增「特殊调用方法」列）：
@@ -133,7 +142,7 @@
 | 🧩 模板系统 | `%s / %u / %t / %p` 占位符，兼容 **JSON / JSONP / 纯文本 / 苹果CMS 列表** |
 | 🧪 资源站检测 | 粘贴苹果CMS10采集接口即自动探测、生成模板、一键保存 |
 | 🧬 特殊调用方法 | 资源站级可配 `GET/POST`、自定义请求头、POST 请求体、返回解析模式（自动/JSON/纯文本/苹果CMS） |
-| 🛡️ 表面播放链接 | 返回统一为当前域名 `/play.php?u=` 播放入口，可正常打开播放、APP 可识别，隐藏真实地址 |
+| 🖱️ 自动保存 | 后台取消「保存」按钮，修改后**点击页面空白处自动保存**，并自动清理缓存/健康/日志 |
 | 📦 缓存 | 搜索结果文件缓存，降低对资源站的重复请求 |
 | 🕰️ 定时采集 | `cron/mapping.php` 自动补全映射 + 盘点资源站库存，省去手动 |
 | 🔍 频率控制 | 搜索节流 + 心跳探测 + 轮训分批，防被资源站屏蔽 |
@@ -276,19 +285,19 @@ GET /index.php?key=<密钥>&url=<官方视频链接>[&page=<集数>][&debug=1][&
 /index.php?key=YOUR_KEY&url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce
 ```
 
-**返回**（App 表面播放链接默认开启，`url/msg` 为当前域名的播放入口，解码后才是真实地址）：
+**返回**（直接返回资源站的真实 m3u8 地址）：
 
 ```json
 {
   "code": 200,
-  "url": "https://你的域名/play.php?u=aHR0cHM6Ly9jZG4uZXhhbXBsZS5jb20vcGxheS8yL2luZGV4Lm0zdTg",
-  "msg": "https://你的域名/play.php?u=aHR0cHM6Ly9jZG4uZXhhbXBsZS5jb20vcGxheS8yL2luZGV4Lm0zdTg",
+  "url": "https://cdn.example.com/play/2/index.m3u8",
+  "msg": "https://cdn.example.com/play/2/index.m3u8",
   "time": 1206.6,
   "KFZ": "沫兮官替系统"
 }
 ```
 
-> 打开 `url` 即可正常播放（浏览器/APP 均可）；若在后台关闭「App 表面播放链接」，则直接返回真实 m3u8 地址。
+> 打开 `url` 即为真实播放地址，浏览器/APP 均可直接播放。
 
 **状态码约定**：
 
@@ -356,23 +365,15 @@ max_sites_per_request = 4     (每次最多并发请求 4 个站)
 
 运行状态存于 `data/site_health.json`，后台 **设置 → 资源站健康状态** 可实时查看并「立即心跳探测 / 重置」。
 
-### 🛡️ App 设置 - 表面播放链接（推荐开启）
+### 🖱️ 后台「自动保存 + 自动清理」（取代手动保存）
 
-后台 **设置 → App 设置（表面播放链接，默认开启）**：前台返回的播放链接统一伪装为**当前域名下的播放入口**。
+后台 **设置 / 资源站 / 映射表** 已取消「保存」按钮：
 
-```
-真实地址:  http://114.134.184.91:9005/player/cRCj3u9a
-表面链接:  https://你的域名/play.php?u=aHR0cDovLzExNC4xMzQuMTg0LjkxOjkwMDUvcGxheWVyL2NSQ2ozdTlh
-```
+- **点击页面空白处自动保存**：修改任一表单后，点击页面空白即自动提交并保存对应配置，无需手动点按钮
+- **保存时自动清理运行时数据**：保存成功后自动清空搜索缓存、站点健康状态、日志等，让新配置立即可见生效
+- Web 环境下 PHP 每次请求都会重载代码，**无需真正重启进程**
 
-| 配置项 | 说明 |
-| ---- | ---- |
-| 启用表面播放链接 | 开关（快捷开关即时生效）；关闭后直接返回真实地址 |
-| 播放入口路径 | 默认 `play.php`，可自定义；如需浏览器播放页可改为 `player.php` |
-| 播放方式 | **代理转发**（默认，推荐）：本站抓取并重写 m3u8 切片/密钥地址、ts/mp4 二进制流式转发，完全隐藏真实源，APP 原生播放器可直连播放；HTML 播放页自动降级为 302 跳转。<br>**302 跳转**：直接跳转真实地址（省流量，但真实地址在跳转后可见） |
-
-> 若资源站配置了「跟随播放链接」中转前缀（如 `https://vv00.xyz?url=`），系统会自动提取真实地址后再包装，中转域名不会外泄。
-> 原「安全设置-欺诈/伪装」仅替换中转域名为当前域名（不保证可播放）；需要「表面是一个链接且可正常打开播放」时请使用本功能。
+> 快捷开关（如启用心跳/输出字段）仍为点击即生效，不会与自动保存重复提交。
 
 ### 🔄 在线自动更新
 
@@ -405,8 +406,6 @@ http://你的域名/update.php?key=升级密钥&dry=1   # 仅测速排查
 | `cron` | `{...}` | 定时采集配置（`seed_links`、盘点开关等） |
 | `site_control` | `{...}` | 频率控制配置（搜索/心跳/轮训） |
 | `output` | `{...}` | 输出返回设置（字段映射，默认 `code`/`msg`(=url)/`url`/`time`/`KFZ`） |
-| `security` | `{...}` | 安全设置（`obfuscate_enable` 欺诈/伪装，默认关闭） |
-| `app` | `{...}` | App 设置（`surface_enable` 表面播放链接，默认开启；`surface_mode` 播放方式） |
 
 `replace_domain` 示例：配置 `https://your-proxy.com/m3u8/` 后，
 返回的 `url` 自动变为 `https://your-proxy.com/m3u8/play/2/index.m3u8`（去掉资源站原域名）。
@@ -429,7 +428,7 @@ return 'your_secret_key';
 mxgj/
 ├── index.php               # 前台解析 API（入口）
 ├── admin.php               # 后台管理（登录后可配置）
-├── play.php                # 表面播放入口（App 表面播放链接 /play.php?u=）
+├── play.php                # 独立播放入口（代理转发，前台默认不再自动使用）
 ├── player.php              # 播放器页面（lgzym3u8 / 蓝光资源 MacPlayer）
 ├── update.php              # 独立升级入口（update.php?key=升级密钥）
 ├── cron/
@@ -468,13 +467,13 @@ php tests/run_test.php
 预期输出（全部 PASS）：
 
 ```text
-【主流程】腾讯链接 → 庆余年第2集（App 表面播放链接）
+【主流程】腾讯链接 → 庆余年第2集（直接返回真实地址）
   请求耗时: 1.21s (阈值 2.9s)      ← 多站各延迟1.2s，串行约4.8s，证明多线程并发
   [PASS] 返回 code=200
-  [PASS] url 为本站表面播放链接(/play.php?u=)
-  [PASS] 表面链接解码后命中 1080p 资源(第2集)
+  [PASS] url 直接返回真实 1080p 播放地址
+  [PASS] 特殊资源站(POST调用方法)收到 wd=%u&ep=%p 请求体
   ...
-结果: 10 通过 / 0 失败
+结果: 9 通过 / 0 失败
 ```
 
 ---
