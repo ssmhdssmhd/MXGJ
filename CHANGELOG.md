@@ -1,5 +1,12 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.16.8] 2026-08-27 · buildTemplate 智能保留用户 ac 值
+
+### Bug 修复
+
+- **SiteDetector::buildTemplate**：之前强制把用户给的 ac=list 换成 ac=videolist，现在智能保留用户原始 ac 值（list/videolist），只在用户完全没给 ac 时才默认用 videolist。搜索关键词占位符改用 wd=%u。
+- 修复后 WSYZY ac=list 接口在 Phase 1 就被正确识别为「无可播放真实地址」，比之前 Phase 1 通过再 Phase 2 拒更直观。
+
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 ## [v1.16.7] 2026-08-27 · 搜索验证验证码解锁（Phase 3）
 

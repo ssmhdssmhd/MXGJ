@@ -172,10 +172,27 @@ class SiteDetector
     {
         $tpl = trim($base);
         if ($tpl === '') { return ''; }
-        $tpl = preg_replace('~([?&])(ac|wd|keyword|q|name|pg|h|t|limit)=[^&]*~i', '$1', $tpl);
+
+        // 1. 提取用户原始 ac 值（如果有），后面优先保留
+        $origAc = '';
+        if (preg_match('~[?&]ac=([^&]+)~i', $tpl, $m)) {
+            $origAc = $m[1];
+        }
+
+        // 2. 去掉已有的 wd / keyword / q / name / pg / h / t / limit 等搜索参数（保留 ac 不动）
+        $tpl = preg_replace('~([?&])(wd|keyword|q|name|pg|h|t|limit)=[^&]*~i', '$1', $tpl);
         $tpl = preg_replace('~[?&]+$~', '', $tpl);
         $sep = (strpos($tpl, '?') === false) ? '?' : '&';
-        return $tpl . $sep . 'ac=videolist&wd=%u';
+
+        // 3. ac 的选择：优先用户原始 ac（如果是 list 或 videolist），否则用 videolist
+        $acValue = ($origAc === 'list' || $origAc === 'videolist') ? $origAc : 'videolist';
+
+        // 4. 先确保有 ac 参数（用户可能没给），再加搜索占位符
+        if ($origAc === '') {
+            $tpl .= $sep . 'ac=' . $acValue;
+            $sep = '&';
+        }
+        return $tpl . $sep . 'wd=%u';
     }
 
     protected static function makeName(string $host): string
