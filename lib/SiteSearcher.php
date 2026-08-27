@@ -86,10 +86,12 @@ class SiteSearcher
             if ($body !== false && $body !== '') {
                 $parsed = self::parseBody($body, $episode, (string)($h['parse'] ?? ''));
                 if ($parsed['url'] !== '') {
-                    $parsed['site'] = $h['site']['name'] ?? $h['url'];
-                    $parsed['url']  = self::finalizeUrl($parsed['url'], $h['site']);
-                    $parsed['w']    = (int)($parsed['w'] ?? 0);
-                    $candidates[]   = $parsed;
+                    $parsed['site']       = $h['site']['name'] ?? $h['url'];
+                    $parsed['raw_url']    = $parsed['url'];  // finalizeUrl 之前的原始地址
+                    $parsed['url']        = self::finalizeUrl($parsed['url'], $h['site']);
+                    $parsed['w']          = (int)($parsed['w'] ?? 0);
+                    $parsed['site_special'] = !empty($h['site']['is_special']); // 标记是否特殊资源站
+                    $candidates[]         = $parsed;
                     $ok = true;
                 } elseif ($parsed['msg'] !== '') {
                     $errors[] = ($h['site']['name'] ?? $h['url']) . '：' . $parsed['msg'];
@@ -120,11 +122,13 @@ class SiteSearcher
         $best = $candidates[0];
 
         return [
-            'code'    => 200,
-            'url'     => $best['url'],
-            'site'    => $best['site'],
-            'msg'     => 'success',
-            'episode' => $episode,
+            'code'          => 200,
+            'url'           => $best['url'],
+            'site'          => $best['site'],
+            'msg'           => 'success',
+            'episode'       => $episode,
+            'site_special'  => !empty($best['site_special']),  // 是否特殊资源站
+            'raw_url'       => $best['raw_url'] ?? '',         // 未套 proxy 的原始地址
         ];
     }
 

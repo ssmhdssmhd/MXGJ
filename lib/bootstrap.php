@@ -6,7 +6,7 @@
  */
 
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.13.0');
+define('MXGJ_VERSION', '1.16.0');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -178,6 +178,46 @@ function mxgj_json_out(array $data, int $status = 200): void
 }
 
 /**
+ * 获取当前系统的域名根（带 scheme），如 https://example.com
+ * CLI 环境或无 Host 时返回配置中的 base_url，再无则 fallback http://localhost
+ */
+function mxgj_current_host(): string
+{
+    static $cached = null;
+    if ($cached !== null) { return $cached; }
+
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+        $scheme = (string)$_SERVER['HTTP_X_FORWARDED_PROTO'];
+    }
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host !== '') {
+        $cached = $scheme . '://' . $host;
+        return $cached;
+    }
+
+    // 回退：配置中的 base_url
+    $st = mxgj_settings();
+    $base = trim((string)($st['base_url'] ?? ''));
+    if ($base !== '') {
+        $cached = rtrim($base, '/');
+        return $cached;
+    }
+    $cached = 'http://localhost';
+    return $cached;
+}
+
+/**
+ * 用本地 player.php 包装播放地址，方便直接调用本地播放器
+ * $rawUrl 是资源站返回的原始播放地址
+ */
+function mxgj_player_url(string $rawUrl): string
+{
+    $host = mxgj_current_host();
+    return $host . '/player.php?url=' . rawurlencode($rawUrl);
+}
+
+/**
  * 依据「输出返回设置」把内部变量映射为对外返回的 JSON 字段
  *
  * @param array $vars 内部值，可包含：code,msg,url,title,episode,site,source,time,debug
@@ -188,7 +228,9 @@ function mxgj_build_output(array $vars, bool $debug): array
 {
     $cfg    = mxgj_settings()['output'] ?? [];
     $fields = is_array($cfg['fields'] ?? null) ? $cfg['fields'] : [];
-    $fMap   = ['code', 'msg', 'url', 'title', 'episode', 'site', 'source', 'time']; // 系统值来源
+    // 系统值来源映射：扩展特殊资源站专用字段
+    $fMap   = ['code', 'msg', 'url', 'title', 'episode', 'site', 'source', 'time',
+               'is_special', 'site_special', 'player_url', 'raw_url'];
 
     $out = [];
     if ($fields === []) {
@@ -211,6 +253,15 @@ function mxgj_build_output(array $vars, bool $debug): array
         }
         // 是系统字段：取对应内部值；否则当作常量字符串输出
         $out[$k] = in_array($v, $fMap, true) ? ($vars[$v] ?? '') : $v;
+    }
+
+    // 特殊资源站专用字段：命中时自动追加到返回末尾（不受 fields 配置限制）
+    if (!empty($vars['is_special'])) {
+        foreach (['is_special', 'site_special', 'player_url', 'raw_url'] as $k) {
+            if (!array_key_exists($k, $out) && array_key_exists($k, $vars)) {
+                $out[$k] = $vars[$k];
+            }
+        }
     }
 
     // 是否附带原始请求链接（默认不显示，避免返回太乱）

@@ -147,16 +147,33 @@ if ($cachedIsHit) {
     }
 }
 
-// 7. 组装返回（按后台「输出返回设置」自定义字段映射，默认隐藏 source；直接返回真实播放地址）
+// 7. 组装返回
+//    - 特殊资源站（is_special=true）自动套 本地/player.php 播放器，无需手动拼接
+//    - 专用字段：is_special / player_url / raw_url / site_special
+$isSpecial  = !empty($result['site_special']);
+$rawPlayUrl = $result['raw_url'] ?? $result['url'] ?? '';  // finalizeUrl 前的原始地址
+$playerUrl  = $rawPlayUrl !== '' ? mxgj_player_url($rawPlayUrl) : '';
+
+// 最终对外面向的 url：特殊站走 player.php，否则按 SiteSearcher 返回值（可能已带 proxy）
+$finalUrl = $result['url'] ?? '';
+if ($isSpecial && $playerUrl !== '') {
+    $finalUrl = $playerUrl;
+}
+
 $vars = [
-    'code'    => $result['code'],
-    'msg'     => $result['msg'] ?? '',
-    'url'     => $result['url'] ?? '',
-    'title'   => $name,
-    'episode' => $episode,
-    'site'    => $result['site'] ?? '',
-    'source'  => $raw,
-    'time'    => round((microtime(true) - $t0) * 1000, 1),
+    'code'         => $result['code'],
+    'msg'          => $result['msg'] ?? '',
+    'url'          => $finalUrl,                      // 最终可播放地址（特殊站已自动套播放器）
+    'title'        => $name,
+    'episode'      => $episode,
+    'site'         => $result['site'] ?? '',
+    'source'       => $raw,
+    'time'         => round((microtime(true) - $t0) * 1000, 1),
+    // 特殊资源站专用字段
+    'is_special'   => $isSpecial,                     // 是否特殊资源站命中
+    'site_special' => $isSpecial,                     // 同 is_special，兼容两种命名
+    'player_url'   => $playerUrl,                     // 本地播放器入口 URL
+    'raw_url'      => $rawPlayUrl,                    // 资源站原始返回地址（未套 proxy / 播放器）
 ];
 if ($debug) {
     $vars['debug'] = [

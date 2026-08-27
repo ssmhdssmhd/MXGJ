@@ -5,14 +5,16 @@
             "url": "https://caiji.xgzyapi.com/api.php/provide/vod/?ac=videolist&wd=%u",
             "template": "https://caiji.xgzyapi.com/api.php/provide/vod/?ac=videolist&wd=%u",
             "proxy": "",
-            "enabled": true
+            "enabled": true,
+            "is_special": true
         },
         {
             "name": "蓝光资源站",
             "url": "https://lgapi.xyz/api.php/provide/vod/?ac=videolist&wd=%u",
             "template": "https://lgapi.xyz/api.php/provide/vod/?ac=videolist&wd=%u",
             "proxy": "",
-            "enabled": true
+            "enabled": true,
+            "is_special": true
         }
     ]
 }

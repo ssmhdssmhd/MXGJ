@@ -2,6 +2,20 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [v1.16.0] 2026-08-27 · 特殊资源站 · 自动套本地播放器
+
+**新增**：
+- 后台资源站列表新增「特殊站」开关（is_special 字段）
+- 特殊资源站返回的 URL 自动套「当前域名/player.php?url=原始地址」，无需手动拼接
+- JSON 返回新增专用字段：is_special / site_special / player_url / raw_url
+- 命中特殊站时，主字段 url 也自动替换为 player.php 播放器入口
+- 非特殊站不受影响，保持原有行为
+
+**技术细节**：
+- SiteSearcher::search 返回结果新增 site_special / raw_url 字段
+- bootstrap.php 新增 mxgj_current_host() / mxgj_player_url() helper
+- mxgj_build_output 扩展 fMap，命中特殊站时自动追加专用字段（不受 output.fields 配置限制）
+
 ## [1.13.0] - 2026-08-26
 
 ### ✨ 移除「App 设置 / 安全设置」，前台直接返回真实地址

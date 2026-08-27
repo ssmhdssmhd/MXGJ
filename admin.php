@@ -72,16 +72,17 @@ switch ($ACTION) {
             $parse = mxgj_lower(trim($s['parse'] ?? ''));
             if (!in_array($parse, ['json', 'text', 'apple'], true)) $parse = '';
             $clean[] = [
-                'name'     => $name,
-                'url'      => $url,          // 兼容旧字段
-                'template' => $url,          // 标准模板字段
-                'proxy'    => trim($s['proxy'] ?? ''), // 跟随播放链接（中转前缀），仅该站启用
-                'enabled'  => array_key_exists('enabled', $s) ? !empty($s['enabled']) : true, // 启用开关（默认启用）
+                'name'       => $name,
+                'url'        => $url,          // 兼容旧字段
+                'template'   => $url,          // 标准模板字段
+                'proxy'      => trim($s['proxy'] ?? ''), // 跟随播放链接（中转前缀），仅该站启用
+                'enabled'    => array_key_exists('enabled', $s) ? !empty($s['enabled']) : true, // 启用开关（默认启用）
+                'is_special' => array_key_exists('is_special', $s) ? !empty($s['is_special']) : false, // 特殊资源站：返回 URL 自动套本地 player.php 播放器
                 // 特殊调用方法（可留空走默认）
-                'method'   => $method,       // get=GET（默认） / post=POST（特殊调用）
-                'headers'  => trim($s['headers'] ?? ''), // 自定义请求头：每行 `Key: Value`
-                'post'     => trim($s['post'] ?? ''),     // POST 请求体模板（含 %u/%s/%p）
-                'parse'    => $parse,        // 返回解析模式：空/json/text/apple
+                'method'     => $method,       // get=GET（默认） / post=POST（特殊调用）
+                'headers'    => trim($s['headers'] ?? ''), // 自定义请求头：每行 `Key: Value`
+                'post'       => trim($s['post'] ?? ''),     // POST 请求体模板（含 %u/%s/%p）
+                'parse'      => $parse,        // 返回解析模式：空/json/text/apple
             ];
         }
         mxgj_write_json($sitesFile, ['sites' => $clean]);
@@ -269,18 +270,20 @@ switch ($ACTION) {
         $entry['post']    = trim($_POST['post'] ?? '');
         $entry['parse']   = $parse;
         if ($hit !== null) {
-            $entry['enabled'] = array_key_exists('enabled', $list[$hit]) ? !empty($list[$hit]['enabled']) : true; // 保留原启用状态
-            $entry['proxy']   = (string)($list[$hit]['proxy'] ?? ''); // 保留跟随播放链接
+            $entry['enabled']    = array_key_exists('enabled', $list[$hit]) ? !empty($list[$hit]['enabled']) : true; // 保留原启用状态
+            $entry['proxy']      = (string)($list[$hit]['proxy'] ?? ''); // 保留跟随播放链接
+            $entry['is_special'] = array_key_exists('is_special', $list[$hit]) ? !empty($list[$hit]['is_special']) : false; // 保留特殊站标记
             // 保留原有特殊调用方法配置（弹窗未提交这些字段时不覆盖）
-            $entry['method']  = (string)($list[$hit]['method'] ?? $entry['method']);
-            $entry['headers'] = (string)($list[$hit]['headers'] ?? $entry['headers']);
-            $entry['post']    = (string)($list[$hit]['post'] ?? $entry['post']);
-            $entry['parse']   = (string)($list[$hit]['parse'] ?? $entry['parse']);
+            $entry['method']     = (string)($list[$hit]['method'] ?? $entry['method']);
+            $entry['headers']    = (string)($list[$hit]['headers'] ?? $entry['headers']);
+            $entry['post']       = (string)($list[$hit]['post'] ?? $entry['post']);
+            $entry['parse']      = (string)($list[$hit]['parse'] ?? $entry['parse']);
             $list[$hit] = $entry;
             $mode = 'update';
         } else {
-            $entry['enabled'] = true; // 新增默认启用
-            $entry['proxy']   = trim($_POST['proxy'] ?? ''); // 跟随播放链接（中转前缀）
+            $entry['enabled']    = true; // 新增默认启用
+            $entry['proxy']      = trim($_POST['proxy'] ?? ''); // 跟随播放链接（中转前缀）
+            $entry['is_special'] = !empty($_POST['is_special']); // 特殊资源站标记
             $list[] = $entry;
             $mode = 'add';
         }
@@ -689,11 +692,12 @@ function renderSitesForm($sites)
         <form method="post" class="auto-save" id="form-sites">
             <input type="hidden" name="action" value="save_sites">
             <table id="site-tbl">
-                <tr><th style="width:110px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>特殊调用方法</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
+                <tr><th style="width:110px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>特殊调用方法</th><th style="width:80px">特殊站</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
                 <?php if ($sites): foreach ($sites as $i => $s): ?>
                     <?php $sEnabled = !array_key_exists('enabled', $s) || !empty($s['enabled']); ?>
                     <?php $sMethod = mxgj_lower(trim($s['method'] ?? '')); ?>
                     <?php $sParse  = mxgj_lower(trim($s['parse'] ?? '')); ?>
+                    <?php $sSpecial = !empty($s['is_special']); ?>
                     <tr class="<?= $sEnabled ? '' : 'row-disabled' ?>">
                         <td><input type="text" name="sites[<?= $i ?>][name]" value="<?= htmlspecialchars($s['name']) ?>"></td>
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
@@ -711,6 +715,12 @@ function renderSitesForm($sites)
                             </select>
                             <input type="text" name="sites[<?= $i ?>][headers]" value="<?= htmlspecialchars($s['headers'] ?? '') ?>" placeholder="自定义Header（每行 Key: Value）">
                             <input type="text" name="sites[<?= $i ?>][post]" value="<?= htmlspecialchars($s['post'] ?? '') ?>" placeholder="POST体（如 wd=%u&ep=%p）">
+                        </td>
+                        <td class="center">
+                            <label class="toggle" title="开启后：该站返回的 URL 自动套 本地/player.php 播放器">
+                                <input type="checkbox" name="sites[<?= $i ?>][is_special]" value="1" <?= $sSpecial ? 'checked' : '' ?>>
+                                <span class="slider"></span>
+                            </label>
                         </td>
                         <td class="center">
                             <label class="toggle">
@@ -735,6 +745,7 @@ function renderSitesForm($sites)
                             <input type="text" name="sites[0][headers]" placeholder="自定义Header（每行 Key: Value）">
                             <input type="text" name="sites[0][post]" placeholder="POST体（如 wd=%u&ep=%p）">
                         </td>
+                        <td class="center"><input type="checkbox" name="sites[0][is_special]" value="1" title="特殊资源站：自动套本地播放器"></td>
                         <td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>
                         <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                     </tr>
