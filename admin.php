@@ -1189,22 +1189,43 @@ function renderSitesForm($sites)
         var url=document.getElementById('dd-url').value.trim();
         if(!url){alert('请先填写采集接口地址');return;}
         var msg=document.getElementById('dd-msg');
-        msg.textContent='检测中...';msg.style.color='#e2b93b';
+        msg.textContent='Phase 1/2：基础列表探测中...';msg.style.color='#e2b93b';
         document.getElementById('dd-hint').style.display='none';
+        document.getElementById('dd-warn').style.display='none';
         var fd=new FormData();fd.append('action','detect_site');fd.append('url',url);
         fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(function(d){
-            if(d.ok){
-                document.getElementById('dd-name').value=d.name||'';
-                document.getElementById('dd-tpl').value=d.template||'';
-                document.getElementById('dd-hint').style.display='block';
-                var smp=d.sample||{};
-                document.getElementById('dd-hint-name').textContent=smp.name||'(无)';
-                document.getElementById('dd-hint-url').textContent=smp.url||'';
-                msg.textContent='✔ 检测成功（'+d.type+'）：可获取真实资源，模板已生成，可修改后保存。';
-                msg.style.color='#2ecc71';
-            }else{
+            document.getElementById('dd-hint').style.display='block';
+            var smp=d.sample||{};
+            document.getElementById('dd-hint-name').textContent=smp.name||'(无)';
+            document.getElementById('dd-hint-url').textContent=smp.url||'';
+
+            if(!d.ok){
+                // Phase 1 就挂了
                 msg.textContent='✘ 检测失败：'+(d.msg||'未知错误');
                 msg.style.color='#e74c3c';
+                return;
+            }
+            document.getElementById('dd-name').value=d.name||'';
+            document.getElementById('dd-tpl').value=d.template||'';
+
+            // 关键词搜索探测结果
+            var probe=d.search_probe||{};
+            if(d.searchable){
+                msg.textContent='✅ 通过！基础列表 + 关键词搜索均正常';
+                msg.style.color='#2ecc71';
+                var sEl=document.getElementById('dd-search');
+                sEl.style.display='block';
+                sEl.innerHTML='<span style="color:#2ecc71">●</span> 关键词搜索：正常 ✔<br><span style="color:#6b7a94;font-size:11px">'+(probe.msg||'')+'</span>';
+            }else{
+                // 基础OK但搜索不行 —— 警告！
+                msg.textContent='⚠️ 基础列表OK，但关键词搜索不可用！';
+                msg.style.color='#f59e0b';
+                var wEl=document.getElementById('dd-warn');
+                wEl.style.display='block';
+                wEl.innerHTML='<b>🚨 此接口不能用于本系统！</b><br>原因：'+(d.warn_detail||probe.msg||'接口只支持随机列表，不支持关键词查询')+'<br>本系统的核心逻辑是「按剧名去资源站搜」，这种接口加进来只会白跑一次请求然后返回 503。<br><span style="color:#7fc1ff;font-size:11px">硬要加也可以，但建议去找真正支持关键词搜索的苹果CMS接口</span>';
+                var sEl=document.getElementById('dd-search');
+                sEl.style.display='block';
+                sEl.innerHTML='<span style="color:#f59e0b">●</span> 关键词搜索：<b>不可用</b> ❌<br><span style="color:#6b7a94;font-size:11px">'+(probe.msg||'')+'</span>';
             }
         }).catch(function(e){msg.textContent='请求失败:'+e;msg.style.color='#e74c3c';});
     }
@@ -1231,8 +1252,12 @@ function renderSitesForm($sites)
             </div>
             <div style="margin-top:10px"><button type="button" class="btn btn-green" onclick="detectSite()" style="margin-right:8px">检测</button><button type="button" class="btn" onclick="closeDetect()">取消</button></div>
             <div id="dd-hint" style="display:none;background:#10172a;border:1px solid #223;border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;color:#9aa4bc">
-                样本：<span id="dd-hint-name"></span><br>首条地址：<code id="dd-hint-url" style="word-break:break-all"></code>
+                <div><b>Phase 1 - 基础探测：</b></div>
+                <div>样本剧名：<span id="dd-hint-name" style="color:#7fc1ff"></span></div>
+                <div>首条地址：<code id="dd-hint-url" style="word-break:break-all;font-size:11px"></code></div>
+                <div id="dd-search" style="margin-top:8px;padding-top:8px;border-top:1px dashed #2a3550;display:none"></div>
             </div>
+            <div id="dd-warn" style="display:none;margin-top:10px;background:rgba(245,158,11,.12);border:1px solid #f59e0b;border-radius:8px;padding:10px 12px;font-size:12px;color:#fbbf24;line-height:1.6"></div>
             <div id="dd-msg" style="margin-top:12px;font-size:13px">粘贴苹果CMS10采集接口地址，点「检测」自动生成模板与名称。</div>
             <div style="margin-top:14px">
                 <div style="margin-bottom:8px"><label>站点名称</label><input type="text" id="dd-name" style="width:100%;box-sizing:border-box"></div>
