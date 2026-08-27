@@ -238,6 +238,69 @@ switch ($ACTION) {
         Logger::log('operation', '测试资源站：' . $title . ' 第' . $ep . '集 → ' . ($res['code'] === 200 ? '命中' : $res['msg'] ?? '失败'), $res['code'] === 200 ? 'success' : 'warn', ['code' => $res['code']]);
         mxgj_json_out($res);
 
+    case 'test_direct':
+        // 一键测试 - 资源站直链（m3u8）：自动检测剧名/集数 → 写入映射表
+        $url  = trim($_POST['url'] ?? '');
+        $name = trim($_POST['name'] ?? '');
+        $ep   = max(0, (int)($_POST['episode'] ?? 0));
+        $save = !empty($_POST['save']);
+        if ($url === '') mxgj_json_out(['code' => 400, 'msg' => '请输入资源站直链']);
+
+        // === 自动检测 ===
+        $detected = admin_parse_direct_url($url);
+        // 用户手动输入覆盖自动检测
+        if ($name !== '') $detected['name'] = $name;
+        if ($ep > 0)      $detected['episode'] = $ep;
+
+        $result = [
+            'code'    => 200,
+            'ok'      => true,
+            'url'     => $url,
+            'detected' => $detected,
+            'saved'   => false,
+            'msg'     => '检测完成，请确认后点击写入映射表',
+        ];
+
+        if ($save && $detected['name'] !== '') {
+            $mapping = mxgj_read_json($mappingFile, ['title' => [], 'cid' => [], 'episode' => []]);
+            $newTitle  = !empty($detected['title_raw']) && $detected['title_raw'] !== $detected['name'];
+            $titleKey  = $detected['title_raw'] ?? $detected['name'];
+            $epKey     = 'url:' . md5($url);
+
+            $savedMap = [];
+            // 1) 写入剧名映射（如果检测到原始名且和修正名不同）
+            if ($newTitle) {
+                $mapping['title'][$titleKey] = $detected['name'];
+                $savedMap[] = "title[$titleKey] → {$detected['name']}";
+            }
+            // 2) 写入 episode 映射
+            if ($detected['episode'] > 0) {
+                if (!isset($mapping['episode']) || !is_array($mapping['episode'])) {
+                    $mapping['episode'] = [];
+                }
+                $mapping['episode'][$epKey] = ['name' => $detected['name'], 'episode' => $detected['episode']];
+                $savedMap[] = "episode[$epKey] → {$detected['name']} 第{$detected['episode']}集";
+            }
+            mxgj_write_json($mappingFile, $mapping);
+            $result['saved'] = true;
+            $result['saved_map'] = $savedMap;
+            $result['msg'] = '映射表已写入 ' . count($savedMap) . ' 条';
+            Logger::log('operation', '资源站直链自动写入映射：' . $detected['name'] . ' 第' . $detected['episode'] . '集', 'success', ['entries' => $savedMap]);
+        }
+
+        // 尝试用检测到的剧名去搜（验证）
+        if ($detected['name'] !== '' && $detected['episode'] > 0) {
+            $verify = SiteSearcher::search(mxgj_sites(), $detected['name'], $detected['episode'], (int)mxgj_settings()['timeout']);
+            $result['verify_search'] = [
+                'code' => $verify['code'],
+                'hit'  => !empty($verify['url']),
+                'url'  => $verify['url'] ?? '',
+                'msg'  => $verify['msg'] ?? '',
+            ];
+        }
+
+        mxgj_json_out($result);
+
     case 'detect_site':
         // 检测苹果CMS10采集接口并自动构建模板
         $raw = trim($_POST['url'] ?? '');
@@ -481,6 +544,73 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Microsoft YaHei,san
     <?php
 }
 
+
+/**
+ * 从资源站直链 URL (m3u8) 自动检测剧名和集数
+ *
+ * @param string $url m3u8 直链
+ * @return array{name:string,episode:int,title_raw:string}
+ */
+function admin_parse_direct_url(string $url): array
+{
+    $parts = parse_url($url);
+    $path  = $parts['path'] ?? '';
+    $segs  = array_values(array_filter(explode('/', $path)));
+
+    // === 集数检测 ===
+    $ep = 0;
+    $epPatterns = [
+        '~-(\d{1,3})(?:集|集高清|高清|\.m3u8|高清版|$)~i',
+        '~(?:episode|ep|第|play|season)[-_]?(\d{1,3})~i',
+        '~^(\d{1,3})\.m3u8$~i',
+        '~_(\d{1,3})\.~',
+        '~[-/](\d{1,3})\.m3u8~i',
+    ];
+    foreach ($epPatterns as $pat) {
+        foreach ($segs as $seg) {
+            if (preg_match($pat, $seg, $m)) {
+                $ep = (int)$m[1];
+                break 2;
+            }
+        }
+    }
+
+    // === 剧名检测 ===
+    $skipWords = ['video','videos','drama','movie','media','cdn','hls','index','m3u8','episode','ep','season','play','stream','hls_stream','vod'];
+    $best = '';
+    foreach ($segs as $seg) {
+        // 去掉扩展名
+        $clean = preg_replace('/\.[a-z0-9]+$/i', '', $seg);
+        // 去掉末尾集数
+        $clean = preg_replace('/[-_\s]?\d{1,3}(?:集|高清|\.m3u8|高清版)?$/i', '', $clean);
+        // 跳过纯数字
+        if (preg_match('/^\d+$/', $clean)) continue;
+        // 跳过短词/常见英文目录
+        if (in_array(strtolower($clean), $skipWords, true)) continue;
+        if (strlen($clean) < 2) continue;
+        // 优先选含中文的
+        if (preg_match('/[\x{4e00}-\x{9fff}]/u', $clean)) {
+            $best = $clean;
+            break;
+        }
+        if (strlen($clean) > strlen($best)) $best = $clean;
+    }
+
+    // 如果没从路径检测到，尝试从 query string 里找
+    if ($best === '' && !empty($parts['query'])) {
+        parse_str($parts['query'], $qs);
+        foreach (['name','title','vod','wd','keyword'] as $k) {
+            if (!empty($qs[$k])) { $best = $qs[$k]; break; }
+        }
+    }
+
+    return [
+        'name'      => $best,
+        'episode'   => $ep,
+        'title_raw' => '',  // m3u8 直链没有原始官方剧名，留空
+    ];
+}
+
 function renderDashboard()
 {
     global $settingsFile, $sitesFile, $mappingFile;
@@ -594,6 +724,12 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
 .toggle input:checked + .slider:before{transform:translateX(18px)}
 .add-row-btn{margin-top:10px;padding:6px 14px;background:#f0f4ff;border:1px dashed #4f7cff;color:#4f7cff;border-radius:6px;font-size:12.5px;cursor:pointer;transition:all .15s}
 .add-row-btn:hover{background:#e0e8ff;border-style:solid}
+/* ====== Tab 切换 ====== */
+.t-tab{padding:8px 16px;background:none;border:none;font-size:13.5px;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;font-weight:500}
+.t-tab:hover{color:#1f2937}
+.t-tab.active{color:#4f7cff;border-bottom-color:#4f7cff}
+.tab-pane{animation:fadein .2s ease}
+@keyframes fadein{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}
 /* ====== 移动端（≤768px）====== */
 @media(max-width:768px){
     body{overflow-x:hidden}
@@ -761,11 +897,44 @@ function renderOverview($sites, $cacheCnt, $mapping)
 
     <div class="panel" style="margin-bottom:16px">
         <h2>一键测试</h2>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <input id="t-url" type="text" placeholder="粘贴官方播放链接" style="flex:1;min-width:300px">
-            <button class="btn" onclick="testFull()">解析测试</button>
+        <div class="tab-bar" style="display:flex;gap:0;margin-bottom:14px;border-bottom:1px solid #e5e7eb">
+            <button type="button" class="t-tab active" data-tab="official" onclick="switchTab('official')">🎯 官方链接 → 资源站搜索</button>
+            <button type="button" class="t-tab" data-tab="direct" onclick="switchTab('direct')">📡 资源站直链 → 写入映射</button>
         </div>
-        <pre id="t-out" style="margin-top:12px;display:none"></pre>
+        <!-- Tab 1: 官方链接 -->
+        <div class="tab-pane" id="tab-official">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <input id="t-url" type="text" placeholder="粘贴官方播放链接（腾讯/爱奇艺/优酷/芒果...）" style="flex:1;min-width:300px">
+                <button class="btn" onclick="testFull()">🔍 解析测试</button>
+            </div>
+            <div class="small" style="margin-top:8px;color:#6b7280">自动解析官方链接 → 提取 vid/cid/剧名/集数 → 去全部资源站并发搜索</div>
+        </div>
+        <!-- Tab 2: 资源站直链 (m3u8) -->
+        <div class="tab-pane" id="tab-direct" style="display:none">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                <input id="d-url" type="text" placeholder="粘贴 .m3u8 直链地址" style="flex:1;min-width:300px" oninput="debounceDetect()">
+                <button class="btn btn-green" onclick="detectDirect()">🔎 自动检测</button>
+            </div>
+            <div id="d-form" style="display:none;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:12px">
+                <div class="small" style="margin-bottom:10px;color:#4f7cff;font-weight:500">✓ 检测结果 —— 请确认并修正</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                    <div>
+                        <label>剧名（资源站使用）</label>
+                        <input id="d-name" type="text" placeholder="如：庆余年">
+                    </div>
+                    <div>
+                        <label>集数</label>
+                        <input id="d-ep" type="number" min="1" max="999" placeholder="如：2">
+                    </div>
+                </div>
+                <div style="margin-top:10px;font-size:12px;color:#6b7280" id="d-raw"></div>
+                <div style="margin-top:12px;display:flex;gap:8px">
+                    <button class="btn btn-green" onclick="saveDirect()">💾 写入映射表</button>
+                    <button class="btn" style="background:#6b7280" onclick="detectDirect()">重新检测</button>
+                </div>
+            </div>
+        </div>
+        <pre id="t-out" style="margin-top:12px;display:none;max-height:300px;overflow:auto"></pre>
     </div>
 
     <div class="panel">
@@ -797,6 +966,57 @@ function renderOverview($sites, $cacheCnt, $mapping)
         fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
             document.getElementById('t-out').textContent=JSON.stringify(d,null,2);
         }).catch(e=>document.getElementById('t-out').textContent='请求失败:'+e);
+    }
+    /* === Tab 切换 === */
+    function switchTab(name){
+        document.querySelectorAll('.t-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+        document.querySelectorAll('.tab-pane').forEach(p=>p.style.display='none');
+        document.getElementById('tab-'+name).style.display='block';
+        document.getElementById('t-out').style.display='none';
+    }
+    /* === 资源站直链检测 === */
+    var __detectTimer=null;
+    function debounceDetect(){
+        if(__detectTimer)clearTimeout(__detectTimer);
+        __detectTimer=setTimeout(detectDirect,400);
+    }
+    function detectDirect(){
+        var url=document.getElementById('d-url').value.trim();
+        if(!url){document.getElementById('d-form').style.display='none';return;}
+        var d=document.getElementById('d-form');d.style.display='block';
+        d.querySelector('.small').textContent='⏳ 自动检测中...';
+        var fd=new FormData();fd.append('action','test_direct');fd.append('url',url);
+        fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(res=>{
+            if(!res.ok){d.querySelector('.small').textContent='❌ '+res.msg;return;}
+            var dt=res.detected;
+            document.getElementById('d-name').value=dt.name||'';
+            document.getElementById('d-ep').value=dt.episode||'';
+            document.getElementById('d-raw').textContent='检测结果: 剧名="'+(dt.name||'未识别')+'" 集数='+(dt.episode||'未识别')+'（可手动修正后保存）';
+            d.querySelector('.small').textContent='✓ 检测结果 —— 请确认并修正';
+            // 显示完整调试
+            document.getElementById('t-out').style.display='block';
+            document.getElementById('t-out').textContent='=== 检测结果 ===\n剧名: '+(dt.name||'(未识别，需手动填写)')+'\n集数: '+(dt.episode||0)+'\n\n=== 验证搜索 ===\n'+JSON.stringify(res.verify_search||{},null,2);
+        }).catch(e=>{d.querySelector('.small').textContent='❌ 请求失败: '+e;});
+    }
+    function saveDirect(){
+        var url=document.getElementById('d-url').value.trim();
+        var name=document.getElementById('d-name').value.trim();
+        var ep=parseInt(document.getElementById('d-ep').value)||0;
+        if(!url||!name){alert('请填写剧名和直链地址');return;}
+        var fd=new FormData();
+        fd.append('action','test_direct');
+        fd.append('url',url);
+        fd.append('name',name);
+        fd.append('episode',ep);
+        fd.append('save','1');
+        fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(res=>{
+            var out=document.getElementById('t-out');out.style.display='block';
+            if(res.saved){
+                out.textContent='✅ '+res.msg+'\n\n写入内容:\n'+(res.saved_map||[]).map(m=>'  - '+m).join('\n')+'\n\n原始返回:\n'+JSON.stringify(res,null,2);
+            }else{
+                out.textContent='❌ 保存失败: '+(res.msg||'未知错误')+'\n\n'+JSON.stringify(res,null,2);
+            }
+        }).catch(e=>alert('请求失败: '+e));
     }
     </script>
     <?php
