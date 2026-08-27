@@ -1,20 +1,19 @@
 <?php
 /**
- * 沫兮官替系统 - 播放器页面（兼容入口）
+ * 沫兮官替系统 - 动态播放器入口
  *
- * 优先从 player/data/players.json 动态加载后台配置的播放器，
- * 若后台未配置则回退到默认的 lgzym3u8 播放器。
+ * 从后台 player/data/players.json 读取播放器配置，
+ * 根据 code 参数（播放器编码）加载对应播放器渲染页面。
  *
- * 调用：/player.php?url=<播放地址>          （明文，使用默认播放器）
- *       /player.php?code=<播放器编码>&url=<地址> （指定播放器）
- *       /player.php?u=<base64url 加密地址>
- *
- * 新版前台入口：/player/play.php?code=xxx&url=xxx
+ * 调用：
+ *   /player/play.php?url=<播放地址>                         （使用默认播放器）
+ *   /player/play.php?code=<播放器编码>&url=<播放地址>        （指定播放器）
+ *   /player/play.php?code=<播放器编码>&u=<base64url地址>    （加密地址）
  */
 
-require __DIR__ . '/lib/bootstrap.php';
+require __DIR__ . '/../lib/bootstrap.php';
 
-// 读取播放地址（优先明文 url，其次 base64url 加密的 u）
+// 1. 读取播放地址
 $playUrl = trim((string)($_GET['url'] ?? ''));
 if ($playUrl === '') {
     $dec = mxgj_b64url_decode(trim((string)($_GET['u'] ?? '')));
@@ -37,32 +36,32 @@ if (empty($parts['scheme']) || empty($parts['host'])) {
     exit('url 参数非法');
 }
 
-// ===== 1. 优先加载后台配置的播放器 =====
+// 2. 选择播放器
 $code = trim((string)($_GET['code'] ?? ''));
 $player = null;
-
-if (function_exists('mxgj_players')) {
-    if ($code !== '') {
-        $player = mxgj_get_player($code);
-    }
+if ($code !== '') {
+    $player = mxgj_get_player($code);
+}
+if (!$player) {
+    $player = mxgj_default_player();
+}
+if (!$player) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=utf-8');
+    exit('未配置任何播放器，请先到后台添加');
+}
+if (empty($player['enabled'])) {
+    // 播放器已禁用，降级使用默认播放器
+    $player = mxgj_default_player();
     if (!$player) {
-        $player = mxgj_default_player();
+        http_response_code(500);
+        exit('默认播放器不可用');
     }
 }
 
-// ===== 2. 回退：硬编码的默认播放器（lgzym3u8 / 蓝光资源） =====
-if (!$player || empty($player['player_code_content'])) {
-    $player = [
-        'player_code'  => 'lgzym3u8',
-        'player_name'  => '蓝光资源',
-        'player_from'  => 'lgzym3u8',
-        'player_code_content' => "MacPlayer.Html = '<iframe width=\"100%\" height=\"100%\" src=\"https://vv00.xyz?url='+MacPlayer.PlayUrl+'\" frameborder=\"0\" scrolling=\"no\" allowfullscreen></iframe>';((_)=>{var g=this;try{g[_(97,100,100,69,118,101,110,116,76,105,115,116,101,110,114)](_(109,101,115,115,97,103,101),e=>{try{var d=e[_(100,97,116,97)];if(d&&d.MacPlayer){g[_(115,101,116,84,105,109,101,111,117,116)](d.MacPlayer,0)}}catch(e){}},!1)}catch(e){}})(String.fromCharCode);try{MacPlayer.Show()}catch(e){}",
-    ];
-}
-
-$playerShow = $player['player_name'];
+$playerShow = $player['player_name'] ?? '播放器';
 $playerFrom = $player['player_from'] ?? '';
-$playerCode = $player['player_code_content'];
+$playerCode = $player['player_code_content'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -70,7 +69,7 @@ $playerCode = $player['player_code_content'];
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="referrer" content="no-referrer">
-<title><?= htmlspecialchars($playerShow) ?>播放器</title>
+<title><?= htmlspecialchars($playerShow) ?> - 在线播放</title>
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0e14; color: #e6e8ee;
@@ -89,25 +88,36 @@ $playerCode = $player['player_code_content'];
         border-radius: 50%; animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hint { font-size: 13px; color: rgba(230,232,238,.6); }
+    /* 移动端返回按钮 */
+    .mobile-back { position: fixed; top: 12px; left: 12px; z-index: 20; width: 36px; height: 36px;
+        background: rgba(0,0,0,.5); border-radius: 50%; display: none; align-items: center; justify-content: center;
+        color: #fff; text-decoration: none; font-size: 18px; pointer-events: auto; }
+    @media (max-width: 768px) { .mobile-back { display: flex; } }
 </style>
 </head>
 <body>
     <div class="bar">
         <span class="badge"><?= htmlspecialchars($playerShow) ?></span>
-        <span class="src"><?= htmlspecialchars($playerFrom) ?></span>
+        <?php if ($playerFrom !== ''): ?>
+            <span class="src"><?= htmlspecialchars($playerFrom) ?></span>
+        <?php endif; ?>
     </div>
+    <a class="mobile-back" href="javascript:history.back()" title="返回">←</a>
     <div id="player"></div>
     <noscript>
         <div style="padding:40px;text-align:center;color:#8a93a6">请开启 JavaScript 后播放</div>
     </noscript>
 
     <script>
-    // MacPlayer 最小运行时：设置播放地址 + 把 Html 渲染到 #player
+    // MacPlayer 最小运行时（苹果CMS10 兼容）
     (function () {
         window.MacPlayer = {
             PlayUrl: <?= json_encode($playUrl) ?>,
             PlayUrlEncoded: <?= json_encode(rawurlencode($playUrl)) ?>,
             Html: '',
+            // 可选：播放器初始化参数（部分 MacPlayer 会读取）
+            'Player.Title': <?= json_encode($playerShow) ?>,
+            'Player.From': <?= json_encode($playerFrom) ?>,
             Show: function () {
                 var c = document.getElementById('player');
                 if (c) c.innerHTML = this.Html || '';
@@ -115,16 +125,33 @@ $playerCode = $player['player_code_content'];
         };
     })();
     </script>
-    <script>
-    // ===== 加载的播放器代码（后台配置 / 兜底默认） =====
-    <?= $playerCode ?>
 
+    <?php if ($playerCode !== ''): ?>
+    <script>
+    // ===== 后台配置的播放器代码（原样注入执行） =====
+    <?= $playerCode ?>
+    </script>
+    <?php else: ?>
+    <script>
+    // ===== 兜底：默认 iframe 播放器 =====
+    MacPlayer.Html = '<iframe width="100%" height="100%" src="' + MacPlayer.PlayUrl + '" frameborder="0" allowfullscreen></iframe>';
+    try { MacPlayer.Show(); } catch(e) {}
+    </script>
+    <?php endif; ?>
+
+    <script>
     // 加载完成前展示过渡动画，避免白屏
     (function () {
         var d = document.getElementById('player');
         if (d && !d.innerHTML.trim()) {
             d.innerHTML = '<div class="loading"><div class="spinner"></div><div class="hint">正在加载播放器…</div></div>';
         }
+        // 超时（8秒）后提示加载失败
+        setTimeout(function () {
+            if (d && d.querySelector('.loading')) {
+                d.innerHTML = '<div class="loading"><div class="spinner" style="border-top-color:#e74c3c"></div><div class="hint">加载超时，播放地址可能失效</div></div>';
+            }
+        }, 8000);
     })();
     </script>
 </body>
