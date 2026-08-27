@@ -1,5 +1,39 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.16.9] 2026-08-27 · 完整搜索验证码解锁（端到端验证）
+
+### 核心发现
+
+- WSYZY（api.wsyzy.net）前端搜索走 `/index.php/vod/search.html`，开启了**苹果CMS10 双重拦截**：
+  ① 第一次访问 → 系统安全验证（验证码）
+  ② 两次请求间隔 < 3 秒 → 频率限制（请不要频繁操作）
+- 之前 SiteDetector 一直测 `/api.php/provide/vod/` 接口，WSYZY 在这个接口层面直接返回「暂不支持搜索」，
+  其实他们开放了前端 HTML 搜索接口（带验证码），用户浏览器里就能正常搜索。
+
+### 本轮修复
+
+- **SiteDetector::buildTemplate**：智能区分 `api.php`（加 ac=videolist&wd=%u）和 `index.php/vod/search.html`（只加 wd=%u），不再强制改用户 ac 值
+- **SiteDetector::needsSearchCaptcha 完全重写**：
+  - 第一步就测 basePath（HTML headers，无 XMLHttpRequest），命中验证码信号立刻返回
+  - 加频率限制信号「请不要频繁操作」识别（不是验证码）
+  - 第二步等 3.5 秒再测关键词（规避苹果CMS默认 3 秒间隔限制）
+  - 移除 XMLHttpRequest header：苹果CMS 看到这个 header 会跳过验证码拦截
+- **全局代理支持**：
+  - bootstrap.php 新增 `mxgj_apply_proxy($ch, $url)` —— 自动读取 HTTP_PROXY/HTTPS_PROXY/NO_PROXY 环境变量
+  - SiteDetector::fetchWithHeaders + SiteSearcher 全部 curl 调用自动走代理
+  - 本地 sandbox 必须走代理才能访问某些境外服务器（如 WSYZY）
+- **captcha_fetch 完整链路验证通过**：admin.php captcha_fetch → needsSearchCaptcha → 检测到「系统安全验证」→ 返回 captcha_img + cookie jar 持久化路径
+
+### 验证码解锁完整链路（端到端）
+
+用户在 admin.php 后台：
+1. 输入 WSYZY search.html URL → 点击「⚡ 检测」
+2. SiteDetector Phase 1 检测到验证码 → 弹窗显示「🚨 关键词搜索不可用」+「🔓 手动解锁」按钮
+3. 点击「🔓 解锁」→ 弹出验证码图片 + 输入框
+4. 输入验证码 → 后端 submit 到 `/index.php/ajax/verify_check?type=search&verify={code}`（5 种路径轮询）
+5. 验证成功 → cookie jar 持久化到 `data/cookies/{md5(host)}.txt`（Netscape 格式）
+6. 后续所有 SiteSearcher 请求自动带 CURLOPT_COOKIEJAR / CURLOPT_COOKIEFILE → 苹果CMS 认为已验证 → 正常返回搜索结果 ✅
+
 ## [v1.16.8] 2026-08-27 · buildTemplate 智能保留用户 ac 值
 
 ### Bug 修复

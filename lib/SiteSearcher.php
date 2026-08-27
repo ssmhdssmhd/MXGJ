@@ -251,6 +251,7 @@ class SiteSearcher
             $opts[CURLOPT_POSTFIELDS] = (string)($req['post'] ?? '');
         }
         $ch = curl_init($url);
+        mxgj_apply_proxy($ch, $url);
         curl_setopt_array($ch, $opts);
         return $ch;
     }

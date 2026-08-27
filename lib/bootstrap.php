@@ -178,6 +178,47 @@ function mxgj_json_out(array $data, int $status = 200): void
 }
 
 /**
+ * 给 curl handle 自动应用系统代理
+ * 读取环境变量 HTTP_PROXY / HTTPS_PROXY / NO_PROXY
+ * 调用时机：curl_init() 之后，curl_exec() 之前
+ */
+function mxgj_apply_proxy($ch, string $url): void
+{
+    $scheme = strtolower((string)parse_url($url, PHP_URL_SCHEME));
+    $host   = strtolower((string)parse_url($url, PHP_URL_HOST));
+
+    // NO_PROXY 检查
+    $noProxy = strtolower(getenv('NO_PROXY') ?: getenv('no_proxy') ?: '');
+    if ($noProxy !== '') {
+        foreach (preg_split('/[,\s]+/', $noProxy) as $pat) {
+            $pat = trim($pat);
+            if ($pat === '') continue;
+            if ($pat === '*') return;
+            if (strpos($host, $pat) !== false) return;
+            if (str_ends_with($host, '.' . $pat)) return;
+        }
+    }
+
+    // 按 scheme 选代理
+    if ($scheme === 'https') {
+        $proxy = getenv('HTTPS_PROXY') ?: getenv('https_proxy') ?: getenv('HTTP_PROXY') ?: getenv('http_proxy');
+    } else {
+        $proxy = getenv('HTTP_PROXY') ?: getenv('http_proxy') ?: getenv('HTTPS_PROXY') ?: getenv('https_proxy');
+    }
+    $proxy = trim($proxy ?: '');
+
+    if ($proxy !== '') {
+        // 去掉 scheme 前缀（curl 的 CURLOPT_PROXY 可以带也可以不带）
+        curl_setopt($ch, CURLOPT_PROXY, $proxy);
+        curl_setopt($ch, CURLOPT_PROXYPORT, 0);
+        // 某些代理需要 CONNECT tunnel
+        if ($scheme === 'https') {
+            curl_setopt($ch, CURLOPT_HTTPPROXYTUNNEL, true);
+        }
+    }
+}
+
+/**
  * 获取当前系统的域名根（带 scheme），如 https://example.com
  * CLI 环境或无 Host 时返回配置中的 base_url，再无则 fallback http://localhost
  */

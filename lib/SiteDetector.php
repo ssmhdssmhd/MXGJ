@@ -76,6 +76,7 @@ class SiteDetector
     protected static function fetchWithHeaders(string $url, int $timeout, array $headers, string $cookieFile): array
     {
         $ch = curl_init($url);
+        mxgj_apply_proxy($ch, $url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER     => true,
             CURLOPT_TIMEOUT            => $timeout,
@@ -173,26 +174,28 @@ class SiteDetector
         $tpl = trim($base);
         if ($tpl === '') { return ''; }
 
-        // 1. 提取用户原始 ac 值（如果有），后面优先保留
-        $origAc = '';
-        if (preg_match('~[?&]ac=([^&]+)~i', $tpl, $m)) {
-            $origAc = $m[1];
-        }
+        // 判断路径类型
+        $isIndexSearch = (strpos($tpl, 'index.php/vod/search') !== false);
+        $isApiProvide  = (strpos($tpl, 'api.php') !== false);
 
-        // 2. 去掉已有的 wd / keyword / q / name / pg / h / t / limit 等搜索参数（保留 ac 不动）
-        $tpl = preg_replace('~([?&])(wd|keyword|q|name|pg|h|t|limit)=[^&]*~i', '$1', $tpl);
+        // 去掉已有的搜索参数
+        $tpl = preg_replace('~([?&])(wd|keyword|q|name|pg|h|t|limit|ac)=[^&]*~i', '$1', $tpl);
         $tpl = preg_replace('~[?&]+$~', '', $tpl);
         $sep = (strpos($tpl, '?') === false) ? '?' : '&';
 
-        // 3. ac 的选择：优先用户原始 ac（如果是 list 或 videolist），否则用 videolist
-        $acValue = ($origAc === 'list' || $origAc === 'videolist') ? $origAc : 'videolist';
-
-        // 4. 先确保有 ac 参数（用户可能没给），再加搜索占位符
-        if ($origAc === '') {
-            $tpl .= $sep . 'ac=' . $acValue;
-            $sep = '&';
+        // index.php/vod/search.html 路径：只加 wd=%u（苹果CMS10 前端搜索）
+        if ($isIndexSearch) {
+            return $tpl . $sep . 'wd=%u';
         }
-        return $tpl . $sep . 'wd=%u';
+
+        // api.php 路径：加 ac + wd
+        if ($isApiProvide) {
+            return $tpl . $sep . 'ac=videolist&wd=%u';
+        }
+
+        // 其他路径：保守做法
+        $tpl .= $sep . 'ac=videolist';
+        return $tpl . '&wd=%u';
     }
 
     protected static function makeName(string $host): string
@@ -272,32 +275,68 @@ class SiteDetector
     public static function needsSearchCaptcha(string $apiHost, string $template, int $timeout): ?array
     {
         $jar = tempnam(sys_get_temp_dir(), 'sd_cap_');
-        $probe = str_replace('wd=%u', 'limit=2', $template);
-        $headers = self::browserHeaders($apiHost);
 
-        $warm = self::fetchWithHeaders($probe, $timeout, $headers, $jar);
-        if ($warm['code'] !== 200) return null;
+        // ⚠️ 关键：请求 HTML search 页面时不能用 XMLHttpRequest header！
+        // 苹果CMS 看到 X-Requested-With: XMLHttpRequest 会跳过验证码拦截直接返回 JSON
+        $htmlHeaders = [
+            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language: zh-CN,zh;q=0.9,en;q=0.8',
+            'Referer: https://' . $apiHost . '/',
+            'Cache-Control: no-cache',
+        ];
 
-        $kwUrl = str_replace('wd=%u', 'wd=' . urlencode('斗罗大陆'), $template);
-        $search = self::fetchWithHeaders($kwUrl, $timeout, $headers, $jar);
+        // 苹果CMS10 可能有双重拦截：
+        //   ① 第一次访问 → 验证码拦截（系统安全验证）
+        //   ② 两次请求间隔 < 3秒 → 频率限制（请不要频繁操作）
+        // 所以：第一步就检测验证码信号，命中立刻返回，不等第二步
 
-        $data = self::parseJson((string)$search['body']);
-        if ($data !== null && (int)($data['code'] ?? 0) === 1 && is_array($data['list'] ?? null) && count($data['list']) > 0) {
-            return null;
+        $basePath = preg_replace('~wd=%u[^&]*&?~i', '', $template);
+        $basePath = preg_replace('~[?&]+$~', '', $basePath);
+        $first = self::fetchWithHeaders($basePath, $timeout, $htmlHeaders, $jar);
+
+        $captchaSignals = [
+            '系统安全验证',       // 苹果CMS10 标准验证页标题
+            'mac_verify',         // 验证码输入框 class
+            'verify_check',       // 验证接口路径
+            '请输入验证码',
+            '人机验证',
+        ];
+
+        // 第一步命中验证码 → 确认需要过验证码
+        $low1 = strtolower((string)$first['body']);
+        foreach ($captchaSignals as $sig) {
+            if (strpos($low1, strtolower($sig)) !== false) {
+                return [
+                    'need_captcha' => true,
+                    'captcha_img'  => self::extractCaptchaUrl((string)$first['body'], $apiHost),
+                    'api_host'     => $apiHost,
+                    'cookie_jar'   => $jar,
+                    'signal'       => $sig,
+                ];
+            }
         }
 
-        $lowBody = strtolower((string)$search['body']);
-        $signals = ['captcha', '验证码', 'verify', '请先'];
-        $matched = false;
-        foreach ($signals as $s) { if (strpos($lowBody, $s) !== false) { $matched = true; break; } }
+        // 频率限制信号（探测太快可能被这个拦）：跳过，不是验证码
+        if (strpos($low1, '请不要频繁操作') !== false) {
+            return null; // 频率限制，不是验证码
+        }
 
-        if ($matched || ($search['content_type'] && strpos($search['content_type'], 'html') !== false)) {
-            return [
-                'need_captcha' => true,
-                'captcha_img'  => self::extractCaptchaUrl((string)$search['body'], $apiHost),
-                'api_host'     => $apiHost,
-                'cookie_jar'   => $jar,
-            ];
+        // 等 3.5 秒（苹果CMS 默认 3 秒间隔），再用关键词测一次
+        usleep(3500000);
+        $kwUrl = str_replace('wd=%u', 'wd=' . urlencode('斗罗大陆'), $template);
+        $second = self::fetchWithHeaders($kwUrl, $timeout, $htmlHeaders, $jar);
+
+        $low2 = strtolower((string)$second['body']);
+        foreach ($captchaSignals as $sig) {
+            if (strpos($low2, strtolower($sig)) !== false) {
+                return [
+                    'need_captcha' => true,
+                    'captcha_img'  => self::extractCaptchaUrl((string)$second['body'], $apiHost),
+                    'api_host'     => $apiHost,
+                    'cookie_jar'   => $jar,
+                    'signal'       => $sig,
+                ];
+            }
         }
 
         return null;
