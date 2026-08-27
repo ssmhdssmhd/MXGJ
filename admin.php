@@ -106,7 +106,7 @@ switch ($ACTION) {
         $targets = $_POST['map_target'] ?? [];
         if (is_array($titles)) {
             foreach ($titles as $i => $t) {
-                $t  = trim($t);
+                $t  = trim($t ?? '');
                 $ta = trim($targets[$i] ?? '');
                 if ($t === '' || $ta === '') continue;
                 $mapping['title'][$t] = $ta;
@@ -116,7 +116,7 @@ switch ($ACTION) {
         $ctargs = $_POST['map_cid_target'] ?? [];
         if (is_array($cids)) {
             foreach ($cids as $i => $c) {
-                $c  = trim($c);
+                $c  = trim($c ?? '');
                 $ct = trim($ctargs[$i] ?? '');
                 if ($c === '' || $ct === '') continue;
                 $mapping['cid'][$c] = $ct;
@@ -128,7 +128,7 @@ switch ($ACTION) {
         $eps    = $_POST['map_ep'] ?? [];
         if (is_array($ids)) {
             foreach ($ids as $i => $id) {
-                $id  = trim($id);
+                $id  = trim($id ?? '');
                 $en  = trim($enames[$i] ?? '');
                 $ep  = (int)($eps[$i] ?? 0);
                 if ($id === '' || $en === '' || $ep <= 0) continue;

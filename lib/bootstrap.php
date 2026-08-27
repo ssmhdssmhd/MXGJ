@@ -5,8 +5,14 @@
  * 职责：定义常量、注册自动加载、提供无数据库(JSON 文件)的读写工具与公共函数。
  */
 
+// === PHP 兼容性：抑制 Deprecated/Notice 污染 JSON 输出 ===
+// 生产环境 error_reporting 关闭 E_DEPRECATED & E_NOTICE，避免 trim(null) 等 8.1+ 警告 echo 到 JSON 前面
+// 调试时可在 admin 设置里打开 debug 模式
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.16.2');
+define('MXGJ_VERSION', '1.16.3');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -14,6 +20,9 @@ if (!defined('MXGJ_ROOT')) {
 define('MXGJ_CONFIG', MXGJ_ROOT . '/config');
 define('MXGJ_DATA', MXGJ_ROOT . '/data');
 define('MXGJ_CACHE', MXGJ_DATA . '/cache');
+
+// 错误日志路径（此时 MXGJ_DATA 已可用）
+@ini_set('error_log', MXGJ_DATA . '/php_errors.log');
 
 // 自动加载 lib 目录下的类
 spl_autoload_register(function ($class) {
@@ -36,7 +45,7 @@ function mxgj_read_json(string $file, $default = [])
         return $default;
     }
     $content = @file_get_contents($file);
-    if ($content === false || trim($content) === '') {
+    if ($content === false || trim($content ?? '') === '') {
         return $default;
     }
     $data = json_decode($content, true);
@@ -231,7 +240,7 @@ function mxgj_b64url(string $s): string
  */
 function mxgj_b64url_decode(string $s): string
 {
-    $s = strtr(trim($s), '-_', '+/');
+    $s = strtr(trim($s ?? ''), '-_', '+/');
     $pad = strlen($s) % 4;
     if ($pad > 0) {
         $s .= str_repeat('=', 4 - $pad);
@@ -283,7 +292,7 @@ function mxgj_apply_proxy($ch, string $url): void
     $noProxy = strtolower(getenv('NO_PROXY') ?: getenv('no_proxy') ?: '');
     if ($noProxy !== '') {
         foreach (preg_split('/[,\s]+/', $noProxy) as $pat) {
-            $pat = trim($pat);
+            $pat = trim($pat ?? '');
             if ($pat === '') continue;
             if ($pat === '*') return;
             if (strpos($host, $pat) !== false) return;

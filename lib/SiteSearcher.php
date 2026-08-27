@@ -20,7 +20,7 @@ class SiteSearcher
      */
     public static function search(array $sites, string $title, int $episode, int $timeout = 15): array
     {
-        $title   = trim($title);
+        $title   = trim($title ?? '');
         $episode = max(0, (int)$episode);
         $errors  = [];
 
@@ -204,7 +204,7 @@ class SiteSearcher
         $h = trim((string)$h);
         if ($h === '') { return []; }
         foreach (preg_split('/\r\n|\r|\n/', $h) as $line) {
-            $line = trim($line);
+            $line = trim($line ?? '');
             if ($line === '') { continue; }
             $p = strpos($line, ':');
             if ($p === false) { continue; }
@@ -280,7 +280,7 @@ class SiteSearcher
         // Netscape cookie jar 格式解析
         $cookies = [];
         foreach (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-            if (strpos($line, '#') === 0 || trim($line) === '') continue;
+            if (strpos($line, '#') === 0 || trim($line ?? '') === '') continue;
             $parts = explode("	", $line);
             if (count($parts) >= 7) $cookies[$parts[5]] = $parts[6];
         }
@@ -323,7 +323,7 @@ class SiteSearcher
         }
         // 强制纯文本模式：整段即播放地址
         if ($mode === 'text') {
-            $body = trim($body);
+            $body = trim($body ?? '');
             if (strpos($body, 'http') === 0 || substr($body, -5) === '.m3u8') {
                 return ['url' => $body, 'msg' => '', 'w' => 0];
             }
@@ -364,7 +364,7 @@ class SiteSearcher
             return ['url' => '', 'msg' => '返回内容不是JSON', 'w' => 0];
         }
         // 纯文本：以 http 开头或以 .m3u8 结尾
-        $body = trim($body);
+        $body = trim($body ?? '');
         if (strpos($body, 'http') === 0 || substr($body, -5) === '.m3u8') {
             return ['url' => $body, 'msg' => '', 'w' => 0];
         }
@@ -387,7 +387,7 @@ class SiteSearcher
                 continue;
             }
             foreach (explode('#', $playUrl) as $seg) {
-                $seg = trim($seg);
+                $seg = trim($seg ?? '');
                 if ($seg === '') {
                     continue;
                 }

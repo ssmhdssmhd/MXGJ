@@ -148,7 +148,6 @@ class PageResolver
         ]);
         $body = curl_exec($ch);
         $err  = curl_error($ch);
-        curl_close($ch);
         if ($err !== '' || !is_string($body)) {
             return '';
         }
@@ -161,9 +160,9 @@ class PageResolver
     protected static function extractTitle(string $html): string
     {
         if (preg_match('~<title[^>]*>(.*?)</title>~is', $html, $m)) {
-            $title = trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-            $title = preg_replace('/\s+/u', ' ', $title);
-            return trim($title, " \t\r\n-|");
+            $title = trim(html_entity_decode($m[1] ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            $title = preg_replace('/\s+/u', ' ', $title) ?? $title;
+            return trim($title, " \t\r\n-|") ?: '';
         }
         return '';
     }
@@ -187,7 +186,7 @@ class PageResolver
         // 2) 按常见分隔符拆段，取正文片段（跳过纯平台后缀段）
         $segments = preg_split('#[-_|,，、&~()\[\]【】\s]+#u', $s, -1, PREG_SPLIT_NO_EMPTY);
         foreach ($segments as $seg) {
-            $seg = trim($seg);
+            $seg = trim($seg ?? '');
             if ($seg === '') {
                 continue;
             }

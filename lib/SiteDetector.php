@@ -126,7 +126,7 @@ class SiteDetector
         $playUrl = (string)($item['vod_play_url'] ?? '');
         if ($playUrl === '') { return ''; }
         foreach (explode('#', $playUrl) as $seg) {
-            $seg = trim($seg);
+            $seg = trim($seg ?? '');
             if ($seg === '') { continue; }
             $parts = array_pad(explode('$', $seg, 2), 2, '');
             $u = $parts[1] !== '' ? $parts[1] : $parts[0];
@@ -171,7 +171,7 @@ class SiteDetector
 
     public static function buildTemplate(string $base): string
     {
-        $tpl = trim($base);
+        $tpl = trim($base ?? '');
         if ($tpl === '') { return ''; }
 
         // 判断路径类型
@@ -495,7 +495,7 @@ class SiteDetector
      */
     public static function detect(string $rawUrl, int $timeout = 15): array
     {
-        $rawUrl = trim($rawUrl);
+        $rawUrl = trim($rawUrl ?? '');
         if ($rawUrl === '') return self::failResult('请输入采集接口地址', 0);
         if (strpos($rawUrl, 'http') !== 0) $rawUrl = 'http://' . $rawUrl;
         $host = (string)parse_url($rawUrl, PHP_URL_HOST);
