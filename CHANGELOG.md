@@ -1,5 +1,58 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.0] 2026-08-27 · 搜索接口模板库（v1 首版）
+
+### 背景
+
+不同资源站的搜索接口路径/参数都不一样：
+- 苹果CMS10 前端 HTML: `/index.php/vod/search.html?wd=`
+- 苹果CMS10 API JSON: `/api.php/provide/vod/?ac=videolist&wd=`
+- 苹果CMS10 ajax/data: `/index.php/ajax/data?mid=1&wd=`
+- 伪静态重写: `/search/{keyword}.html`
+- 老版本苹果CMS8/9: `/index.php?m=vod-search-wd-xxx.html`
+- 甚至帝国CMS、织梦 ...
+
+之前用户必须自己手拼 URL，现在：**选模板 → 填 host → 自动生成**。
+
+### 新增
+
+- **搜索接口模板库**（`config/search_templates.json`）—— v1 预置 8 个最常用模板：
+  ① 苹果CMS10 · 前端搜索页 (推荐) → `/index.php/vod/search.html?wd={kw}`
+  ② 苹果CMS10 · API JSON 搜索 → `/api.php/provide/vod/?ac=videolist&wd={kw}`
+  ③ 苹果CMS10 · ajax/data 接口 → `/index.php/ajax/data?mid=1&wd={kw}`
+  ④ 苹果CMS10 · 伪静态 → `/search/{kw}.html`
+  ⑤ 苹果CMS10 · ac=list → `/api.php/provide/vod/?ac=list&wd={kw}`
+  ⑥ 苹果CMS8/9 · 老版本 → `/index.php?m=vod-search-wd-{kw}.html`
+  ⑦ 帝国CMS / 织梦 → `/search.php?keyword={kw}`
+  ⑧ 自定义（手动填）
+
+- **bootstrap.php 新增 3 个函数**：
+  - `mxgj_search_templates()` — 返回预置模板 + 用户自定义（自动从 `search_templates_user.json` 合并）
+  - `mxgj_render_search_template(template_id, host)` — 模板 → 搜索 URL（含 %u 占位符）
+  - `mxgj_guess_search_template(raw_url)` — 从裸 URL 反推匹配哪个模板 + 提取 host（模糊匹配路径关键片段）
+
+- **admin.php 后端 4 个新 action**：
+  - `get_templates` — 返回所有模板列表
+  - `save_templates` — 保存用户自定义模板
+  - `render_from_template` — 模板 + host → 生成搜索 URL（JSON）
+  - `guess_template` — 裸 URL → 反推模板 + host（用于粘贴 URL 时自动识别）
+
+- **admin.php 前端模板选择器**（资源站页面「📋 从模板生成」按钮）：
+  - 弹窗式 UI：框架类型下拉 + 域名输入 + 实时预览生成的模板 URL
+  - 8 个模板带 emoji 标记：📦 预置 / ✨ 自定义 + HTML/JSON 类型标签
+  - 点「生成并打开检测」→ 自动填到检测弹窗 → 用户一键测试 → 保存
+  - 已有的「⚡ 检测并自动添加」按钮保留（支持粘贴任意 URL 自动识别模板）
+
+### 用户体验
+
+**之前**：用户看到一个资源站，得自己想"这是什么框架？搜索路径是啥？wd 还是 keyword？" → 手动拼 URL
+**现在**：
+  1. 看到资源站 → 打开后台 → 点「📋 从模板生成」
+  2. 选「苹果CMS10 · 前端搜索页 (推荐)」→ 填 host（api.wsyzy.net）→ 预览框自动出完整 URL
+  3. 点「生成并打开检测」→ SiteDetector 自动探测 → 一键保存 ✅
+  
+**或者**：直接点「⚡ 检测并自动添加」→ 粘贴任意采集接口地址 → 系统反推模板 + host → 自动填
+
 ## [v1.16.9] 2026-08-27 · 完整搜索验证码解锁（端到端验证）
 
 ### 核心发现

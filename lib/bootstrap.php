@@ -114,6 +114,98 @@ function mxgj_sites(): array
 }
 
 /**
+ * 搜索接口模板库
+ * 返回预置模板 + 用户自定义模板
+ */
+function mxgj_search_templates(): array
+{
+    static $cached = null;
+    if ($cached !== null) return $cached;
+
+    $defaults = [
+        ['id'=>'maccms10_html', 'name'=>'苹果CMS10 · 前端搜索页 (推荐)', 'desc'=>'走 HTML 页面，有验证码的也能搜（配合解锁功能）', 'pattern'=>'https://{host}/index.php/vod/search.html?wd={kw}', 'params'=>['host','kw'], 'is_html'=>true, 'built_in'=>true],
+        ['id'=>'maccms10_api',  'name'=>'苹果CMS10 · API JSON 搜索', 'desc'=>'走 api.php 返回 JSON，速度快但很多站关了搜索', 'pattern'=>'https://{host}/api.php/provide/vod/?ac=videolist&wd={kw}', 'params'=>['host','kw'], 'is_html'=>false, 'built_in'=>true],
+        ['id'=>'maccms10_ajax', 'name'=>'苹果CMS10 · ajax/data 接口', 'desc'=>'前端无限加载用的 JSON 接口', 'pattern'=>'https://{host}/index.php/ajax/data?mid=1&wd={kw}', 'params'=>['host','kw'], 'is_html'=>false, 'built_in'=>true],
+        ['id'=>'maccms10_rewrite','name'=>'苹果CMS10 · 伪静态', 'desc'=>'有些站开了伪静态重写', 'pattern'=>'https://{host}/search/{kw}.html', 'params'=>['host','kw'], 'is_html'=>true, 'built_in'=>true],
+        ['id'=>'maccms10_list', 'name'=>'苹果CMS10 · ac=list', 'desc'=>'有些站只开放 ac=list', 'pattern'=>'https://{host}/api.php/provide/vod/?ac=list&wd={kw}', 'params'=>['host','kw'], 'is_html'=>false, 'built_in'=>true],
+        ['id'=>'maccms8',       'name'=>'苹果CMS8/9 · 老版本', 'desc'=>'m=vod-search 老版路径', 'pattern'=>'https://{host}/index.php?m=vod-search-wd-{kw}.html', 'params'=>['host','kw'], 'is_html'=>true, 'built_in'=>true],
+        ['id'=>'dede',          'name'=>'帝国CMS / 织梦', 'desc'=>'?keyword= 参数风格', 'pattern'=>'https://{host}/search.php?keyword={kw}', 'params'=>['host','kw'], 'is_html'=>true, 'built_in'=>true],
+        ['id'=>'so',            'name'=>'通用：自定义（手动填）', 'desc'=>'完全自己写模板 URL，{host}=域名 {kw}=关键词', 'pattern'=>'', 'params'=>['host','kw'], 'is_html'=>false, 'built_in'=>false],
+    ];
+
+    $userFile = MXGJ_CONFIG . '/search_templates_user.json';
+    $userList = mxgj_read_json($userFile, []);
+
+    $all = $defaults;
+    foreach ($userList as $u) {
+        if (is_array($u) && !empty($u['pattern'])) {
+            $u['built_in'] = false;
+            $all[] = $u;
+        }
+    }
+    $cached = $all;
+    return $cached;
+}
+
+/**
+ * 用模板生成搜索 URL
+ * @param string $templateId 模板 ID（如 maccms10_html）
+ * @param string $host       域名（如 api.wsyzy.net）
+ * @return string            搜索 URL 模板（含 %u 占位符供 SiteSearcher 使用）
+ */
+function mxgj_render_search_template(string $templateId, string $host): string
+{
+    if ($templateId === 'custom') {
+        return ''; // 需要用户手动填
+    }
+    foreach (mxgj_search_templates() as $t) {
+        if ($t['id'] === $templateId && !empty($t['pattern'])) {
+            // 先替换 {host}
+            $url = str_replace('{host}', $host, $t['pattern']);
+            // 再把 {kw} 换成 SiteSearcher 认识的 %u（URL编码）
+            $url = str_replace('{kw}', '%u', $url);
+            return $url;
+        }
+    }
+    return '';
+}
+
+/**
+ * 从一个裸 URL（如 https://api.wsyzy.net/api.php/provide/vod/?ac=videolist）
+ * 自动反推匹配哪个搜索模板 + 提取 host
+ * 返回 [templateId, host]
+ */
+function mxgj_guess_search_template(string $rawUrl): array
+{
+    $host = strtolower((string)parse_url($rawUrl, PHP_URL_HOST));
+    if (!$host) return ['custom', ''];
+
+    $path = (string)parse_url($rawUrl, PHP_URL_PATH);
+    $path .= (string)parse_url($rawUrl, PHP_URL_QUERY);
+    $path = strtolower($path);
+
+    foreach (mxgj_search_templates() as $t) {
+        if (empty($t['pattern']) || ($t['built_in'] ?? false) === false && ($t['id'] ?? '') === 'custom') continue;
+        $pat = str_replace('{host}', preg_quote($host, '~'), $t['pattern']);
+        $pat = preg_quote($pat, '~');
+        $pat = str_replace('\{kw\}', '[^&\s]+', $pat);
+        if (preg_match("~$pat~i", $rawUrl)) {
+            return [$t['id'], $host];
+        }
+    }
+
+    // 模糊匹配：路径包含关键片段
+    if (strpos($path, 'index.php/vod/search') !== false) return ['maccms10_html', $host];
+    if (strpos($path, 'index.php/ajax/data') !== false) return ['maccms10_ajax', $host];
+    if (strpos($path, 'api.php') !== false && strpos($path, 'videolist') !== false) return ['maccms10_api', $host];
+    if (strpos($path, 'api.php') !== false && strpos($path, 'ac=list') !== false) return ['maccms10_list', $host];
+    if (strpos($path, 'search.php') !== false || strpos($path, 'keyword=') !== false) return ['dede', $host];
+    if (strpos($path, '/search/') !== false && strpos($path, '.html') !== false) return ['maccms10_rewrite', $host];
+
+    return ['custom', $host];
+}
+
+/**
  * 判断某映射条目是否启用（未在 disabled 禁用列表中即启用）
  *
  * @param array  $mapping 映射表数据（含可选 disabled 段）

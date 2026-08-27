@@ -325,6 +325,35 @@ switch ($ACTION) {
             'debug' => $lastResp,
         ]);
 
+    case 'get_templates':
+        // 📋 获取所有搜索接口模板（预置 + 用户自定义）
+        mxgj_json_out(['ok' => true, 'templates' => mxgj_search_templates()]);
+
+    case 'save_templates':
+        // 📝 保存用户自定义模板
+        $userList = json_decode((string)($_POST['templates'] ?? '[]'), true);
+        if (!is_array($userList)) mxgj_json_out(['ok' => false, 'msg' => 'JSON 格式错误']);
+        mxgj_write_json(MXGJ_CONFIG . '/search_templates_user.json', $userList);
+        mxgj_json_out(['ok' => true, 'msg' => '已保存']);
+
+    case 'render_from_template':
+        // 🎯 根据模板 + host 生成搜索 URL
+        $tid = trim((string)($_POST['template_id'] ?? ''));
+        $host = trim((string)($_POST['host'] ?? ''));
+        if ($tid === '' || $host === '') mxgj_json_out(['ok' => false, 'msg' => '缺少 template_id 或 host']);
+        if ($tid === 'custom') {
+            mxgj_json_out(['ok' => true, 'template' => '', 'hint' => 'custom 模板需要手动填写完整 URL']);
+        }
+        $url = mxgj_render_search_template($tid, $host);
+        mxgj_json_out(['ok' => true, 'template' => $url]);
+
+    case 'guess_template':
+        // 🔍 从裸 URL 反推模板 + host
+        $raw = trim((string)($_POST['url'] ?? ''));
+        if ($raw === '') mxgj_json_out(['ok' => false, 'msg' => '缺少 url']);
+        [$tid, $host] = mxgj_guess_search_template($raw);
+        mxgj_json_out(['ok' => true, 'template_id' => $tid, 'host' => $host]);
+
     case 'captcha_clear':
         // 🔐 手动清除 cookie jar
         $host = trim($_POST['host'] ?? '');
@@ -1137,6 +1166,7 @@ function renderSitesForm($sites)
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
             <button type="button" class="btn btn-green" onclick="openDetect()">⚡ 检测并自动添加（苹果CMS10采集接口）</button>
             <span class="note" style="margin:0;color:#8892ab">只需粘贴采集接口地址，系统自动探测并生成搜索模板，保存后即可被前台调用。</span>
+            <button type="button" class="btn" style="background:#6366f1" onclick="openTemplatePicker()">📋 从模板生成（选框架→填host）</button>
         </div>
         <div class="note" style="margin:0 0 16px;padding:8px 12px;font-size:12px;color:#7fc1ff">
             已取消「保存」按钮 —— 修改后<b>点击页面空白处即自动保存</b>，保存时自动清理缓存、站点健康与日志。
@@ -1262,6 +1292,70 @@ function renderSitesForm($sites)
         fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(d=>out.textContent=JSON.stringify(d,null,2))
             .catch(e=>out.textContent='失败:'+e);
     }
+    /* ===== 📋 搜索接口模板选择器 ===== */
+    function openTemplatePicker() {
+        fetch('admin.php',{method:'POST',body:new FormData([['action','get_templates']])})
+          .then(r=>r.json()).then(function(d){
+            showTemplatePickerModal(d.templates);
+        });
+    }
+    function showTemplatePickerModal(tpls) {
+        var opts = tpls.map(function(t){
+            var mark = t.built_in ? '📦' : '✨';
+            var hint = t.is_html ? ' <span style="color:#7fc1ff;font-size:11px">HTML</span>' : ' <span style="color:#2ecc71;font-size:11px">JSON</span>';
+            return '<option value="'+t.id+'">'+mark+' '+t.name+hint+'</option>';
+        }).join('');
+        var html='<div id="tpl-modal" style="position:fixed;inset:0;background:rgba(5,10,20,.85);z-index:9999;display:flex;align-items:center;justify-content:center">'+
+            '<div style="background:#141b2d;border:1px solid #2a3550;border-radius:12px;padding:22px;width:560px;max-width:92vw">'+
+            '<h3 style="margin:0 0 6px;color:#fff">📋 选择搜索接口模板</h3>'+
+            '<p style="font-size:12px;color:#9aa4bc;margin:0 0 14px">选一个框架类型，填入资源站域名，自动生成搜索模板 URL。<br>大部分资源站都是<b>苹果CMS10</b>，推荐第一个「前端搜索页」。</p>'+
+            '<div style="margin-bottom:12px"><label>框架类型</label><select id="tpl-id" style="width:100%;box-sizing:border-box" onchange="updateTplPreview()">'+opts+'</select></div>'+
+            '<div style="margin-bottom:12px"><label>资源站域名 <span style="color:#8892ab;font-size:11px">(只填 host，不要 http://)</span></label>'+
+            '<input id="tpl-host" type="text" placeholder="如 api.wsyzy.net" style="width:100%;box-sizing:border-box" oninput="updateTplPreview()"></div>'+
+            '<div style="margin-bottom:12px"><label>预览生成的搜索模板</label>'+
+            '<div id="tpl-preview" style="background:#0b1120;border:1px solid #2a3550;border-radius:6px;padding:10px;font-size:12px;color:#7fc1ff;word-break:break-all">请先选择模板并填入域名</div></div>'+
+            '<div id="tpl-desc" style="font-size:12px;color:#8892ab;margin-bottom:14px"></div>'+
+            '<div style="text-align:right">'+
+            '<button type="button" class="btn" onclick="document.getElementById(\'tpl-modal\').remove()" style="margin-right:8px">取消</button>'+
+            '<button type="button" class="btn btn-green" onclick="applyTpl()">生成并打开检测</button></div>'+
+            '</div></div>';
+        document.body.insertAdjacentHTML('beforeend', html);
+        setTimeout(function(){ document.getElementById('tpl-host').focus(); }, 100);
+        // 缓存模板列表到 window
+        window.__tplList = tpls;
+        updateTplPreview();
+    }
+    function updateTplPreview() {
+        var sel = document.getElementById('tpl-id').value;
+        var host = document.getElementById('tpl-host').value.trim();
+        var cur = (window.__tplList||[]).find(function(t){return t.id===sel;})||{};
+        document.getElementById('tpl-desc').textContent = cur.desc || '';
+        if (cur.id === 'custom') {
+            document.getElementById('tpl-preview').textContent = '请手动在检测弹窗里填写完整模板 URL';
+            return;
+        }
+        if (!host) {
+            document.getElementById('tpl-preview').textContent = cur.pattern.replace('{host}','域名').replace('{kw}','关键词');
+            return;
+        }
+        var url = cur.pattern.replace('{host}', host).replace('{kw}', '%u');
+        document.getElementById('tpl-preview').textContent = url;
+    }
+    function applyTpl() {
+        var sel = document.getElementById('tpl-id').value;
+        var host = document.getElementById('tpl-host').value.trim();
+        if (!host) { alert('请先填域名'); return; }
+        var fd = new FormData();
+        fd.append('action','render_from_template');
+        fd.append('template_id', sel);
+        fd.append('host', host);
+        fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(function(d){
+            document.getElementById('tpl-modal').remove();
+            if (!d.ok) { alert(d.msg); return; }
+            openDetect([host, d.template]);
+        }).catch(e=>alert('生成失败: '+e));
+    }
+
     /* ---- 苹果CMS采集接口 检测 / 自动添加 / 修改 ---- */
     function openDetect(pre){
         if(pre&&pre.length===2){

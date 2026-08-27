@@ -1,0 +1,59 @@
+{
+  "version": "1.0",
+  "presets": [
+    {
+      "id": "maccms10_html",
+      "name": "苹果CMS10 · 前端搜索页 (推荐)",
+      "desc": "走 HTML 页面搜索，有验证码的也能搜（配合解锁功能）",
+      "pattern": "https://{host}/index.php/vod/search.html?wd={kw}",
+      "params": ["host", "kw"],
+      "is_html": true,
+      "built_in": true
+    },
+    {
+      "id": "maccms10_api",
+      "name": "苹果CMS10 · API JSON 搜索",
+      "desc": "走 api.php 返回 JSON，速度快但很多站关了搜索",
+      "pattern": "https://{host}/api.php/provide/vod/?ac=videolist&wd={kw}",
+      "params": ["host", "kw"],
+      "is_html": false,
+      "built_in": true
+    },
+    {
+      "id": "maccms10_ajax",
+      "name": "苹果CMS10 · ajax/data 接口",
+      "desc": "前端无限加载用的 JSON 接口，mid=1 通常可用",
+      "pattern": "https://{host}/index.php/ajax/data?mid=1&wd={kw}",
+      "params": ["host", "kw"],
+      "is_html": false,
+      "built_in": true
+    },
+    {
+      "id": "maccms10_rewrite",
+      "name": "苹果CMS10 · 伪静态",
+      "desc": "有些站开了伪静态重写",
+      "pattern": "https://{host}/search/{kw}.html",
+      "params": ["host", "kw"],
+      "is_html": true,
+      "built_in": true
+    },
+    {
+      "id": "maccms10_list",
+      "name": "苹果CMS10 · ac=list",
+      "desc": "有些站只开放 ac=list，wdy关键词但可能被忽略",
+      "pattern": "https://{host}/api.php/provide/vod/?ac=list&wd={kw}",
+      "params": ["host", "kw"],
+      "is_html": false,
+      "built_in": true
+    },
+    {
+      "id": "custom",
+      "name": "自定义（请填写 URL 模板）",
+      "desc": "完全自己写，{host} 替换域名，{kw} 替换关键词",
+      "pattern": "",
+      "params": ["host", "kw"],
+      "is_html": false,
+      "built_in": false
+    }
+  ]
+}
