@@ -207,11 +207,33 @@ switch ($ACTION) {
         echo json_encode(['ok' => true]);
         exit;
 
-    // 苹果CMS10 XML/JSON 导入
+    /**
+     * 把苹果CMS10 原生 MacPlayer 字段映射为内部格式
+     * 苹果CMS 原始字段：id / show / from / code / des / tip / status
+     */
+    $normalizeMacPlayer = function (array $item): ?array {
+        // 支持：player_code+player_name（我们的格式） 或 id+show（苹果CMS原生）
+        $code = trim($item['player_code'] ?? $item['id'] ?? $item['code'] ?? '');
+        $name = trim($item['player_name'] ?? $item['show'] ?? $item['name'] ?? '');
+        if ($code === '' || $name === '') return null;
+        // 苹果CMS原生字段：code 存的是 JS 代码，from 是来源，des/tip 是备注
+        $content = $item['player_code_content']
+            ?? ($item['code_content'] ?? '')
+            ?? (isset($item['code']) && stripos((string)$item['code'], 'MacPlayer') !== false ? $item['code'] : '');
+        return [
+            'player_code'         => $code,
+            'player_name'         => $name,
+            'player_from'         => trim($item['player_from'] ?? $item['from'] ?? ''),
+            'player_code_content' => $content,
+            'player_remark'       => trim($item['player_remark'] ?? $item['des'] ?? $item['tip'] ?? ''),
+        ];
+    };
+
+    // 苹果CMS10 XML/JSON/Base64 导入
     case 'import':
         header('Content-Type: application/json; charset=utf-8');
         $raw = trim($_POST['content'] ?? '');
-        $type = trim($_POST['import_type'] ?? 'xml'); // xml / json / single
+        $type = trim($_POST['import_type'] ?? 'auto'); // auto(自动识别) / xml / json / single
         if ($raw === '') {
             echo json_encode(['ok' => false, 'msg' => '请粘贴播放器数据']);
             exit;
@@ -219,15 +241,36 @@ switch ($ACTION) {
         $now = date('Y-m-d H:i:s');
         $newPlayers = [];
 
+        /* -------- auto 自动识别：先尝试 base64 解码 -------- */
+        $decodedRaw = null;
+        if ($type === 'auto' || $type === 'base64') {
+            // 苹果CMS常见：Base64(JSON)，纯 base64 字符（+/-/_/= 都可能）
+            $candidate = strtr(trim($raw), '-_', '+/');
+            $pad = strlen($candidate) % 4;
+            if ($pad > 0) $candidate .= str_repeat('=', 4 - $pad);
+            $decoded = base64_decode($candidate, true);
+            if ($decoded !== false && strlen($decoded) > 10 && (
+                (strpos($decoded, '{') === 0 && strpos($decoded, 'MacPlayer') !== false)
+                || (strpos($decoded, 'id') !== false && strpos($decoded, 'show') !== false && strpos($decoded, 'code') !== false)
+            )) {
+                $decodedRaw = $decoded;
+                $raw = $decoded;
+                $type = 'json'; // 解码后肯定是 JSON
+            } elseif ($type === 'base64') {
+                echo json_encode(['ok' => false, 'msg' => 'base64 解码失败']);
+                exit;
+            } else {
+                $type = 'auto'; // 自动识别继续往下走
+            }
+        }
+
+        /* -------- auto：识别 XML -------- */
+        if ($type === 'auto') {
+            $type = (stripos($raw, '<macplayer') !== false || stripos($raw, '<player_code>') !== false) ? 'xml' : 'json';
+        }
+
         if ($type === 'xml') {
             // 苹果CMS10 MacPlayer XML格式
-            // <macplayer>
-            //   <player_code>lgzym3u8</player_code>
-            //   <player_name>蓝光资源</player_name>
-            //   <player_from>lgzym3u8</player_from>
-            //   <player_code_content>...</player_code_content>
-            //   <player_remark></player_remark>
-            // </macplayer>
             libxml_use_internal_errors(true);
             $xml = simplexml_load_string('<?xml version="1.0" encoding="UTF-8"?><root>' . $raw . '</root>');
             if ($xml === false) {
@@ -237,19 +280,18 @@ switch ($ACTION) {
             $nodes = $xml->xpath('//macplayer');
             if (empty($nodes)) $nodes = $xml->xpath('//player');
             foreach ($nodes as $node) {
-                $code = (string)($node->player_code ?? '');
-                $name = (string)($node->player_name ?? '');
-                if ($code === '' || $name === '') continue;
-                $newPlayers[] = [
-                    'player_code'         => $code,
-                    'player_name'         => $name,
-                    'player_from'         => (string)($node->player_from ?? ''),
-                    'player_code_content' => (string)($node->player_code_content ?? ''),
-                    'player_remark'       => (string)($node->player_remark ?? ''),
-                ];
+                $arr = json_decode(json_encode($node), true);
+                $n = $normalizeMacPlayer([
+                    'player_code'         => $arr['player_code'] ?? $arr['id'] ?? '',
+                    'player_name'         => $arr['player_name'] ?? $arr['show'] ?? '',
+                    'player_from'         => $arr['player_from'] ?? $arr['from'] ?? '',
+                    'player_code_content' => $arr['player_code_content'] ?? $arr['code'] ?? '',
+                    'player_remark'       => $arr['player_remark'] ?? $arr['des'] ?? $arr['tip'] ?? '',
+                ]);
+                if ($n) $newPlayers[] = $n;
             }
         } elseif ($type === 'json') {
-            // JSON格式（数组或单个）
+            // JSON格式（苹果CMS原生 / 我们的格式 / 或 base64 解码后的 JSON）
             $data = json_decode($raw, true);
             if ($data === null) {
                 echo json_encode(['ok' => false, 'msg' => 'JSON 解析失败']);
@@ -258,16 +300,9 @@ switch ($ACTION) {
             $list = isset($data[0]) ? $data : [$data];
             foreach ($list as $item) {
                 if (!is_array($item)) continue;
-                $code = trim($item['player_code'] ?? $item['code'] ?? '');
-                $name = trim($item['player_name'] ?? $item['name'] ?? '');
-                if ($code === '' || $name === '') continue;
-                $newPlayers[] = [
-                    'player_code'         => $code,
-                    'player_name'         => $name,
-                    'player_from'         => trim($item['player_from'] ?? $item['from'] ?? ''),
-                    'player_code_content' => $item['player_code_content'] ?? $item['code_content'] ?? '',
-                    'player_remark'       => trim($item['player_remark'] ?? $item['remark'] ?? ''),
-                ];
+                if ($n = $normalizeMacPlayer($item)) {
+                    $newPlayers[] = $n;
+                }
             }
         } else {
             // single：粘贴单个播放器代码（自动包装）
@@ -557,22 +592,22 @@ function playerRenderDashboard()
                 </div>
 
                 <div class="radio-group">
-                    <label><input type="radio" name="import_type" value="xml" checked onchange="switchImportMode('xml')"> XML 格式（苹果CMS <code>macplayer</code> 标签）</label>
-                    <label><input type="radio" name="import_type" value="json" onchange="switchImportMode('json')"> JSON 格式</label>
+                    <label><input type="radio" name="import_type" value="auto" checked onchange="switchImportMode('auto')"> 自动识别（XML / JSON / <b style="color:#7fc1ff">base64</b>）</label>
+                    <label><input type="radio" name="import_type" value="xml" onchange="switchImportMode('xml')"> XML（macplayer 标签）</label>
+                    <label><input type="radio" name="import_type" value="json" onchange="switchImportMode('json')"> JSON</label>
                     <label><input type="radio" name="import_type" value="single" onchange="switchImportMode('single')"> 单个代码粘贴</label>
                 </div>
 
                 <div id="import-xml">
-                    <label>粘贴 MacPlayer XML 数据（可多个）</label>
-                    <textarea id="import-content" placeholder='&lt;macplayer&gt;
+                    <label>粘贴播放器数据（自动识别 XML / JSON / base64）</label>
+                    <textarea id="import-content" placeholder='① 苹果CMS10 导出的 base64 字符串（一整行粘贴即可）
+② JSON：{"id":"lgzym3u8","show":"蓝光资源","from":"lgzym3u8","code":"MacPlayer.Html = ..."}
+③ XML：
+&lt;macplayer&gt;
   &lt;player_code&gt;lgzym3u8&lt;/player_code&gt;
   &lt;player_name&gt;蓝光资源&lt;/player_name&gt;
-  &lt;player_from&gt;lgzym3u8&lt;/player_from&gt;
   &lt;player_code_content&gt;MacPlayer.Html = ...&lt;/player_code_content&gt;
-  &lt;player_remark&gt;&lt;/player_remark&gt;
-&lt;/macplayer&gt;
-
-&lt;macplayer&gt;...&lt;/macplayer&gt;'></textarea>
+&lt;/macplayer&gt;'></textarea>
                 </div>
 
                 <div id="import-single" style="display:none">
