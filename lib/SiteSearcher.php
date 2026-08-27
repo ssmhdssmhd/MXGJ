@@ -86,10 +86,12 @@ class SiteSearcher
             if ($body !== false && $body !== '') {
                 $parsed = self::parseBody($body, $episode, (string)($h['parse'] ?? ''));
                 if ($parsed['url'] !== '') {
-                    $parsed['site'] = $h['site']['name'] ?? $h['url'];
-                    $parsed['url']  = self::finalizeUrl($parsed['url'], $h['site']);
-                    $parsed['w']    = (int)($parsed['w'] ?? 0);
-                    $candidates[]   = $parsed;
+                    $parsed['site']    = $h['site']['name'] ?? $h['url'];
+                    $parsed['url']     = self::finalizeUrl($parsed['url'], $h['site']);
+                    $parsed['w']       = (int)($parsed['w'] ?? 0);
+                    $parsed['special'] = !empty($h['site']['special']);
+                    $parsed['play_url_prefix'] = trim((string)($h['site']['play_url'] ?? ''));
+                    $candidates[]      = $parsed;
                     $ok = true;
                 } elseif ($parsed['msg'] !== '') {
                     $errors[] = ($h['site']['name'] ?? $h['url']) . '：' . $parsed['msg'];
@@ -125,6 +127,8 @@ class SiteSearcher
             'site'    => $best['site'],
             'msg'     => 'success',
             'episode' => $episode,
+            'special' => !empty($best['special']),
+            'play_url_prefix' => $best['play_url_prefix'] ?? '',
         ];
     }
 

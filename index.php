@@ -158,6 +158,10 @@ $vars = [
     'source'  => $raw,
     'time'    => round((microtime(true) - $t0) * 1000, 1),
 ];
+// 特殊资源站：增加专用播放URL字段（play_url 前缀 + 真实地址）
+if ($result['code'] === 200 && !empty($result['special']) && !empty($result['play_url_prefix'])) {
+    $vars['play_url'] = $result['play_url_prefix'] . $result['url'];
+}
 if ($debug) {
     $vars['debug'] = [
         'parsed' => $parsed,
@@ -170,6 +174,11 @@ if ($debug) {
     ];
 }
 $out = mxgj_build_output($vars, $debug);
+
+// 特殊资源站 play_url 始终附加到输出（不受字段映射影响）
+if (isset($vars['play_url'])) {
+    $out['play_url'] = $vars['play_url'];
+}
 
 // 8. 搜索调用日志（记录每次搜索请求与结果，便于排查/审计）
 Logger::log(

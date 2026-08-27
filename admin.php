@@ -71,6 +71,7 @@ switch ($ACTION) {
             if (!in_array($method, ['post'], true)) $method = 'get';
             $parse = mxgj_lower(trim($s['parse'] ?? ''));
             if (!in_array($parse, ['json', 'text', 'apple'], true)) $parse = '';
+            $special = !empty($s['special']);
             $clean[] = [
                 'name'     => $name,
                 'url'      => $url,          // 兼容旧字段
@@ -82,6 +83,9 @@ switch ($ACTION) {
                 'headers'  => trim($s['headers'] ?? ''), // 自定义请求头：每行 `Key: Value`
                 'post'     => trim($s['post'] ?? ''),     // POST 请求体模板（含 %u/%s/%p）
                 'parse'    => $parse,        // 返回解析模式：空/json/text/apple
+                // 特殊资源站专用字段
+                'special'  => $special,      // true=特殊资源站，需要专用播放URL前缀
+                'play_url' => $special ? trim($s['play_url'] ?? '') : '', // 专用播放URL前缀
             ];
         }
         mxgj_write_json($sitesFile, ['sites' => $clean]);
@@ -271,6 +275,9 @@ switch ($ACTION) {
         if ($hit !== null) {
             $entry['enabled'] = array_key_exists('enabled', $list[$hit]) ? !empty($list[$hit]['enabled']) : true; // 保留原启用状态
             $entry['proxy']   = (string)($list[$hit]['proxy'] ?? ''); // 保留跟随播放链接
+            // 保留原有特殊资源站配置
+            $entry['special']  = !empty($list[$hit]['special']);
+            $entry['play_url'] = (string)($list[$hit]['play_url'] ?? '');
             // 保留原有特殊调用方法配置（弹窗未提交这些字段时不覆盖）
             $entry['method']  = (string)($list[$hit]['method'] ?? $entry['method']);
             $entry['headers'] = (string)($list[$hit]['headers'] ?? $entry['headers']);
@@ -281,6 +288,8 @@ switch ($ACTION) {
         } else {
             $entry['enabled'] = true; // 新增默认启用
             $entry['proxy']   = trim($_POST['proxy'] ?? ''); // 跟随播放链接（中转前缀）
+            $entry['special']  = !empty($_POST['special']);
+            $entry['play_url'] = trim($_POST['play_url'] ?? '');
             $list[] = $entry;
             $mode = 'add';
         }
@@ -674,6 +683,8 @@ function renderSitesForm($sites)
             示例二（列表页）：<code>http://your.site/search?wd=%s&page=%p</code><br>
             <b>跟随播放链接（中转前缀）</b>：仅该资源站命中时，在真实播放地址前拼接，如 <code>https://vv00.xyz?url=</code>
             → 返回 <code>https://vv00.xyz?url=真实地址</code>。留空则直接返回原地址。<br>
+            <b>特殊资源站</b>：勾选后，该资源站视为「特殊资源站」，命中时 JSON 返回额外字段 <code>play_url</code>（专用播放URL前缀 + 真实地址），
+            便于前端直接使用。需同步填写「专用播放URL」前缀（如 <code>https://vv00.xyz?url=</code>）。<br>
             <b>特殊调用方法</b>：（默认 GET）如资源站要求 POST 提交、自定义请求头或特殊返回格式，可在「调用方法」列选择
             <code>POST</code> 并填写「POST体」（如 <code>wd=%u&ep=%p</code>，含占位符）、「自定义Header」（每行 <code>Key: Value</code>）、
             「返回解析」（自动 / JSON / 纯文本 / 苹果CMS）。<br>
@@ -689,7 +700,7 @@ function renderSitesForm($sites)
         <form method="post" class="auto-save" id="form-sites">
             <input type="hidden" name="action" value="save_sites">
             <table id="site-tbl">
-                <tr><th style="width:110px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>特殊调用方法</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
+                <tr><th style="width:110px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>特殊资源站</th><th>特殊调用方法</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
                 <?php if ($sites): foreach ($sites as $i => $s): ?>
                     <?php $sEnabled = !array_key_exists('enabled', $s) || !empty($s['enabled']); ?>
                     <?php $sMethod = mxgj_lower(trim($s['method'] ?? '')); ?>
@@ -698,6 +709,13 @@ function renderSitesForm($sites)
                         <td><input type="text" name="sites[<?= $i ?>][name]" value="<?= htmlspecialchars($s['name']) ?>"></td>
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
                         <td><input type="text" name="sites[<?= $i ?>][proxy]" value="<?= htmlspecialchars($s['proxy'] ?? '') ?>" placeholder="如 https://vv00.xyz?url= （留空不使用）"></td>
+                        <td class="site-special" style="min-width:200px">
+                            <label class="toggle-label" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                                <input type="checkbox" name="sites[<?= $i ?>][special]" value="1" <?= !empty($s['special']) ? 'checked' : '' ?>>
+                                <span style="font-size:12px;color:#7fc1ff">特殊资源站</span>
+                            </label>
+                            <input type="text" name="sites[<?= $i ?>][play_url]" value="<?= htmlspecialchars($s['play_url'] ?? '') ?>" placeholder="专用播放URL前缀（如 https://vv00.xyz?url=）" style="width:100%">
+                        </td>
                         <td class="site-special">
                             <select name="sites[<?= $i ?>][method]" title="HTTP 调用方法">
                                 <option value="get" <?= $sMethod === 'post' ? '' : 'selected' ?>>GET</option>
@@ -729,6 +747,13 @@ function renderSitesForm($sites)
                         <td><input type="text" name="sites[0][name]" placeholder="站点A"></td>
                         <td><input type="text" name="sites[0][template]" placeholder="http://api.example.com/vod?wd=%u&ep=%p"></td>
                         <td><input type="text" name="sites[0][proxy]" placeholder="如 https://vv00.xyz?url="></td>
+                        <td class="site-special" style="min-width:200px">
+                            <label class="toggle-label" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                                <input type="checkbox" name="sites[0][special]" value="1">
+                                <span style="font-size:12px;color:#7fc1ff">特殊资源站</span>
+                            </label>
+                            <input type="text" name="sites[0][play_url]" placeholder="专用播放URL前缀（如 https://vv00.xyz?url=）" style="width:100%">
+                        </td>
                         <td class="site-special">
                             <select name="sites[0][method]"><option value="get" selected>GET</option><option value="post">POST</option></select>
                             <select name="sites[0][parse]"><option value="">自动</option><option value="json">JSON</option><option value="text">纯文本</option><option value="apple">苹果CMS</option></select>
@@ -762,6 +787,13 @@ function renderSitesForm($sites)
         tr.innerHTML='<td><input type="text" name="sites['+rowIndex+'][name]" placeholder="站点"></td>'+
             '<td><input type="text" name="sites['+rowIndex+'][template]" placeholder="http://..." onclick="this.select()"></td>'+
             '<td><input type="text" name="sites['+rowIndex+'][proxy]" placeholder="如 https://vv00.xyz?url="></td>'+
+            '<td class="site-special" style="min-width:200px">'+
+                '<label class="toggle-label" style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+
+                    '<input type="checkbox" name="sites['+rowIndex+'][special]" value="1">'+
+                    '<span style="font-size:12px;color:#7fc1ff">特殊资源站</span>'+
+                '</label>'+
+                '<input type="text" name="sites['+rowIndex+'][play_url]" placeholder="专用播放URL前缀（如 https://vv00.xyz?url=）" style="width:100%">'+
+            '</td>'+
             '<td class="site-special">'+
                 '<select name="sites['+rowIndex+'][method]"><option value="get" selected>GET</option><option value="post">POST</option></select>'+
                 '<select name="sites['+rowIndex+'][parse]"><option value="">自动</option><option value="json">JSON</option><option value="text">纯文本</option><option value="apple">苹果CMS</option></select>'+
