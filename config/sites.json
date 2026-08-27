@@ -2,21 +2,17 @@
     "sites": [
         {
             "name": "西瓜资源站",
-            "url": "https:\/\/caiji.xgzyapi.com\/api.php\/provide\/vod\/?ac=videolist&wd=%u",
-            "template": "https:\/\/caiji.xgzyapi.com\/api.php\/provide\/vod\/?ac=videolist&wd=%u",
+            "url": "https://caiji.xgzyapi.com/api.php/provide/vod/?ac=videolist&wd=%u",
+            "template": "https://caiji.xgzyapi.com/api.php/provide/vod/?ac=videolist&wd=%u",
             "proxy": "",
-            "enabled": true,
-            "special": false,
-            "play_url": ""
+            "enabled": true
         },
         {
             "name": "蓝光资源站",
-            "url": "https:\/\/lgapi.xyz\/api.php\/provide\/vod\/?ac=videolist&wd=%u",
-            "template": "https:\/\/lgapi.xyz\/api.php\/provide\/vod\/?ac=videolist&wd=%u",
+            "url": "https://lgapi.xyz/api.php/provide/vod/?ac=videolist&wd=%u",
+            "template": "https://lgapi.xyz/api.php/provide/vod/?ac=videolist&wd=%u",
             "proxy": "",
-            "enabled": true,
-            "special": true,
-            "play_url": "https:\/\/vv00.xyz?url="
+            "enabled": true
         }
     ]
 }
