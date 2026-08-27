@@ -632,6 +632,46 @@ switch ($ACTION) {
             ],
         ]);
 
+    case 'fetch_site_list':
+        // 🔍 资源站查看：给定资源站 index + 关键词 → 测试搜索（遍历集数 1-3）
+        $idx = (int)($_POST['idx'] ?? -1);
+        $wd  = trim((string)($_POST['wd'] ?? ''));
+        if ($idx < 0) mxgj_json_out(['ok' => false, 'msg' => '缺少 idx']);
+        $sites = mxgj_sites();
+        if (!isset($sites[$idx])) mxgj_json_out(['ok' => false, 'msg' => '资源站不存在（已被删除）']);
+        if ($wd === '') mxgj_json_out(['ok' => false, 'msg' => '请输入搜索关键词（剧名）']);
+
+        $site = $sites[$idx];
+        $timeout = (int)(mxgj_settings()['timeout'] ?? 10);
+
+        // 先测集数 1-5，收集结果
+        $results = [];
+        $errors  = [];
+        for ($ep = 1; $ep <= 5; $ep++) {
+            $res = SiteSearcher::search([$site], $wd, $ep, $timeout);
+            if (!empty($res['url'])) {
+                $results[] = [
+                    'episode' => $ep,
+                    'url'     => $res['url'],
+                    'site'    => $res['site'] ?? '',
+                    'code'    => $res['code'],
+                ];
+            } else {
+                $errors[] = ['episode' => $ep, 'msg' => $res['msg'] ?? ''];
+            }
+        }
+
+        mxgj_json_out([
+            'ok'         => !empty($results),
+            'site_name'  => $site['name'] ?? '',
+            'template'   => $site['template'] ?? ($site['url'] ?? ''),
+            'search_url' => str_replace('%u', urlencode($wd), $site['template'] ?? ($site['url'] ?? '')),
+            'results'    => $results,
+            'errors'     => $errors,
+            'count_ok'   => count($results),
+            'count_err'  => count($errors),
+        ]);
+
     default:
         header('Location: admin.php');
         exit;
@@ -646,7 +686,7 @@ function renderLogin()
     <html lang="zh">
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,shrink-to-fit=no">
         <title>沫兮官替系统 - 登录</title>
         <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -754,13 +794,14 @@ function renderDashboard()
     ?>
     <?php
     $tabLabels = [
-        'dashboard' => ['label' => '概览',     'icon' => '📊', 'crumb' => '首页'],
-        'sites'     => ['label' => '资源站',   'icon' => '🌐', 'crumb' => '资源站管理'],
-        'mapping'   => ['label' => '映射表',   'icon' => '🗂️', 'crumb' => '映射管理'],
-        'update'    => ['label' => '在线更新', 'icon' => '⬆️', 'crumb' => '系统更新'],
-        'logs'      => ['label' => '日志',     'icon' => '📋', 'crumb' => '日志中心'],
-        'help'      => ['label' => '帮助',     'icon' => '❓', 'crumb' => '使用帮助'],
-        'settings'  => ['label' => '设置',     'icon' => '⚙️', 'crumb' => '系统设置'],
+        'dashboard'   => ['label' => '概览',         'icon' => '📊', 'crumb' => '首页'],
+        'sites'       => ['label' => '资源站配置',   'icon' => '🌐', 'crumb' => '资源配置'],
+        'sites_view'  => ['label' => '资源站查看',   'icon' => '🔍', 'crumb' => '资源配置'],
+        'mapping'     => ['label' => '映射表',       'icon' => '🗂️', 'crumb' => '资源配置'],
+        'update'      => ['label' => '在线更新',     'icon' => '⬆️', 'crumb' => '系统更新'],
+        'logs'        => ['label' => '日志',         'icon' => '📋', 'crumb' => '日志中心'],
+        'help'        => ['label' => '帮助',         'icon' => '❓', 'crumb' => '使用帮助'],
+        'settings'    => ['label' => '设置',         'icon' => '⚙️', 'crumb' => '系统设置'],
     ];
     $currentLabel = $tabLabels[$tab]['label'] ?? '概览';
     $currentIcon  = $tabLabels[$tab]['icon']  ?? '📊';
@@ -770,7 +811,7 @@ function renderDashboard()
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,shrink-to-fit=no">
 <title><?= MXGJ_NAME ?> · <?= $currentLabel ?></title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -919,7 +960,8 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
     </div>
     <div class="nav-group">
       <div class="nav-group-title">资源配置</div>
-      <a class="nav-item <?= $tab==='sites'?'active':'' ?>" href="?tab=sites"><span class="icon">🌐</span><span>资源站</span></a>
+      <a class="nav-item <?= $tab==='sites'?'active':'' ?>" href="?tab=sites"><span class="icon">🌐</span><span>资源站配置</span></a>
+      <a class="nav-item <?= $tab==='sites_view'?'active':'' ?>" href="?tab=sites_view"><span class="icon">🔍</span><span>资源站查看</span></a>
       <a class="nav-item <?= $tab==='mapping'?'active':'' ?>" href="?tab=mapping"><span class="icon">🗂️</span><span>映射表</span></a>
     </div>
     <div class="nav-group">
@@ -955,6 +997,8 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
 <?php renderOverview($sites, $cacheCnt, $mapping); ?>
 <?php elseif ($tab === 'sites'): ?>
 <?php renderSitesForm($sites); ?>
+<?php elseif ($tab === 'sites_view'): ?>
+<?php renderSiteListView($sites); ?>
 <?php elseif ($tab === 'mapping'): ?>
 <?php renderMappingForm($mapping); ?>
 <?php elseif ($tab === 'update'): ?>
@@ -972,7 +1016,8 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
 <!-- 移动端底部 Tab 栏 -->
 <nav class="mobile-tabbar">
   <a class="<?= $tab==='dashboard'?'active':'' ?>" href="?tab=dashboard"><span class="m-icon">📊</span><span>概览</span></a>
-  <a class="<?= $tab==='sites'?'active':'' ?>" href="?tab=sites"><span class="m-icon">🌐</span><span>资源站</span></a>
+  <a class="<?= $tab==='sites'?'active':'' ?>" href="?tab=sites"><span class="m-icon">🌐</span><span>配置</span></a>
+  <a class="<?= $tab==='sites_view'?'active':'' ?>" href="?tab=sites_view"><span class="m-icon">🔍</span><span>查看</span></a>
   <a class="<?= $tab==='mapping'?'active':'' ?>" href="?tab=mapping"><span class="m-icon">🗂️</span><span>映射</span></a>
   <a class="<?= $tab==='logs'?'active':'' ?>" href="?tab=logs"><span class="m-icon">📋</span><span>日志</span></a>
   <a class="<?= $tab==='settings'?'active':'' ?>" href="?tab=settings"><span class="m-icon">⚙️</span><span>设置</span></a>
@@ -1546,6 +1591,163 @@ function renderSitesForm($sites)
             </div>
         </div>
     </div>
+    <?php
+}
+
+function renderSiteListView($sites)
+{
+    $health = SiteHealth::status();  // 各站点健康状态
+    $settings = mxgj_settings();
+    ?>
+    <div class="panel" style="padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+                <h2 style="margin:0;font-size:16px">🔍 资源站查看</h2>
+                <div style="font-size:12.5px;color:#9aa4bc;margin-top:4px">
+                    点击站点卡片可展开搜索测试 — 输入剧名关键词，系统会自动测试集数 1-5 的返回结果
+                </div>
+            </div>
+            <div style="font-size:13px;color:#9aa4bc">共 <?= count($sites) ?> 个站点</div>
+        </div>
+
+        <?php if (empty($sites)): ?>
+            <div style="text-align:center;padding:40px;color:#9aa4bc">
+                <div style="font-size:36px;margin-bottom:10px">🌐</div>
+                <div>还没有配置资源站</div>
+                <a href="?tab=sites" style="display:inline-block;margin-top:14px;padding:8px 20px;background:#4f7cff;color:#fff;border-radius:6px;text-decoration:none;font-size:13px">去配置 →</a>
+            </div>
+        <?php else: ?>
+
+        <div id="site-list-view" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
+            <?php foreach ($sites as $i => $s):
+                $h = $health[$i] ?? [];
+                $ok = !empty($h['ok']);
+                $enabled = !empty($s['enabled']);
+            ?>
+            <div class="site-view-card" data-idx="<?= $i ?>" style="
+                background:linear-gradient(135deg,#111927 0%,#0f172a 100%);
+                border:1px solid rgba(99,102,241,0.15);
+                border-radius:12px;
+                overflow:hidden;
+                transition:all .2s;
+                <?= !$enabled ? 'opacity:.55' : '' ?>
+            ">
+                <!-- 卡片头部 -->
+                <div style="padding:14px;cursor:pointer" onclick="toggleSiteCard(<?= $i ?>)">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                        <div style="flex:1;min-width:0">
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                                <span style="font-weight:600;font-size:14px;color:#fff"><?= htmlspecialchars($s['name'] ?? '未命名') ?></span>
+                                <?php if (!$enabled): ?><span style="background:#ef4444;color:#fff;font-size:10px;padding:1px 6px;border-radius:3px">禁用</span><?php endif; ?>
+                                <?php if ($ok): ?><span style="background:#10b981;color:#fff;font-size:10px;padding:1px 6px;border-radius:3px">● 可达</span><?php else: ?><span style="background:#f59e0b;color:#fff;font-size:10px;padding:1px 6px;border-radius:3px">● 待检测</span><?php endif; ?>
+                                <?php if (!empty($s['is_special'])): ?><span style="background:#6366f1;color:#fff;font-size:10px;padding:1px 6px;border-radius:3px">特殊站</span><?php endif; ?>
+                            </div>
+                            <div style="font-size:11.5px;color:#64748b;word-break:break-all;line-height:1.5">
+                                <?= htmlspecialchars($s['template'] ?? ($s['url'] ?? '')) ?>
+                            </div>
+                        </div>
+                        <span style="color:#64748b;font-size:14px;transition:transform .25s" class="chevron-<?= $i ?>">▶</span>
+                    </div>
+                </div>
+
+                <!-- 展开的测试区域（默认隐藏）-->
+                <div id="site-expand-<?= $i ?>" style="display:none;border-top:1px solid rgba(99,102,241,0.15);padding:14px;background:rgba(15,23,42,.6)">
+                    <!-- 健康状态 -->
+                    <div style="margin-bottom:12px;font-size:12px;color:#9aa4bc">
+                        <b>心跳：</b>
+                        <?php if (!empty($h['latency'])): ?>
+                            <?php if ($ok): ?>🟢 <?= (int)$h['latency'] ?>ms<?php else: ?>🔴 <?= htmlspecialchars($h['msg'] ?? '不可达') ?><?php endif; ?>
+                        <?php else: ?>
+                            ⚪ 未检测过
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- 搜索模板 -->
+                    <div style="margin-bottom:12px;font-size:11.5px;color:#64748b;word-break:break-all">
+                        <b style="color:#9aa4bc">模板：</b>
+                        <code style="color:#a5b4fc"><?= htmlspecialchars($s['template'] ?? '') ?></code>
+                    </div>
+
+                    <!-- 测试输入 -->
+                    <div style="display:flex;gap:8px;margin-bottom:10px">
+                        <input type="text" class="wd-input" placeholder="输入剧名关键词 如：斗罗大陆" style="flex:1;padding:8px 12px;background:#1a2236;border:1px solid #2a3550;border-radius:6px;color:#fff;font-size:13px;outline:none" onkeydown="if(event.key==='Enter')testSite(<?= $i ?>)">
+                        <button onclick="testSite(<?= $i ?>)" class="btn" style="padding:8px 14px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;white-space:nowrap">🔍 测试</button>
+                    </div>
+
+                    <!-- 结果区域 -->
+                    <div id="site-result-<?= $i ?>" style="font-size:12px"></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+
+        <?php endif; ?>
+    </div>
+
+    <script>
+    function toggleSiteCard(idx){
+        const el = document.getElementById('site-expand-'+idx);
+        const chv = document.querySelector('.chevron-'+idx);
+        if(el.style.display==='none'){
+            el.style.display='block';
+            if(chv) chv.style.transform='rotate(90deg)';
+        }else{
+            el.style.display='none';
+            if(chv) chv.style.transform='rotate(0)';
+        }
+    }
+    function testSite(idx){
+        const card = document.querySelector('.site-view-card[data-idx="'+idx+'"]');
+        if(!card) return;
+        const input = card.querySelector('.wd-input');
+        const wd = input.value.trim();
+        if(!wd){input.focus();return;}
+        const box = document.getElementById('site-result-'+idx);
+        box.innerHTML = '<div style="color:#9aa4bc;padding:8px 0">⏳ 测试中...（集数 1-5）</div>';
+        const fd = new FormData();
+        fd.append('action','fetch_site_list');
+        fd.append('idx',idx);
+        fd.append('wd',wd);
+        fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(function(d){
+            let html = '';
+            if(!d.ok && d.results.length===0){
+                html = '<div style="color:#f87171;padding:10px;background:rgba(239,68,68,.1);border-radius:6px">❌ '+(d.msg||'没有返回结果')+'</div>';
+                if(d.errors && d.errors.length){
+                    html += '<div style="margin-top:8px;color:#64748b;font-size:11px">'+d.errors.length+' 个集数失败</div>';
+                }
+            }else{
+                html += '<div style="color:#4ade80;padding:8px 10px;background:rgba(74,222,128,.1);border-radius:6px;margin-bottom:10px">✅ 成功 '+d.count_ok+' 集'+(d.count_err?'，'+d.count_err+' 集失败':'')+'</div>';
+                html += '<div style="max-height:260px;overflow-y:auto">';
+                d.results.forEach(function(r){
+                    html += '<div style="padding:8px 10px;background:#0c111d;border:1px solid #1f2940;border-radius:6px;margin-bottom:6px;font-size:12px">';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+                    html += '<span style="color:#fbbf24;font-weight:600">第 '+r.episode+' 集</span>';
+                    html += '<button onclick="copyText(''+r.url.replace(/'/g,"\'")+'')" style="background:#22c55e;border:none;color:#fff;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">📋 复制</button>';
+                    html += '</div>';
+                    html += '<a href="'+r.url+'" target="_blank" style="color:#7fc1ff;text-decoration:none;word-break:break-all;font-size:11px;display:block">'+r.url+'</a>';
+                    html += '</div>';
+                });
+                html += '</div>';
+            }
+            if(d.search_url){
+                html += '<div style="margin-top:10px;font-size:11px;color:#64748b">';
+                html += '<b>搜索链接：</b><code style="color:#a5b4fc;word-break:break-all">'+d.search_url+'</code>';
+                html += '</div>';
+            }
+            box.innerHTML = html;
+        }).catch(function(e){
+            box.innerHTML = '<div style="color:#f87171;padding:8px">❌ 请求失败: '+e+'</div>';
+        });
+    }
+    function copyText(t){
+        navigator.clipboard.writeText(t).then(function(){
+            const toast = document.getElementById('toast');
+            toast.textContent='已复制 m3u8 链接';toast.style.display='block';
+            setTimeout(function(){toast.style.display='none'},1500);
+        });
+    }
+    </script>
+
     <?php
 }
 
