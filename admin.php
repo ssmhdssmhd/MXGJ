@@ -476,6 +476,7 @@ switch ($ACTION) {
             $mode = 'add';
         }
         mxgj_write_json($sitesFile, ['sites' => $list]);
+        mxgj_purge_runtime(); // 保存后自动清理运行时数据
         Logger::log('operation', ($mode === 'add' ? '添加' : '修改') . '资源站：' . $name_, 'success');
         Logger::log('config', ($mode === 'add' ? '新增' : '修改') . '资源站成功：' . $name_, 'success');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($mode === 'add' ? '已添加' : '已修改') . '资源站：' . $name_, 'sites' => count($list)]);
@@ -493,6 +494,7 @@ switch ($ACTION) {
         if ($hit === null) mxgj_json_out(['code' => 404, 'msg' => '资源站不存在']);
         $list[$hit]['enabled'] = $on;
         mxgj_write_json($sitesFile, ['sites' => $list]);
+        mxgj_purge_runtime(); // 保存后自动清理运行时数据
         Logger::log('operation', ($on ? '启用' : '禁用') . '资源站：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn', ['enabled' => $on]);
         Logger::log('config', ($on ? '启用' : '禁用') . '资源站配置：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '资源站：' . ($list[$hit]['name'] ?? '')]);
@@ -516,6 +518,7 @@ switch ($ACTION) {
         if (!$on && $idx === false)    $d[] = $key;       // 禁用：加入禁用列表
         $d = array_values($d);
         mxgj_write_json($mappingFile, $map);
+        mxgj_purge_runtime(); // 快捷开关也要清缓存
         Logger::log('operation', ($on ? '启用' : '禁用') . '映射：' . $sec . ' → ' . $key, $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '启用' : '禁用') . '映射条目：' . $sec . ' → ' . $key, $on ? 'success' : 'warn');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '映射：' . $key]);
@@ -530,6 +533,7 @@ switch ($ACTION) {
         $fields[$idx]['enabled'] = $on;
         $st['output']['fields'] = $fields;
         mxgj_write_json($settingsFile, $st);
+        mxgj_purge_runtime(); // 快捷开关也要清缓存
         Logger::log('operation', ($on ? '启用' : '禁用') . '输出字段：' . ($fields[$idx]['k'] ?? ''), $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '启用' : '禁用') . '输出字段「' . ($fields[$idx]['k'] ?? '') . '」', $on ? 'success' : 'warn');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已启用' : '已禁用') . '输出字段：' . ($fields[$idx]['k'] ?? '')]);
@@ -548,6 +552,7 @@ switch ($ACTION) {
             mxgj_json_out(['code' => 400, 'msg' => '不支持的设置项']);
         }
         mxgj_write_json($settingsFile, $st);
+        mxgj_purge_runtime(); // 快捷开关也要清缓存
         Logger::log('operation', ($on ? '开启' : '关闭') . '设置：' . ($labels[$name] ?? $name), $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '开启' : '关闭') . '设置「' . ($labels[$name] ?? $name) . '」', $on ? 'success' : 'warn');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => ($on ? '已开启' : '已关闭') . '：' . ($labels[$name] ?? $name)]);
@@ -1430,7 +1435,7 @@ function renderSitesForm($sites)
                 wEl.innerHTML='<b>🚨 关键词搜索不可用</b><br>' +
                     '原因：'+(d.warn_detail||probe.msg||'接口不支持关键词查询')+'<br>' +
                     '可能情况：① 此接口真不支持搜索 ② 接口开启了搜索验证码（需要手动解锁）<br>' +
-                    '<button type="button" class="btn" style="background:#f59e0b;margin-top:8px" onclick="unlockCaptcha(''+encodeURIComponent(document.getElementById('dd-tpl').value)+'')">🔓 尝试手动解锁搜索验证</button>';
+                    '<button type="button" class="btn" style="background:#f59e0b;margin-top:8px" onclick="unlockCaptcha(encodeURIComponent(document.getElementById(\'dd-tpl\').value))">🔓 尝试手动解锁搜索验证</button>';
                 var sEl=document.getElementById('dd-search');
                 sEl.style.display='block';
                 sEl.innerHTML='<span style="color:#f59e0b">●</span> 关键词搜索：<b>不可用</b> ❌<br>' +
