@@ -1,6 +1,29 @@
 # 更新日志 (CHANGELOG)
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+## [v1.16.6] 2026-08-27 · SiteDetector v3 — 超鲁棒多策略关键词搜索探测
+
+**核心升级：解决「真接口被误判为假」和「假接口被误判为真」**
+
+### SiteDetector 三阶段架构
+- **Phase 1**：空列表探测（可达 + 苹果CMS格式 + 真实播放地址）
+- **Phase 1.5**：会话预热（cookie jar + 浏览器级 headers：UA/Referer/Accept/X-Requested-With）
+- **Phase 2**：🔑 智能关键词搜索探测（curl_multi 并发 5 策略 × 快速失败）
+
+### Phase 2 新能力（v3 之前都没有）
+- 5 种搜索参数并发尝试：wd → keyword → q → name（兼容不同苹果CMS变体）
+- 2 种 ac 端点尝试：ac=videolist → ac=search
+- **Diff 比对**：关键词返回的 vod_id 集合 vs 空列表 vod_id 集合（重合度 ≥ 70% → 判定为参数被忽略）
+- **风控检测**：识别 Cloudflare challenge / 403 / 429 / HTML 拦截页
+- **快速失败**：同一关键词所有策略同时返回「暂不支持搜索」→ 直接 break 换下一个关键词都没意义
+- **指数退避重试**：429/5xx 自动重试，300ms→600ms
+
+### 性能
+- curl_multi 并发 5 策略（之前串行）
+- 单策略超时 5-10s（之前 15s 串行 × 10 次 = 最长 150s）
+- WSYZY 假接口：12s → 4.5s
+- 西瓜/蓝光真接口：2-4s 即可返回
+
 ## [v1.16.5] 2026-08-27 · 资源站检测升级 — Phase 2 关键词搜索探测
 
 **升级 SiteDetector：两阶段检测**
