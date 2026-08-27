@@ -93,6 +93,10 @@ class PageResolver
             'www.bilibili.com' => 'm.bilibili.com',
             'v.qq.com'       => 'm.v.qq.com',
             'qq.com'         => 'm.v.qq.com',
+            // 搜狐：桌面站 tv.sohu.com 只给空壳 HTML，移动站 m.tv.sohu.com 才返回真实 title
+            'tv.sohu.com'    => 'm.tv.sohu.com',
+            'www.sohu.com'   => 'm.tv.sohu.com',
+            'sohu.com'       => 'm.tv.sohu.com',
         ];
         if (!isset($map[$host])) {
             return null;

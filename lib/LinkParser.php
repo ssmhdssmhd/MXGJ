@@ -61,6 +61,25 @@ class LinkParser
             return array_merge($base, ['platform' => 'PPTV', 'vid' => $title, 'title' => $title]);
         }
 
+        // 搜狐视频（链接里有 base64 编码的路径，如 /v/MjAyNTEyMjQvbjYyMDEzODAxMy5zaHRtbA==.html）
+        if (self::host($url, ['sohu.com'])) {
+            // 解码 base64 路径 → 拿到 vid
+            $vid = '';
+            $b64 = self::regex($url, '~/v/([A-Za-z0-9+/=]+)\.html~i');
+            if ($b64 !== null) {
+                $pad = 4 - strlen($b64) % 4;
+                if ($pad !== 4) $b64 .= str_repeat('=', $pad);
+                $decoded = base64_decode($b64, true);
+                if ($decoded !== false) {
+                    // 解码后类似 "20251224/n620138013.shtml" 或 "n620138013.shtml"
+                    if (preg_match('~([a-zA-Z]\d{6,})~', $decoded, $vm)) {
+                        $vid = $vm[1];
+                    }
+                }
+            }
+            return array_merge($base, ['platform' => '搜狐视频', 'vid' => $vid]);
+        }
+
         return $base;
     }
 
