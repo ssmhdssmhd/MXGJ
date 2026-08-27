@@ -239,6 +239,13 @@ class SiteSearcher
             CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
             CURLOPT_HTTPHEADER     => $headers,
         ];
+        // 🔐 搜索验证 cookie jar —— 每个 host 独立一份
+        $hostCookie = self::hostCookieFile($url);
+        if ($hostCookie !== null) {
+            if (!file_exists($hostCookie)) @touch($hostCookie);
+            $opts[CURLOPT_COOKIEJAR]  = $hostCookie;
+            $opts[CURLOPT_COOKIEFILE] = $hostCookie;
+        }
         if (($req['method'] ?? 'get') === 'post') {
             $opts[CURLOPT_POST]  = true;
             $opts[CURLOPT_POSTFIELDS] = (string)($req['post'] ?? '');
@@ -246,6 +253,46 @@ class SiteSearcher
         $ch = curl_init($url);
         curl_setopt_array($ch, $opts);
         return $ch;
+    }
+
+    /**
+     * 🔐 获取某 host 对应的 cookie jar 文件路径（搜索验证用）
+     * 苹果CMS10 开启搜索验证后，需要先过一次验证码，
+     * 过了之后把 cookie 存到这里，后续请求自动带上。
+     */
+    public static function hostCookieFile(string $url): ?string
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+        if (!$host) return null;
+        $cookieDir = dirname(__DIR__) . '/data/cookies';
+        if (!is_dir($cookieDir)) { @mkdir($cookieDir, 0755, true); @touch($cookieDir . '/.gitkeep'); }
+        return $cookieDir . '/' . md5($host) . '.txt';
+    }
+
+    /**
+     * 🔐 获取 cookie jar 存储的 host（反向）
+     */
+    public static function readCookieJar(string $url): array
+    {
+        $file = self::hostCookieFile($url);
+        if (!$file || !file_exists($file)) return [];
+        // Netscape cookie jar 格式解析
+        $cookies = [];
+        foreach (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            if (strpos($line, '#') === 0 || trim($line) === '') continue;
+            $parts = explode("	", $line);
+            if (count($parts) >= 7) $cookies[$parts[5]] = $parts[6];
+        }
+        return $cookies;
+    }
+
+    /**
+     * 🔐 清除某 host 的 cookie jar（验证码过期后强制重新验证）
+     */
+    public static function clearCookieJar(string $url): void
+    {
+        $file = self::hostCookieFile($url);
+        if ($file && file_exists($file)) @unlink($file);
     }
 
     /**

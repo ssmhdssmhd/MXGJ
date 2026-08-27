@@ -168,7 +168,7 @@ class SiteDetector
 
     /* ========= 构建工具 ========= */
 
-    protected static function buildTemplate(string $base): string
+    public static function buildTemplate(string $base): string
     {
         $tpl = trim($base);
         if ($tpl === '') { return ''; }
@@ -226,6 +226,65 @@ class SiteDetector
         return null;
     }
 
+
+    /** 🔐 从被拦截的响应中提取验证码图片 URL */
+    public static function extractCaptchaUrl(string $body, string $apiHost): ?string
+    {
+        $patterns = [
+            "~(?:verify|captcha|checkcode|check_code|code)\.(?:html|png|gif|jpg|jpeg)~i",
+            "~/(?:captcha|verify|code)/[^\\s\"'<>]+(?:png|gif|jpg)~i",
+            "~src=[\"']([^\"']*(?:verify|captcha|checkcode)[^\"']*)[\"']~i",
+            "~(?:verify|captcha|code)=(\\d+)~i",
+        ];
+        foreach ($patterns as $pat) {
+            if (preg_match($pat, $body, $m)) {
+                $url = $m[1];
+                if (strpos($url, 'http') !== 0) {
+                    $url = 'https://' . $apiHost . (strpos($url, '/') === 0 ? '' : '/') . $url;
+                }
+                return $url;
+            }
+        }
+        return 'https://' . $apiHost . '/index.php/vod/verify.html';
+    }
+
+    /**
+     * 🔐 判断接口是否需要搜索验证（SiteDetector Phase 2.5）
+     * 空列表能通但关键词搜索被拦截 → 可能是搜索验证
+     */
+    public static function needsSearchCaptcha(string $apiHost, string $template, int $timeout): ?array
+    {
+        $jar = tempnam(sys_get_temp_dir(), 'sd_cap_');
+        $probe = str_replace('wd=%u', 'limit=2', $template);
+        $headers = self::browserHeaders($apiHost);
+
+        $warm = self::fetchWithHeaders($probe, $timeout, $headers, $jar);
+        if ($warm['code'] !== 200) return null;
+
+        $kwUrl = str_replace('wd=%u', 'wd=' . urlencode('斗罗大陆'), $template);
+        $search = self::fetchWithHeaders($kwUrl, $timeout, $headers, $jar);
+
+        $data = self::parseJson((string)$search['body']);
+        if ($data !== null && (int)($data['code'] ?? 0) === 1 && is_array($data['list'] ?? null) && count($data['list']) > 0) {
+            return null;
+        }
+
+        $lowBody = strtolower((string)$search['body']);
+        $signals = ['captcha', '验证码', 'verify', '请先'];
+        $matched = false;
+        foreach ($signals as $s) { if (strpos($lowBody, $s) !== false) { $matched = true; break; } }
+
+        if ($matched || ($search['content_type'] && strpos($search['content_type'], 'html') !== false)) {
+            return [
+                'need_captcha' => true,
+                'captcha_img'  => self::extractCaptchaUrl((string)$search['body'], $apiHost),
+                'api_host'     => $apiHost,
+                'cookie_jar'   => $jar,
+            ];
+        }
+
+        return null;
+    }
     /* ========= Phase 1.5: 会话预热 + 空列表 vod_id 基线 ========= */
 
     /** 拉空列表，拿到 cookie + vod_id 基线集合（用于后续 Diff） */

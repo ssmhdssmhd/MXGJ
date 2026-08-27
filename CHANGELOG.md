@@ -1,6 +1,29 @@
 # 更新日志 (CHANGELOG)
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+## [v1.16.7] 2026-08-27 · 搜索验证验证码解锁（Phase 3）
+
+### 🔐 苹果CMS10 搜索验证码解决方案
+
+**核心思路**：苹果CMS 搜索验证 = 先过验证码（一次 15-30 分钟有效），后正常搜索。
+我们帮用户手动过一次验证码，Cookie 保存到本地，后续请求自动带上。
+
+### 后端新增
+- `SiteSearcher::hostCookieFile()` — 每个资源站 host 独立 cookie jar 文件（`data/cookies/{md5}.txt`）
+- `SiteSearcher::readCookieJar()` / `clearCookieJar()` — Cookie 管理
+- `SiteSearcher` curl opts 自动注入 CURLOPT_COOKIEJAR / CURLOPT_COOKIEFILE
+- `SiteDetector::extractCaptchaUrl()` — 从被拦截响应中提取验证码图片 URL
+- `SiteDetector::needsSearchCaptcha()` — Phase 2.5：空列表通但关键词搜被拦截 → 可能是验证码
+- admin.php 三个新 action：
+  - `captcha_fetch`：获取验证码图片 + 预建 cookie jar
+  - `captcha_submit`：提交验证码到苹果CMS verify 接口（5 种路径尝试）+ 自动 cookie jar 持久化
+  - `captcha_clear`：手动清除 cookie jar（验证码过期后）
+
+### 前端新增
+- SiteDetector 弹窗 Phase 2 不可用时，warn 区增加「🔓 尝试手动解锁搜索验证」按钮
+- 点击后弹出验证码图片 + 输入框，输入正确 cookie 自动保存到持久位置
+- 解锁成功后自动重新 detectSite()，Phase 2 变绿 ✅
+
 ## [v1.16.6] 2026-08-27 · SiteDetector v3 — 超鲁棒多策略关键词搜索探测
 
 **核心升级：解决「真接口被误判为假」和「假接口被误判为真」**

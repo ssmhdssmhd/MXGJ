@@ -238,6 +238,102 @@ switch ($ACTION) {
         Logger::log('operation', '测试资源站：' . $title . ' 第' . $ep . '集 → ' . ($res['code'] === 200 ? '命中' : $res['msg'] ?? '失败'), $res['code'] === 200 ? 'success' : 'warn', ['code' => $res['code']]);
         mxgj_json_out($res);
 
+    case 'captcha_fetch':
+        // 🔐 获取资源站的验证码图片（SiteDetector Phase 2.5）
+        $rawUrl = trim($_POST['url'] ?? '');
+        if ($rawUrl === '') mxgj_json_out(['ok' => false, 'msg' => '缺少接口地址']);
+        $host = (string)parse_url($rawUrl, PHP_URL_HOST);
+        $template = SiteDetector::buildTemplate($rawUrl);
+        $need = SiteDetector::needsSearchCaptcha($host, $template, (int)mxgj_settings()['timeout']);
+        if (!$need) {
+            mxgj_json_out(['ok' => false, 'msg' => '这个接口不需要验证码（空列表和关键词搜索都正常）']);
+        }
+        // 把 cookie jar 从临时位置复制到持久位置
+        $persistJar = SiteSearcher::hostCookieFile($rawUrl);
+        @mkdir(dirname($persistJar), 0755, true);
+        @copy($need['cookie_jar'], $persistJar);
+        mxgj_json_out([
+            'ok'          => true,
+            'captcha_img' => $need['captcha_img'],
+            'api_host'    => $host,
+            'jar_path'    => $persistJar,
+            'msg'         => '🔐 检测到搜索验证 — 请在浏览器打开图片输入验证码',
+        ]);
+
+    case 'captcha_submit':
+        // 🔐 提交验证码到苹果CMS verify 接口
+        $host       = trim($_POST['host'] ?? '');
+        $codeInput  = trim($_POST['code'] ?? '');
+        $template   = trim($_POST['template'] ?? '');
+        if ($host === '' || $codeInput === '') mxgj_json_out(['ok' => false, 'msg' => '缺少 host 或验证码']);
+        if ($template === '') $template = "https://{$host}/api.php/provide/vod/?ac=videolist&wd=%u";
+
+        $jar = SiteSearcher::hostCookieFile($template);
+        $headers = [
+            'Accept: text/html,application/json,*/*',
+            'Accept-Language: zh-CN,zh;q=0.9',
+            'Referer: https://' . $host . '/',
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122',
+        ];
+
+        // 苹果CMS10 验证码验证路径（多种可能）
+        $verifyPaths = [
+            "/index.php/vod/verify/code/{$codeInput}.html",
+            "/index.php/vod/verify/?code={$codeInput}",
+            "/index.php/vod/verify.html?code={$codeInput}",
+            "/api.php?ac=verify&code={$codeInput}",
+            "/index.php?s=/vod/verify&code={$codeInput}",
+        ];
+        $ch = curl_init();
+        $lastResp = ''; $lastCode = 0;
+        foreach ($verifyPaths as $path) {
+            $url = "https://{$host}{$path}";
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $url, CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 8, CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+                CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_COOKIEJAR => $jar, CURLOPT_COOKIEFILE => $jar,
+                CURLOPT_HTTPHEADER => $headers,
+            ]);
+            $body = curl_exec($ch);
+            $code = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+            $lastResp .= "
+{$url} → HTTP {$code}: " . substr((string)$body, 0, 120);
+        }
+        @curl_close($ch);
+
+        // 验证后用 cookie jar 再搜一次关键词，确认 cookie 生效
+        $verifyUrl = str_replace('wd=%u', 'wd=' . urlencode('斗罗大陆'), $template);
+        $final = SiteSearcher::search([['name'=>'解锁验证','template'=>$template,'url'=>$template]], '斗罗大陆', 1, 8);
+
+        if (!empty($final['url']) || ($final['code'] ?? 0) === 200) {
+            Logger::log('operation', "🔐 资源站 {$host} 搜索验证解锁成功", 'success', ['path' => $jar]);
+            mxgj_json_out([
+                'ok'       => true,
+                'msg'      => "✅ 解锁成功！Cookie 已保存到 {$jar}，后续搜索自动带上",
+                'url'      => $final['url'] ?? '',
+                'jar_size' => filesize($jar) ?: 0,
+            ]);
+        }
+
+        // 还没成功 —— 清理 cookie jar 让用户重试
+        @unlink($jar);
+        mxgj_json_out([
+            'ok'  => false,
+            'msg' => '❌ 验证码可能错误（Cookie 已清除，请重新输入）',
+            'debug' => $lastResp,
+        ]);
+
+    case 'captcha_clear':
+        // 🔐 手动清除 cookie jar
+        $host = trim($_POST['host'] ?? '');
+        if ($host === '') mxgj_json_out(['ok' => false, 'msg' => '缺少 host']);
+        $jar = SiteSearcher::hostCookieFile("https://{$host}/api.php");
+        @unlink($jar);
+        Logger::log('operation', "🔐 清除 {$host} 的搜索验证 Cookie", 'info');
+        mxgj_json_out(['ok' => true, 'msg' => "已清除 {$host} 的 cookie"]);
+
     case 'test_direct':
         // 一键测试 - 资源站直链（m3u8）：自动检测剧名/集数 → 写入映射表
         $url  = trim($_POST['url'] ?? '');
@@ -1237,10 +1333,10 @@ function renderSitesForm($sites)
                 msg.style.color='#f59e0b';
                 var wEl=document.getElementById('dd-warn');
                 wEl.style.display='block';
-                wEl.innerHTML='<b>🚨 此接口不能用于本系统！</b><br>' +
+                wEl.innerHTML='<b>🚨 关键词搜索不可用</b><br>' +
                     '原因：'+(d.warn_detail||probe.msg||'接口不支持关键词查询')+'<br>' +
-                    '本系统核心逻辑是「按剧名去资源站搜」，这种接口加进来只会白跑一次请求然后返回 503。<br>' +
-                    '<span style="color:#7fc1ff;font-size:11px">硬要加也可以，但强烈建议去找真正支持关键词搜索的苹果CMS接口</span>';
+                    '可能情况：① 此接口真不支持搜索 ② 接口开启了搜索验证码（需要手动解锁）<br>' +
+                    '<button type="button" class="btn" style="background:#f59e0b;margin-top:8px" onclick="unlockCaptcha(''+encodeURIComponent(document.getElementById('dd-tpl').value)+'')">🔓 尝试手动解锁搜索验证</button>';
                 var sEl=document.getElementById('dd-search');
                 sEl.style.display='block';
                 sEl.innerHTML='<span style="color:#f59e0b">●</span> 关键词搜索：<b>不可用</b> ❌<br>' +
@@ -1248,6 +1344,51 @@ function renderSitesForm($sites)
             }
         }).catch(function(e){msg.textContent='请求失败:'+e;msg.style.color='#e74c3c';});
     }
+    /* ===== 🔐 搜索验证码解锁 ===== */
+    function unlockCaptcha(tpl){
+        // Step 1: fetch 验证码图片
+        var fd=new FormData();fd.append('action','captcha_fetch');fd.append('url',tpl);
+        fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(function(d){
+            if(!d.ok){alert(d.msg);return;}
+            var host=d.api_host;
+            // 弹出验证码解锁对话框
+            var html='<div id="cap-modal" style="position:fixed;inset:0;background:rgba(5,10,20,.85);z-index:9999;display:flex;align-items:center;justify-content:center">' +
+                '<div style="background:#141b2d;border:1px solid #2a3550;border-radius:12px;padding:22px;width:420px;max-width:92vw">' +
+                '<h3 style="margin:0 0 12px;color:#fff">🔐 手动解锁搜索验证</h3>' +
+                '<p style="font-size:12px;color:#b8c0d2;margin:0 0 14px">接口 <b>'+host+'</b> 开启了苹果CMS10 搜索验证码，请在下方输入验证码图片上的数字。解锁后 Cookie 自动保存 15 分钟。</p>' +
+                '<div style="text-align:center;margin-bottom:14px">' +
+                '<img id="cap-img" src="'+d.captcha_img+'" style="max-width:200px;border-radius:8px;border:1px solid #2a3550;padding:8px;background:#fff" onerror="this.style.display=\'none\';document.getElementById(\'cap-img-fallback\').style.display=\'block\'">' +
+                '<div id="cap-img-fallback" style="display:none;background:#2a3550;border-radius:8px;padding:16px;color:#9aa4bc;font-size:12px">❌ 自动拉取验证码图片失败<br>请在浏览器中访问 <a href="https://'+host+'/" target="_blank" style="color:#7fc1ff">https://'+host+'/</a> 刷新首页后再试</div>' +
+                '</div>' +
+                '<input id="cap-code" type="text" inputmode="numeric" placeholder="输入验证码数字" style="width:100%;box-sizing:border-box;text-align:center;font-size:18px;letter-spacing:8px">' +
+                '<div id="cap-msg" style="margin-top:10px;font-size:12px"></div>' +
+                '<div style="margin-top:16px;text-align:right">' +
+                '<button type="button" class="btn" onclick="document.getElementById(\'cap-modal\').remove()" style="margin-right:8px">取消</button>' +
+                '<button type="button" class="btn btn-green" onclick="submitCaptcha(\''+host+'\',\''+encodeURIComponent(tpl)+'\')">提交验证</button>' +
+                '</div></div></div>';
+            document.body.insertAdjacentHTML('beforeend', html);
+        }).catch(e=>alert('请求失败:'+e));
+    }
+    function submitCaptcha(host,tpl){
+        var code=document.getElementById('cap-code').value.trim();
+        if(!code){alert('请输入验证码');return;}
+        var msg=document.getElementById('cap-msg');
+        msg.textContent='验证中...';msg.style.color='#e2b93b';
+        var fd=new FormData();
+        fd.append('action','captcha_submit');
+        fd.append('host',host);
+        fd.append('code',code);
+        fd.append('template',decodeURIComponent(tpl));
+        fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(function(d){
+            if(d.ok){
+                msg.textContent='✅ '+d.msg;msg.style.color='#2ecc71';
+                setTimeout(function(){document.getElementById('cap-modal').remove();detectSite();},1500);
+            }else{
+                msg.textContent='❌ '+d.msg;msg.style.color='#e74c3c';
+            }
+        }).catch(e=>{msg.textContent='❌ 请求失败:'+e;msg.style.color='#e74c3c';});
+    }
+
     function saveSiteOne(){
         var name=document.getElementById('dd-name').value.trim();
         var tpl=document.getElementById('dd-tpl').value.trim();
