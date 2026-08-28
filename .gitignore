@@ -1,10 +1,31 @@
-# 运行时数据（缓存）
-/data/cache/
-*.cache
-/data/site_health.json
-/data/heartbeat.lock
+# 运行时数据
+data/cache/*
+data/logs/*
+data/cookies/*
+data/cron_mapping.log
+!data/cache/.gitkeep
+!data/cookies/.gitkeep
 
-# 日志 / 临时文件
-*.log
-/tmp/
-/data/logs/
+# 本地临时文件
+*.bak
+*.orig
+*.tmp
+.DS_Store
+Thumbs.db
+.phpunit.cache
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+
+# Composer / npm
+vendor/
+node_modules/
+
+# 环境
+.env
+.env.local
+
+# 测试数据
+tests/_sandbox/

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 一般问题
+    url: https://github.com/ssmhdssmhd/MXGJ/discussions/new
+    about: 请在 Discussions 发帖而不是 Issue
+  - name: 📖 文档
+    url: https://github.com/ssmhdssmhd/MXGJ/blob/main/README.md
+    about: 先看 README 和 CHANGELOG

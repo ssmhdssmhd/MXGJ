@@ -1,14 +1,33 @@
 <div align="center">
 
-# 🎬 沫兮官替系统 (MXGJ)
+# 🎬 沫兮官替系统 <span style="color:#8b5cf6">MXGJ</span>
 
-**官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
+### 官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出
 
-![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.17.2-4f7cff)
-![License](https://img.shields.io/badge/License-MIT-22a06b)
-![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
-![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
+> 🚀 一款开箱即用的「官代/官替」媒体解析系统 · 无数据库 · 零依赖
+
+<br>
+
+[![PHP](https://img.shields.io/badge/PHP-%3E%3D8.1-8892BF?logo=php&logoColor=white&style=for-the-badge)](https://www.php.net)
+[![Version](https://img.shields.io/badge/Version-v1.17.2-4f7cff?style=for-the-badge&labelColor=2d1b69)](https://github.com/ssmhdssmhd/MXGJ/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22a06b?style=for-the-badge)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/ssmhdssmhd/MXGJ?style=for-the-badge&logo=github&color=8b5cf6)](https://github.com/ssmhdssmhd/MXGJ/stargazers)
+[![Forks](https://img.shields.io/github/forks/ssmhdssmhd/MXGJ?style=for-the-badge&logo=github&color=6366f1)](https://github.com/ssmhdssmhd/MXGJ/forks)
+[![Issues](https://img.shields.io/github/issues/ssmhdssmhd/MXGJ?style=for-the-badge&color=f59e0b)](https://github.com/ssmhdssmhd/MXGJ/issues)
+[![Pulls](https://img.shields.io/github/issues-pr/ssmhdssmhd/MXGJ?style=for-the-badge&color=10b981)](https://github.com/ssmhdssmhd/MXGJ/pulls)
+[![CI](https://img.shields.io/github/actions/workflow/status/ssmhdssmhd/MXGJ/ci.yml?branch=main&style=for-the-badge&logo=github-actions)](https://github.com/ssmhdssmhd/MXGJ/actions)
+[![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71?style=for-the-badge)](https://github.com/ssmhdssmhd/MXGJ)
+[![Docker](https://img.shields.io/badge/Docker-Ready-0ea5e9?style=for-the-badge&logo=docker)](https://github.com/ssmhdssmhd/MXGJ)
+
+<br>
+
+[**📖 快速开始**](#-快速开始) · [**🧭 工作原理**](#-工作原理) · [**🔧 配置指南**](#-配置说明) · [**🐛 提 Issue**](https://github.com/ssmhdssmhd/MXGJ/issues) · [**📦 一键部署**](#-docker-一键部署)
+
+<br>
+
+| 支持平台 | 🎯 | 📺 | 🎬 | 🥭 | 💜 | 📺 |
+|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| 腾讯视频 | 爱奇艺 | 优酷 | 芒果TV | 哔哩哔哩 | PPTV |
 
 输入任意官方播放链接（腾讯 / 爱奇艺 / 优酷 / 芒果TV / 哔哩哔哩 / PPTV），
 系统自动解析出 **剧名 + 集数**，然后**并发**向后台配置的全部资源站搜索对应资源，
@@ -204,6 +223,46 @@
 | 🧬 搜索模板库 | 🆕 预置 8 种苹果CMS10 搜索模板，选框架填 host 自动生成 |
 | 🎨 紫色 UI | 🆕 紫色渐变侧边栏 + CSS 变量统一（消除漂移常量） |
 | 🎥 播放器 | 🆕 lgzym3u8 / vv00.xyz iframe 内嵌播放 |
+
+---
+
+## 📸 界面预览
+
+<details>
+<summary><strong>点击展开 · Demo 预览</strong></summary>
+
+### 🛠️ 后台管理
+
+紫色渐变 UI · 侧边栏 · 资源配置 · App 接口配置
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🎬 MXGJ              v1.17.2                    [MX] │
+├────────────┬────────────────────────────────────────────┤
+│ 📊 概览    │ 🏠 / 资源配置 / 🎬 App接口                 │
+│ 🌐 资源站  │ ┌────────────────────────────────────────┐ │
+│ 🔍 查看    │ │ 🎬 App 接口配置              ✅ 已启用 │ │
+│ 🎬 App接口 │ │ ─────────────────────────────────────  │ │
+│ 🗂️ 映射表 │ │ 基础开关                                │ │
+│            │ │ ✅ 启用  ✅ 鉴权  ✅ 代理                │ │
+│ ⬆️ 更新    │ │ 接口配置                                │ │
+│ 📋 日志    │ │ key: moxi123 · 播放器: lgzym3u8        │ │
+│ ⚙️ 设置    │ │ 📡 接口路径 · 🧪 一键测试              │ │
+│ ❓ 帮助    │ └────────────────────────────────────────┘ │
+└────────────┴────────────────────────────────────────────┘
+```
+
+### 🔧 App 接口 5 种调用路径
+
+```
+🎬 播放器页面（m3u8直链）     /player/?key=xxx&url=<m3u8>
+🎬 播放器页面（加密 u 参数）   /player/?key=xxx&u=<base64url>
+🔧 TVBox API（媒体代理）       /player/api.php?key=xxx&url=<m3u8>
+🔧 TVBox API（官方解析）       /player/api.php?key=xxx&url=<腾讯链接>
+🔧 TVBox API（苹果CMS透传）    /player/api.php?key=xxx&url=<苹果CMSAPI>
+```
+
+</details>
 
 ---
 
@@ -494,6 +553,38 @@ http://你的域名/update.php?key=升级密钥&dry=1   # 仅测速排查
 
 ---
 
+## 🐳 Docker 一键部署
+
+不想装 PHP？用 Docker：
+
+```bash
+# 方式 A: docker-compose（推荐）
+git clone https://github.com/ssmhdssmhd/MXGJ.git
+cd MXGJ
+docker-compose up -d
+# 打开 http://localhost:8080/admin.php （默认密码 moxi123）
+
+# 方式 B: 直接 docker run
+docker run -d --name mxgj -p 8080:8080 -v $(pwd)/data:/var/www/html/data -v $(pwd)/config:/var/www/html/config php:8.2-fpm-alpine php -S 0.0.0.0:8080 -t /var/www/html
+```
+
+## 📈 GitHub Stats
+
+<p align="center">
+  <a href="https://github.com/ssmhdssmhd/MXGJ"><img height="280" src="https://github-readme-stats.vercel.app/api?username=ssmhdssmhd&repo=MXGJ&show_icons=true&theme=tokyonight&hide_border=true" alt="Stats"></a>
+  <a href="https://github.com/ssmhdssmhd/MXGJ"><img height="280" src="https://github-readme-stats.vercel.app/api/top-langs/?username=ssmhdssmhd&repo=MXGJ&layout=compact&theme=tokyonight&hide_border=true&hide=HTML,CSS,JavaScript" alt="Languages"></a>
+</p>
+
+<p align="center">
+  <img src="https://star-history.com/#ssmhdssmhd/MXGJ&Date" alt="Star History">
+</p>
+
+<p align="center">
+  <a href="https://github.com/ssmhdssmhd/MXGJ/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=ssmhdssmhd/MXGJ&max=20" alt="Contributors">
+  </a>
+</p>
+
 ## ⚙️ 配置说明
 
 ### config/settings.json
@@ -589,7 +680,30 @@ php tests/run_test.php
 
 ---
 
+## ❤️ 致谢 & 赞助
+
+本项目由社区驱动开发。如果你觉得有用，欢迎 **Star** 或 **Fork**，也可以：
+
+[![Star](https://img.shields.io/github/stars/ssmhdssmhd/MXGJ?style=social)](https://github.com/ssmhdssmhd/MXGJ)
+[![Fork](https://img.shields.io/github/forks/ssmhdssmhd/MXGJ?style=social)](https://github.com/ssmhdssmhd/MXGJ)
+[![Watch](https://img.shields.io/github/watchers/ssmhdssmhd/MXGJ?style=social)](https://github.com/ssmhdssmhd/MXGJ)
+
 ## 📜 免责声明
 
 本项目仅用于**学习与接口调用演示**。请遵守国家法律法规及各大视频平台/资源站的服务条款，
 **切勿**用于盗版、侵权内容的传播。因使用本项目产生的任何法律风险由使用者自行承担。
+---
+
+<div align="center">
+
+**MXGJ · 沫兮官替系统**
+
+[![PHP](https://img.shields.io/badge/PHP-8892BF?logo=php&logoColor=white)](https://www.php.net)
+[![License](https://img.shields.io/badge/License-MIT-22a06b)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-v1.17.2-4f7cff)](https://github.com/ssmhdssmhd/MXGJ/releases)
+
+🚀 [快速开始](#-快速开始) · 📖 [README](README.md) · 📋 [CHANGELOG](CHANGELOG.md) · 🤝 [贡献指南](CONTRIBUTING.md) · 🐛 [安全报告](SECURITY.md)
+
+Made with ❤️ by [MXGJ Team](https://github.com/ssmhdssmhd/MXGJ) · [Issue](https://github.com/ssmhdssmhd/MXGJ/issues) · [Discussions](https://github.com/ssmhdssmhd/MXGJ/discussions)
+
+</div>
