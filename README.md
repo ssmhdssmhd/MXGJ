@@ -5,7 +5,7 @@
 **官方视频链接 → 多线程资源站搜索 → 真实 m3u8 直出** · 一款开箱即用的「官代/官替」媒体解析系统
 
 ![PHP](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF?logo=php&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v1.13.0-4f7cff)
+![Version](https://img.shields.io/badge/Version-v1.17.2-4f7cff)
 ![License](https://img.shields.io/badge/License-MIT-22a06b)
 ![Storage](https://img.shields.io/badge/Storage-No--DB-2ecc71)
 ![Platform](https://img.shields.io/badge/腾讯·爱奇艺·优酷·芒果·哔哩·PPTV-888)
@@ -25,6 +25,56 @@
 <details open>
 
 <summary>查看历史更新（点击折叠）</summary>
+
+### [v1.17.2] 2026-08-28 · App 接口 key 参数前置 + 完整 key 鉴权
+- **key 参数放到 URL 最前面**：所有接口统一 `?key=xxx&url=...` 格式（第一个 query 参数位置）
+- **`player/api.php` 补齐完整 key 鉴权**（之前注释写了 key 但代码完全没实现）：
+  - App 接口 enable 开关（关闭返回 403）
+  - require_key 强制鉴权开关
+  - api_key 自定义（fallback 到 config/key.php）
+- **admin.php URL 预览全部 key 前置**：11 处 `?key=xxx`，0 处 `&key=xxx`
+- 🐛 修 bug：`mxgj_settings('app_api')` 参数被 PHP 静默忽略 → 改为 `mxgj_settings()['app_api'] ?? []`
+
+### [v1.17.1] 2026-08-28 · 新增 🎬 App 接口配置 tab（侧边栏 + 完整 UI）
+- **资源配置组新增「🎬 App接口」** nav-item（sidebar nav 硬编码，非循环）
+- **完整配置面板**：启用开关 / 接口鉴权 key 开关 / 代理转发开关 / App Key 自定义 / 播放器类型（lgzym3u8/虾米FLV/云播）/ CORS / 最大代理大小 / 单 IP 限流
+- **📡 实时接口路径预览**：5 种 APP/TVBox 调用格式（播放器页面带真实 m3u8 / 加密 u 参数 / TVBox API 代理 / 官方链接解析 / 苹果CMS 透传），一键复制
+- **🧪 一键测试**：输入任意 URL 直接调 `/player/api.php` 显示 JSON 结果
+- **bootstrap settings 默认值** 新增完整 `app_api` 配置块
+- **save_settings 后端** 加 app_api 读写（8 字段 + 安全校验）
+
+### [v1.17.0] 2026-08-27 · 搜索接口模板库（v1 首版）+ 修复复制/封面图/播放按钮 + player/api.php
+- **搜索接口模板库**（`config/search_templates.json`）：v1 预置 8 个最常用苹果CMS10 模板，选模板 → 填 host → 自动生成 URL
+- **admin.php 前端模板选择器**：弹窗式 UI，📦 预置 / ✨ 自定义标记，点「生成并打开检测」一键流程
+- **renderSiteListView** 完整功能：选站即显最新资源（`svSearch` 去掉 wd 非空拦截）+ 模板下拉 + 表格缩略图列 + 详情弹窗封面图 + 每集 ▶播放 → `/player/?u=<base64url>` + 📋复制
+- **`svCopy` 修复**：用 `data-url` 存储 URL 避免 JSON.stringify 转义破坏 onclick；加 `svCopyFallback` 用 `document.execCommand('copy')` 兼容 HTTP 页面（navigator.clipboard.writeText 仅 HTTPS）
+- **新建 `player/api.php`**：4 种模式（m3u8 代理重写 / 苹果CMS 透传 / 完整解析流程 / JSONP），APP/TVBox 统一调用入口
+- **bootstrap.php 防重复加载**：加 `MXGJ_BOOTSTRAP_LOADED` 守卫 + 所有 PHP 文件 `require_once bootstrap.php`
+- **renderSiteListView**：表格加缩略图列 + 详情弹窗封面图 + 每集加 ▶播放 按钮
+
+### [v1.16.9] 2026-08-27 · 后台 page_size 设置 + 模板下拉 + 紫色渐变 UI
+- 后台设置新增 `page_size`（每页返回条数，默认 50）
+- 资源站配置里的模板下拉改成「tt-preset select + tt-tpl-list datalist」
+- select 加 `onchange="svSearch()"` 实现选站即显最新资源
+- **紫色渐变 UI 全套 CSS 变量**（`--sidebar-w:220px` / `--sidebar-bg:#1a1440` / `--accent:#6366f1`）+ sidebar 渐变 + topbar 毛玻璃 + logo 紫粉渐变
+- 消除漂移常量：侧边栏宽度统一用 CSS 变量，不再散落硬编码 208px
+
+### [v1.16.8] 2026-08-27 · buildTemplate 智能保留用户 ac 值 + 选站即显资源 + 复制修复
+- SiteDetector::buildTemplate 智能保留用户原始 ac 值（list/videolist），wd=%u 占位符
+- **svSearch 去掉 wd 非空拦截**：选资源站下拉即触发搜索最新资源（wd 为空时返回列表前 20 条）
+- **svCopy 修复**：用 `data-url` 属性存储避免 JSON.stringify 破坏 HTML 属性
+
+### [v1.16.7] 2026-08-27 · 搜索验证验证码解锁（Phase 3）
+- 每个资源站 host 独立 cookie jar（`data/cookies/{md5}.txt`），SiteSearcher curl 自动带上
+- SiteDetector 探测到验证码 → 弹窗显示「🔓 尝试手动解锁搜索验证」
+- 用户输入验证码 → 后端 submit 到苹果CMS verify 接口（5 种路径轮询）+ cookie jar 持久化 → 后续请求自动过验证
+- admin.php 新增 `captcha_fetch` / `captcha_submit` / `captcha_clear` 三个 action
+
+### [v1.16.6] 2026-08-27 · SiteDetector v3 — 超鲁棒多策略关键词搜索探测
+- **三阶段架构**：Phase 1 空列表探测 → Phase 1.5 会话预热（cookie jar + 浏览器 headers）→ Phase 2 多策略关键词搜索（5 策略 × curl_multi 并发）
+- SiteDetector 新增 captcha_fetch 完整链路：验证码图片提取 + cookie jar 持久化 + 手动解锁
+- 全局代理支持：bootstrap.php `mxgj_apply_proxy()` 自动读取 HTTP_PROXY/HTTPS_PROXY/NO_PROXY
+- sidebar nav PHP 循环遍历 `$tabLabels` 数组生成（不是硬编码 HTML），新增 tab 自动渲染
 
 ### [v1.13.0] 2026-08-26 · 移除 App/安全设置 + 后台改为「点击空白处自动保存并自动清理」
 - **彻底移除「表面播放链接（App设置）」与「安全设置（欺诈/伪装）」**：
@@ -149,6 +199,11 @@
 | 🔄 在线更新 | GitHub 多加速镜像自动测速选最快节点拉取，更新后权限 777 |
 | 🛠️ 可视化后台 | 资源站 / 映射 / 设置 / 帮助 / 一键测试，全部免改代码 |
 | 🔌 开放接口 | `key` 鉴权 + `callback` JSONP + CORS，方便前端跨域调用 |
+| 🎬 App 接口 | 🆕 TVBox / 影视 APP / 小程序 统一调用入口（player/api.php，4 种模式） |
+| 🔑 App Key | 🆕 key 放 URL 最前面 `?key=xxx&url=...`，完整鉴权链路 |
+| 🧬 搜索模板库 | 🆕 预置 8 种苹果CMS10 搜索模板，选框架填 host 自动生成 |
+| 🎨 紫色 UI | 🆕 紫色渐变侧边栏 + CSS 变量统一（消除漂移常量） |
+| 🎥 播放器 | 🆕 lgzym3u8 / vv00.xyz iframe 内嵌播放 |
 
 ---
 
@@ -277,7 +332,7 @@ php -S 0.0.0.0:8080 -t .
 GET /index.php?key=<密钥>&url=<官方视频链接>[&page=<集数>][&debug=1][&callback=<jsonp>]
 ```
 
-> `key` 固定放在 `url` 之前（未开启 key 鉴权时可省略）。
+> `key` 固定放在 `url` 之前（第一个 query 参数位置），未开启 key 鉴权时可省略。
 
 **示例**（腾讯 → 庆余年第2集）：
 
@@ -375,6 +430,52 @@ max_sites_per_request = 4     (每次最多并发请求 4 个站)
 
 > 快捷开关（如启用心跳/输出字段）仍为点击即生效，不会与自动保存重复提交。
 
+### 🎬 App 接口（player/api.php · TVBox / 影视 APP 统一入口）
+
+后台 **资源配置 → 🎬 App接口** tab 完整配置面板，支持：
+
+| 配置 | 说明 |
+| ---- | ---- |
+| enable | App 接口总开关（关闭返回 403） |
+| require_key | 强制 key 鉴权（key 放 URL 最前面 `?key=xxx&url=...`） |
+| api_key | 自定义 key（留空 fallback 到 config/key.php） |
+| player_type | 播放器类型（lgzym3u8/虾米FLV/云播） |
+| proxy_enable | 代理转发（m3u8 切片走本站 play.php）或 302 跳转 |
+| cors | CORS 跨域来源（`*`=全部） |
+| max_size_mb | 最大代理大小（MB） |
+| rate_limit | 单 IP 限流（次/分钟，0=不限） |
+
+**4 种调用模式**（`/player/api.php` 自动路由）：
+
+| 模式 | 输入 | 返回 |
+| ---- | ---- | ---- |
+| m3u8 代理重写 | `?key=xxx&url=<m3u8/mp4>` | 本站代理，切片/密钥重写走 play.php |
+| 苹果CMS 透传 | `?key=xxx&url=<苹果CMSAPI>` | 原始 JSON 直接返回 |
+| 完整解析流程 | `?key=xxx&url=<腾讯/爱奇艺链接>` | LinkParser→映射→多资源站搜索 |
+| JSONP | `&callback=xxx` | 任意模式 + JSONP 包装 |
+
+**5 种 APP 调用路径预览**（后台实时显示 + 一键复制）：
+
+```
+🎬 /player/?key=xxx&url=<m3u8>        播放器页面
+🎬 /player/?key=xxx&u=<base64url>      加密 u 参数
+🔧 /player/api.php?key=xxx&url=<m3u8>  TVBox 媒体代理
+🔧 /player/api.php?key=xxx&url=<官方链接>  完整解析
+🔧 /player/api.php?key=xxx&url=<苹果CMSAPI>  苹果CMS 透传
+```
+
+### 🎥 播放器（lgzym3u8 / vv00.xyz iframe）
+
+`/player/?url=<地址>` 或 `/player/?u=<base64url加密地址>`：
+- lgzym3u8：内置 MacPlayer 运行时（蓝光资源）
+- HTML 播放页自动降级为 `https://vv00.xyz?url=<真实地址>` iframe
+
+### 🧬 搜索接口模板库
+
+后台 **资源站** 页「📋 从模板生成」按钮，弹窗式 UI：
+- 8 个预置苹果CMS10 模板（前端搜索页/API JSON/ajax/data/伪静态/ac=list/老版本/帝国CMS/织梦/自定义）
+- 选框架 → 填 host → 实时预览生成 URL → 点「生成并打开检测」→ SiteDetector 自动探测 → 一键保存
+
 ### 🔄 在线自动更新
 
 后台「更新」页一键更新到 GitHub 最新代码：
@@ -405,6 +506,7 @@ http://你的域名/update.php?key=升级密钥&dry=1   # 仅测速排查
 | `replace_domain` | `""` | 域名替换/中转前缀，留空则直接返回资源站地址 |
 | `cron` | `{...}` | 定时采集配置（`seed_links`、盘点开关等） |
 | `site_control` | `{...}` | 频率控制配置（搜索/心跳/轮训） |
+| `app_api` | `{...}` | 🆕 App 接口配置（enable/require_key/api_key/player_type/proxy_enable/cors/max_size_mb/rate_limit） |
 | `output` | `{...}` | 输出返回设置（字段映射，默认 `code`/`msg`(=url)/`url`/`time`/`KFZ`） |
 
 `replace_domain` 示例：配置 `https://your-proxy.com/m3u8/` 后，
@@ -428,8 +530,10 @@ return 'your_secret_key';
 mxgj/
 ├── index.php               # 前台解析 API（入口）
 ├── admin.php               # 后台管理（登录后可配置）
-├── play.php                # 独立播放入口（代理转发，前台默认不再自动使用）
-├── player.php              # 播放器页面（lgzym3u8 / 蓝光资源 MacPlayer）
+├── play.php                # 独立播放入口（代理转发，m3u8 切片走本站）
+├── player/
+│   ├── index.php           # 播放器页面（lgzym3u8 / 蓝光资源 MacPlayer / vv00.xyz iframe）
+│   └── api.php             # 🆕 APP/TVBox 统一调用入口（4 种模式：m3u8代理重写/苹果CMS透传/完整解析/JSONP）
 ├── update.php              # 独立升级入口（update.php?key=升级密钥）
 ├── cron/
 │   └── mapping.php         # 定时自动采集映射（可配 crontab）

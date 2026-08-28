@@ -1,5 +1,69 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.2] 2026-08-28 · App 接口 key 参数前置 + 完整 key 鉴权
+
+### 核心改动
+
+- **key 参数放到 URL 最前面**（第一个 query 参数位置）：`?key=xxx&url=...` 而不是 `?url=xxx&key=xxx`
+- **`player/api.php` 补齐完整 key 鉴权**（之前注释写了 key 但代码**完全没实现**）：
+  - App 接口 enable 开关（关闭返回 403）
+  - require_key 强制鉴权开关
+  - api_key 自定义（留空 fallback 到 config/key.php）
+  - 错误 key / 缺少 key → 返回 `{"code":403,"msg":"访问被拒绝：缺少或无效的 key 参数"}`
+
+### Bug 修复
+
+- 🐛 `mxgj_settings('app_api')` 参数被 PHP 静默忽略（函数签名 `: array` 不接受参数）→ 改为 `mxgj_settings()['app_api'] ?? []`
+- admin.php URL 预览：之前用 PHP 三元表达式 `$item[1] . ($item[1]=='?'?'':'&key=xxx')` 拼到末尾 → 现在用 `preg_replace('/\?/', '?key=xxx&', $item[1], 1)` 放到最前面
+
+### 端到端验证
+
+- require_key=false：不带 key 正常访问 ✅
+- require_key=true + 正确 key 前置：正常访问 ✅
+- require_key=true + 不带 key：HTTP 403 ✅
+- require_key=true + 错误 key：HTTP 403 ✅
+- player/api.php 苹果CMS透传模式 code=1, list=20 ✅
+- admin.php URL 预览：11 处 `?key=` 前置，0 处 `&key=` 末尾 ✅
+
+## [v1.17.1] 2026-08-28 · 新增 🎬 App 接口配置 tab（侧边栏 + 完整 UI）
+
+### 新增
+
+- **资源配置组新增「🎬 App接口」** nav-item（sidebar 硬编码 `<a>`，在 sites_view 和 mapping 之间）
+- **完整配置面板**（后台 → 资源配置 → 🎬 App接口）：
+  - 基础开关：enable / require_key / proxy_enable
+  - 接口配置：api_key / player_type（lgzym3u8/虾米FLV/云播）/ cors / max_size_mb / rate_limit
+- **📡 实时接口路径预览**：5 种 APP/TVBox 调用格式（播放器页面 / 加密 u / TVBox API 代理 / 官方解析 / 苹果CMS 透传）+ 一键复制
+- **🧪 一键测试**：输入任意 URL 直接调 `/player/api.php` 显示 JSON 结果（HTTP code + 耗时 + 响应）
+- **响应格式示例**：苹果CMS 标准 JSON
+
+### 后端改动
+
+- bootstrap.php settings 默认值加完整 `app_api` 配置块
+- save_settings 加 `$st['app_api']` 读写（8 字段 + 安全校验：max/min 边界 + trim）
+- tabLabels 加 `'app_api' => ['label'=>'App接口','icon'=>'🎬','crumb'=>'资源配置']`
+- tab switch case 加 `case 'app_api': renderAppApiForm($settings); break;`
+
+### 新增文件
+
+- player/api.php（v1.17.0 已创建，v1.17.1 补齐 key 鉴权见 v1.17.2）
+
+### 侧边栏 nav 结构（确认）
+
+之前误以为 nav-item 是 PHP 循环遍历 `$tabLabels` 生成的，实际上是**硬编码 HTML `<a>` 标签**：
+
+```html
+<div class="nav-group">
+  <div class="nav-group-title">资源配置</div>
+  <a class="nav-item" href="?tab=sites">...</a>          <!-- 🌐 资源站配置 -->
+  <a class="nav-item" href="?tab=sites_view">...</a>      <!-- 🔍 资源站查看 -->
+  <a class="nav-item" href="?tab=app_api">...</a>        <!-- 🎬 App接口 (新增) -->
+  <a class="nav-item" href="?tab=mapping">...</a>         <!-- 🗂️ 映射表 -->
+</div>
+```
+
+## [v1.17.0] 2026-08-27 · 搜索接口模板库（v1 首版）+ 修复复制/封面图/播放按钮 + player/api.php
+
 ## [v1.17.0] 2026-08-27 · 搜索接口模板库（v1 首版）
 
 ### 背景
