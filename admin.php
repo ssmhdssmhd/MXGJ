@@ -970,6 +970,11 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
 .center{text-align:center}
 .row-disabled td{opacity:.45}
 .row-disabled input[type=text]{text-decoration:line-through}
+/* 输出字段拖拽排序 */
+.drag-handle{text-align:center;cursor:grab;color:#a5b4fc;user-select:none;font-size:16px;padding:0 4px;line-height:1}
+.drag-handle:active{cursor:grabbing}
+tr.out-row:hover{background:#f5f3ff}
+tr.out-row[draggable="true"]{transition:background .12s}
 .toggle{position:relative;display:inline-block;width:38px;height:20px;vertical-align:middle}
 .toggle input{display:none}
 .toggle .slider{position:absolute;cursor:pointer;inset:0;background:#d1d5db;border-radius:20px;transition:.2s}
@@ -2086,7 +2091,7 @@ function renderMappingForm($mapping)
             <table>
                 <tr><th style="width:240px">ID（vid:xxx 或 cid:xxx）</th><th>剧名</th><th style="width:90px">集数</th><th style="width:60px">启用</th><th style="width:60px"></th></tr>
                 <?php if ($episode): $i=0; foreach ($episode as $k => $v): $on = mxgj_mapping_enabled($mapping, 'episode', $k); ?>
-                    <tr class="<?= $on ? '' : 'row-disabled' ?>">
+                    <tr draggable="true" class="<?= $on ? 'out-row' : 'row-disabled out-row' ?>">
                         <td><input type="text" name="map_id[]" value="<?= htmlspecialchars($k) ?>"></td>
                         <td><input type="text" name="map_ename[]" value="<?= htmlspecialchars($v['name'] ?? '') ?>"></td>
                         <td><input type="number" name="map_ep[]" value="<?= (int)($v['episode'] ?? 0) ?>" min="1"></td>
@@ -2121,7 +2126,7 @@ function renderMappingForm($mapping)
                 <tr><th>解析出的剧名</th><th>资源站剧名</th><th style="width:60px">启用</th><th style="width:60px"></th></tr>
                 <?php if ($titles): ?>
                     <?php $i=0; foreach ($titles as $k => $v): $on = mxgj_mapping_enabled($mapping, 'title', $k); ?>
-                        <tr class="<?= $on ? '' : 'row-disabled' ?>">
+                        <tr draggable="true" class="<?= $on ? 'out-row' : 'row-disabled out-row' ?>">
                             <td><input type="text" name="map_target[]" value="<?= htmlspecialchars($k) ?>"></td>
                             <td><input type="text" name="map_title[]" value="<?= htmlspecialchars($v) ?>"></td>
                             <td class="center">
@@ -2134,7 +2139,7 @@ function renderMappingForm($mapping)
                         </tr>
                     <?php $i++; endforeach; ?>
                 <?php else: ?>
-                    <tr>
+                    <tr draggable="true" class="out-row">
                         <td><input type="text" name="map_target[]" placeholder="解析出的剧名"></td>
                         <td><input type="text" name="map_title[]" placeholder="资源站剧名"></td>
                         <td class="center"><input type="checkbox" checked disabled title="新条目默认启用"></td>
@@ -2150,7 +2155,7 @@ function renderMappingForm($mapping)
                 <tr><th>腾讯 cid</th><th>剧名（资源站使用）</th><th style="width:60px">启用</th><th style="width:60px"></th></tr>
                 <?php if ($cids): ?>
                     <?php $i=0; foreach ($cids as $k => $v): $on = mxgj_mapping_enabled($mapping, 'cid', $k); ?>
-                        <tr class="<?= $on ? '' : 'row-disabled' ?>">
+                        <tr draggable="true" class="<?= $on ? 'out-row' : 'row-disabled out-row' ?>">
                             <td><input type="text" name="map_cid[]" value="<?= htmlspecialchars($k) ?>"></td>
                             <td><input type="text" name="map_cid_target[]" value="<?= htmlspecialchars($v) ?>"></td>
                             <td class="center">
@@ -2163,7 +2168,7 @@ function renderMappingForm($mapping)
                         </tr>
                     <?php $i++; endforeach; ?>
                 <?php else: ?>
-                    <tr>
+                    <tr draggable="true" class="out-row">
                         <td><input type="text" name="map_cid[]" placeholder="mzc00200zx8psx0"></td>
                         <td><input type="text" name="map_cid_target[]" placeholder="庆余年"></td>
                         <td class="center"><input type="checkbox" checked disabled title="新条目默认启用"></td>
@@ -2493,9 +2498,10 @@ function renderSettingsForm($settings)
                 </div>
                 <label style="margin:0"><input type="checkbox" name="out_show_source" value="1" <?= !empty($output['show_source']) ? 'checked' : '' ?>> 在返回中附带原始请求链接（默认隐藏）</label>
                 <table id="out-tbl" style="margin-top:8px">
-                    <tr><th style="width:140px">键名 k（输出字段）</th><th>值来源/常量 v</th><th style="width:60px">启用</th><th style="width:60px">操作</th></tr>
+                    <tr><th style="width:30px">↕</th><th style="width:140px">键名 k（输出字段）</th><th>值来源/常量 v</th><th style="width:60px">启用</th><th style="width:60px">操作</th></tr>
                     <?php if (!empty($output['fields'])): foreach ($output['fields'] as $i => $f): $on = !array_key_exists('enabled', $f) || !empty($f['enabled']); ?>
-                        <tr class="<?= $on ? '' : 'row-disabled' ?>">
+                        <tr draggable="true" class="<?= $on ? 'out-row' : 'row-disabled out-row' ?>">
+                            <td class="drag-handle" title="拖动排序">⋮⋮</td>
                             <td><input type="text" name="out_k[]" value="<?= htmlspecialchars($f['k']) ?>" placeholder="如 url / JM / JJ"></td>
                             <td><input type="text" name="out_v[]" value="<?= htmlspecialchars($f['v']) ?>" placeholder="如 code / url / title / episode / 常量文本" list="src-list"></td>
                             <td class="center">
@@ -2507,7 +2513,8 @@ function renderSettingsForm($settings)
                             <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
                         </tr>
                     <?php endforeach; else: ?>
-                        <tr>
+                        <tr draggable="true" class="out-row">
+                            <td class="drag-handle">⋮⋮</td>
                             <td><input type="text" name="out_k[]" placeholder="url"></td>
                             <td><input type="text" name="out_v[]" value="url" list="src-list"></td>
                             <td class="center"><input type="checkbox" checked disabled title="新字段默认启用"></td>
@@ -2571,11 +2578,50 @@ function renderSettingsForm($settings)
         数据文件位于 <code>config/settings.json</code>、<code>config/sites.json</code>、<code>config/mapping.json</code>，可手动编辑。
     </div>
     <script>
+    // ===== 输出字段拖拽排序（原生 HTML5 Drag & Drop）=====
+    (function(){
+        var tbl=document.getElementById('out-tbl');
+        if(!tbl) return;
+        var dragSrc=null;
+        tbl.addEventListener('dragstart',function(e){
+            var tr=e.target.closest('tr.out-row');
+            if(!tr){e.preventDefault();return;}
+            dragSrc=tr; tr.style.opacity='0.4';
+            e.dataTransfer.effectAllowed='move';
+            try{e.dataTransfer.setData('text/plain','x');}catch(_){}
+        });
+        tbl.addEventListener('dragend',function(){
+            if(dragSrc) dragSrc.style.opacity='';
+            dragSrc=null;
+            [].forEach.call(tbl.querySelectorAll('tr.out-row'),function(tr,i){
+                var cb=tr.querySelector('input.quick-toggle');
+                if(cb) cb.setAttribute('data-idx',i);
+            });
+        });
+        tbl.addEventListener('dragover',function(e){
+            e.preventDefault();
+            e.dataTransfer.dropEffect='move';
+            var tr=e.target.closest('tr.out-row');
+            if(!tr||tr===dragSrc) return;
+            var r=tr.getBoundingClientRect();
+            var before=(e.clientY-r.top)<r.height/2;
+            tr.style.borderTop=before?'2px solid #8b5cf6':'';
+            if(before) tbl.insertBefore(dragSrc,tr); else tbl.insertBefore(dragSrc,tr.nextSibling);
+        });
+        tbl.addEventListener('dragleave',function(e){
+            var tr=e.target.closest('tr.out-row');
+            if(tr) tr.style.borderTop='';
+        });
+        tbl.addEventListener('drop',function(e){e.preventDefault();});
+    })();
+
     var outRow=<?= count($output['fields'] ?? []) ?>;
     function addOutRow(){
         var t=document.getElementById('out-tbl');
         var tr=document.createElement('tr');
-        tr.innerHTML='<td><input type="text" name="out_k[]" placeholder="如 url / JM / JJ"></td>'+
+        tr.draggable=true; tr.className='out-row';
+        tr.innerHTML='<td class="drag-handle" title="拖动排序">⋮⋮</td>'+
+            '<td><input type="text" name="out_k[]" placeholder="如 url / JM / JJ"></td>'+
             '<td><input type="text" name="out_v[]" placeholder="如 code / url / title / episode / 常量文本" list="src-list"></td>'+
             '<td class="center"><input type="checkbox" checked disabled title="新字段默认启用"></td>'+
             '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
