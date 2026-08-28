@@ -15,7 +15,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.1');
+define('MXGJ_VERSION', '1.17.0');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -107,16 +107,6 @@ function mxgj_settings(): array
                     ['k' => 'time', 'v' => 'time'],         // 耗时(毫秒)
                     ['k' => 'KFZ',  'v' => '沫兮官替系统'], // 开发者(常量)
                 ],
-            ],
-            'app_api'        => [
-                'enable'       => true,
-                'require_key'  => false,
-                'api_key'      => '',
-                'player_type'  => 'lgzym3u8',
-                'proxy_enable' => true,
-                'cors'         => '*',
-                'max_size_mb'  => 10,
-                'rate_limit'   => 0,
             ],
         ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
     }

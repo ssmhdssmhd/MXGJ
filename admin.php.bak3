@@ -151,16 +151,6 @@ switch ($ACTION) {
         $st['timeout']        = (int)($_POST['timeout'] ?? 15);
         $st['cache_ttl']      = (int)($_POST['cache_ttl'] ?? 600);
         $st['page_size']      = max(5, min(200, (int)($_POST['page_size'] ?? 50)));
-        $st['app_api'] = [
-            'enable'       => !empty($_POST['app_api_enable']),
-            'require_key'  => !empty($_POST['app_api_require_key']),
-            'api_key'      => trim((string)($_POST['app_api_key'] ?? '')),
-            'player_type'  => trim((string)($_POST['app_api_player_type'] ?? 'lgzym3u8')),
-            'proxy_enable' => !empty($_POST['app_api_proxy']),
-            'cors'         => trim((string)($_POST['app_api_cors'] ?? '*')),
-            'max_size_mb'  => max(1, min(500, (int)($_POST['app_api_max_size'] ?? 10))),
-            'rate_limit'   => max(0, min(1000, (int)($_POST['app_api_rate_limit'] ?? 0))),
-        ];
         $st['replace_domain'] = trim($_POST['replace_domain'] ?? '');
         // 资源站频率控制
         $sc = is_array($st['site_control'] ?? null) ? $st['site_control'] : [];
@@ -864,7 +854,6 @@ function renderDashboard()
         'dashboard'   => ['label' => '概览',         'icon' => '📊', 'crumb' => '首页'],
         'sites'       => ['label' => '资源站配置',   'icon' => '🌐', 'crumb' => '资源配置'],
         'sites_view'  => ['label' => '资源站查看',   'icon' => '🔍', 'crumb' => '资源配置'],
-        'app_api'     => ['label' => 'App接口',      'icon' => '🎬', 'crumb' => '资源配置'],
         'mapping'     => ['label' => '映射表',       'icon' => '🗂️', 'crumb' => '资源配置'],
         'update'      => ['label' => '在线更新',     'icon' => '⬆️', 'crumb' => '系统更新'],
         'logs'        => ['label' => '日志',         'icon' => '📋', 'crumb' => '日志中心'],
@@ -1045,7 +1034,6 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
       <div class="nav-group-title">资源配置</div>
       <a class="nav-item <?= $tab==='sites'?'active':'' ?>" href="?tab=sites"><span class="icon">🌐</span><span>资源站配置</span></a>
       <a class="nav-item <?= $tab==='sites_view'?'active':'' ?>" href="?tab=sites_view"><span class="icon">🔍</span><span>资源站查看</span></a>
-      <a class="nav-item <?= $tab==='app_api'?'active':'' ?>" href="?tab=app_api"><span class="icon">🎬</span><span>App接口</span></a>
       <a class="nav-item <?= $tab==='mapping'?'active':'' ?>" href="?tab=mapping"><span class="icon">🗂️</span><span>映射表</span></a>
     </div>
     <div class="nav-group">
@@ -1083,8 +1071,6 @@ pre{background:#1e293b;color:#94a3b8;padding:12px 14px;border-radius:8px;overflo
 <?php renderSitesForm($sites); ?>
 <?php elseif ($tab === 'sites_view'): ?>
 <?php renderSiteListView($sites); ?>
-<?php elseif ($tab === 'app_api'): ?>
-<?php renderAppApiForm($settings); ?>
 <?php elseif ($tab === 'mapping'): ?>
 <?php renderMappingForm($mapping); ?>
 <?php elseif ($tab === 'update'): ?>
@@ -2602,193 +2588,3 @@ class AdminHelper
         foreach (glob(MXGJ_CACHE . '/*.cache') ?: [] as $f) @unlink($f);
     }
 }
-
-function renderAppApiForm($settings)
-{
-    $api = $settings['app_api'] ?? [];
-    foreach (['enable'=>true,'require_key'=>false,'api_key'=>'','player_type'=>'lgzym3u8',
-              'proxy_enable'=>true,'cors'=>'*','max_size_mb'=>10,'rate_limit'=>0] as $k=>$v) {
-        if (!isset($api[$k])) $api[$k] = $v;
-    }
-
-    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off') ? 'https' : 'http';
-    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $site   = $scheme.'://'.$host;
-    $ph     = $api['require_key'] ? '&key=<你的AppKey>' : '';
-?>
-
-<style>
-.app-api-wrap{padding:0}
-.api-section{margin-bottom:20px}
-.api-section-title{font-size:14px;font-weight:600;color:#1e293b;margin-bottom:10px;display:flex;align-items:center;gap:8px}
-.api-section-title::before{content:'';width:3px;height:14px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:2px}
-.api-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
-.api-grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
-.api-field{display:flex;flex-direction:column;gap:4px}
-.api-field label{font-size:12.5px;color:#64748b;font-weight:500}
-.api-field input[type=text],.api-field input[type=number],.api-field select{padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none;background:#fff}
-.api-field input:focus,.api-field select:focus{border-color:#6366f1;box-shadow:0 0 0 2px rgba(99,102,241,.15)}
-.api-switch{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px}
-.api-switch label{flex:1;font-size:13px;color:#374151;font-weight:500}
-.api-switch .desc{font-size:11.5px;color:#94a3b8;margin-top:2px;font-weight:normal}
-.api-toggle{width:42px;height:22px;border-radius:11px;background:#cbd5e1;cursor:pointer;position:relative;transition:.2s;flex-shrink:0}
-.api-toggle.on{background:linear-gradient(135deg,#6366f1,#8b5cf6)}
-.api-toggle::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
-.api-toggle.on::after{left:22px}
-.api-url{background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
-.api-url .u{flex:1;font-family:'Courier New',monospace;font-size:12px;color:#4c1d95;word-break:break-all}
-.api-url .u .lbl{font-size:11px;color:#a5b4fc;margin-bottom:3px;font-family:inherit}
-.api-url button{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:11.5px;flex-shrink:0}
-.api-url button:hover{opacity:.85}
-.api-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.api-badge.on{background:#dcfce7;color:#16a34a}
-.api-badge.off{background:#fee2e2;color:#dc2626}
-.api-test-box{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:14px;margin-top:10px;font-family:'Courier New',monospace;font-size:12px;max-height:220px;overflow-y:auto;white-space:pre-wrap}
-@media(max-width:768px){.api-grid,.api-grid2{grid-template-columns:1fr}}
-</style>
-
-<div class="panel app-api-wrap" style="padding:20px">
-    <h2 style="margin:0 0 4px;font-size:16px;color:#1e293b">🎬 App 接口配置</h2>
-    <p style="margin:0 0 14px;font-size:12.5px;color:#94a3b8">TVBox / 影视 APP / 小程序 调用接口配置<br>
-    当前: <span class="api-badge <?= $api['enable']?'on':'off' ?>"><?= $api['enable']?'✅ 已启用':'⛔ 已禁用' ?></span></p>
-
-    <form method="post">
-        <input type="hidden" name="action" value="save_settings">
-
-        <div class="api-section">
-            <div class="api-section-title">基础开关</div>
-            <div class="api-grid">
-                <?= _api_switch('启用 App 接口', '关闭后所有 player/play.php/player/api.php 入口返回 403', 'app_api_enable', $api['enable']) ?>
-                <?= _api_switch('接口鉴权 Key', '开启后接口必须带 <code style="background:#f1f5f9;padding:0 5px;border-radius:3px">?key=xxx</code> 才能访问', 'app_api_require_key', $api['require_key']) ?>
-                <?= _api_switch('代理转发（隐藏真实源）', 'm3u8 切片全走本站 play.php；关闭则 302 跳转', 'app_api_proxy', $api['proxy_enable']) ?>
-            </div>
-        </div>
-
-        <div class="api-section">
-            <div class="api-section-title">接口配置</div>
-            <div class="api-grid2">
-                <div class="api-field">
-                    <label>自定义 App Key <span style="color:#94a3b8;font-weight:normal;font-size:11px">(留空则用 key.php)</span></label>
-                    <input type="text" name="app_api_key" value="<?= htmlspecialchars($api['api_key']) ?>" placeholder="moxi123" style="font-family:Courier New,monospace">
-                </div>
-                <div class="api-field">
-                    <label>播放器类型</label>
-                    <select name="app_api_player_type">
-                        <option value="lgzym3u8" <?= $api['player_type']=='lgzym3u8'?'selected':'' ?>>lgzym3u8（蓝光资源，推荐）</option>
-                        <option value="xmflv" <?= $api['player_type']=='xmflv'?'selected':'' ?>>虾米FLV</option>
-                        <option value="yj" <?= $api['player_type']=='yj'?'selected':'' ?>>云播（vv00.xyz iframe）</option>
-                    </select>
-                </div>
-                <div class="api-field">
-                    <label>CORS 跨域来源（*=全部）</label>
-                    <input type="text" name="app_api_cors" value="<?= htmlspecialchars($api['cors']) ?>" placeholder="*">
-                </div>
-                <div class="api-field">
-                    <label>最大代理大小（MB）</label>
-                    <input type="number" name="app_api_max_size" value="<?= (int)$api['max_size_mb'] ?>" min="1" max="500">
-                </div>
-                <div class="api-field">
-                    <label>单 IP 限流（次/分钟，0=不限）</label>
-                    <input type="number" name="app_api_rate_limit" value="<?= (int)$api['rate_limit'] ?>" min="0" max="1000">
-                </div>
-            </div>
-        </div>
-
-        <div style="display:flex;gap:10px;margin-top:8px">
-            <button type="submit" class="btn" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none">💾 保存配置</button>
-        </div>
-    </form>
-
-    <!-- 接口路径预览 -->
-    <div class="api-section" style="margin-top:22px">
-        <div class="api-section-title">📡 接口路径（APP / TVBox 调用）</div>
-
-        <?php
-        $urls = [
-            ['🎬 播放器页面（给 m3u8/mp4 地址）', "$site/player/?url=<m3u8地址>"],
-            ['🎬 播放器页面（加密 u 参数）',       "$site/player/?u=<base64url加密地址>"],
-            ['🔧 TVBox API — 媒体代理',            "$site/player/api.php?url=<m3u8/mp4>"],
-            ['🔧 TVBox API — 官方链接解析',        "$site/player/api.php?url=<腾讯/爱奇艺链接>"],
-            ['🔧 TVBox API — 苹果CMS 透传',        "$site/player/api.php?url=<苹果CMS资源站API>"],
-        ];
-        foreach ($urls as $item):
-            $full = $item[1] . ($api['require_key'] ? ($item[1]=='?'?'':'&key=你的AppKey') : '');
-        ?>
-        <div class="api-url">
-            <div class="u">
-                <div class="lbl"><?= htmlspecialchars($item[0]) ?></div>
-                <div style="font-weight:600"><?= htmlspecialchars($item[1]) ?><?= $api['require_key'] ? '<span style="color:#f59e0b">&key=你的AppKey</span>' : '' ?></div>
-            </div>
-            <button onclick="svCopy(this,'<?= htmlspecialchars($item[1] . ($api['require_key'] ? '&key=你的AppKey' : '')) ?>')">复制</button>
-        </div>
-        <?php endforeach; ?>
-    </div>
-
-    <!-- 响应格式 -->
-    <div class="api-section">
-        <div class="api-section-title">📦 响应格式示例</div>
-        <div class="api-test-box">{
-  "code": 200,
-  "msg": "https://xxx.m3u8",
-  "url": "https://xxx.m3u8",
-  "player_url": "/player/?u=xxx",
-  "site": "西瓜资源站",
-  "time": 1820,
-  "KFZ": "沫兮官替系统"
-}</div>
-    </div>
-
-    <!-- 一键测试 -->
-    <div class="api-section">
-        <div class="api-section-title">🧪 一键测试</div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="text" id="api-test-input" value="https://caiji.xgzyapi.com/api.php/provide/vod/?ac=videolist&wd=test"
-                   style="flex:1;min-width:280px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-family:Courier New,monospace;font-size:12px">
-            <button onclick="svApiTest()" class="btn" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none">🚀 测试</button>
-        </div>
-        <div id="api-test-result" style="margin-top:10px"></div>
-    </div>
-</div>
-
-<script>
-function svApiTest(){
-    const url = document.getElementById('api-test-input').value.trim();
-    if(!url){ toast('请输入 URL','warn'); return; }
-    const box = document.getElementById('api-test-result');
-    box.innerHTML = '<div class="api-test-box" style="color:#94a3b8">⏳ 请求中...</div>';
-    fetch('/player/api.php?url='+encodeURIComponent(url)).then(r=>r.text()).then(function(txt){
-        let html = '';
-        try{
-            const d = JSON.parse(txt);
-            const ok = d.code === 200;
-            html = '<div class="api-test-box" style="color:'+(ok?'#86efac':'#fca5a5')+'">HTTP '+d.code+(d.time?' | '+d.time+'ms':'')+'</div>';
-            html += '<div class="api-test-box">'+txt.substring(0,900)+(txt.length>900?'...':'')+'</div>';
-        }catch(e){
-            html = '<div class="api-test-box" style="color:#fbbf24">非 JSON（可能是 m3u8）</div>';
-            html += '<div class="api-test-box">'+txt.substring(0,500)+'</div>';
-        }
-        box.innerHTML = html;
-    }).catch(function(e){
-        box.innerHTML = '<div class="api-test-box" style="color:#fca5a5">请求失败：'+e+'</div>';
-    });
-}
-</script>
-
-<?php
-}
-
-/**
- * 辅助：渲染一个 switch 开关
- */
-function _api_switch($label, $desc, $name, $checked)
-{
-    $v = $checked ? '1' : '0';
-    $cls = $checked ? 'on' : '';
-    return '<div class="api-switch">'
-        . '<div style="flex:1"><label>'.$label.'</label>'
-        . '<div class="desc">'.$desc.'</div></div>'
-        . '<input type="hidden" name="'.$name.'" value="'.$v.'">'
-        . '<div class="api-toggle '.$cls.'" onclick="this.classList.toggle(\'on\');this.previousElementSibling.value = this.classList.contains(\'on\')?\'1\':\'0\'"></div>'
-        . '</div>';
-}
-

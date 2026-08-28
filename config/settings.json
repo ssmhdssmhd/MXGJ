@@ -3,20 +3,21 @@
     "updater_key": "",
     "timeout": 15,
     "cache_ttl": 600,
+    "page_size": 50,
     "replace_domain": "",
     "repo_owner": "ssmhdssmhd",
     "repo_name": "MXGJ",
     "repo_branch": "main",
     "site_control": {
-        "search_interval": 15,
-        "heartbeat_enable": true,
-        "heartbeat_interval": 600,
+        "search_interval": 10,
+        "heartbeat_enable": false,
+        "heartbeat_interval": 300,
         "heartbeat_timeout": 5,
         "heartbeat_max_fail": 3,
-        "cooldown_seconds": 1800,
-        "rotation_enable": true,
-        "rotation_interval": 600,
-        "max_sites_per_request": 4
+        "cooldown_seconds": 600,
+        "rotation_enable": false,
+        "rotation_interval": 300,
+        "max_sites_per_request": 0
     },
     "output": {
         "show_source": false,
@@ -39,10 +40,19 @@
             },
             {
                 "k": "KFZ",
-                "v": "沫兮官替系统",
-                "enabled": true
+                "v": "沫兮官替系统"
             }
         ]
+    },
+    "app_api": {
+        "enable": true,
+        "require_key": false,
+        "api_key": "",
+        "player_type": "lgzym3u8",
+        "proxy_enable": true,
+        "cors": "*",
+        "max_size_mb": 10,
+        "rate_limit": 0
     },
     "cron": {
         "key": "",
