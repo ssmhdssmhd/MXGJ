@@ -2712,14 +2712,19 @@ function renderAppApiForm($settings)
             ['🔧 TVBox API — 苹果CMS 透传',        "$site/player/api.php?url=<苹果CMS资源站API>"],
         ];
         foreach ($urls as $item):
-            $full = $item[1] . ($api['require_key'] ? ($item[1]=='?'?'':'&key=你的AppKey') : '');
+            // key 放到 URL 最前面（第一个 query 参数）
+            if ($api['require_key']) {
+                $full = preg_replace('/\?/', '?key=你的AppKey&', $item[1], 1);
+            } else {
+                $full = $item[1];
+            }
         ?>
         <div class="api-url">
             <div class="u">
                 <div class="lbl"><?= htmlspecialchars($item[0]) ?></div>
-                <div style="font-weight:600"><?= htmlspecialchars($item[1]) ?><?= $api['require_key'] ? '<span style="color:#f59e0b">&key=你的AppKey</span>' : '' ?></div>
+                <div style="font-weight:600"><?= htmlspecialchars($full) ?></div>
             </div>
-            <button onclick="svCopy(this,'<?= htmlspecialchars($item[1] . ($api['require_key'] ? '&key=你的AppKey' : '')) ?>')">复制</button>
+            <button onclick="svCopy(this,'<?= htmlspecialchars($full) ?>')">复制</button>
         </div>
         <?php endforeach; ?>
     </div>

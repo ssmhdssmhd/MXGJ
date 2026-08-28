@@ -21,6 +21,24 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 
+// ====== App 接口开关 & key 鉴权 ======
+$_api = mxgj_settings()['app_api'] ?? [];
+$_api = array_merge(['enable'=>true,'require_key'=>false,'api_key'=>''], $_api);
+if (empty($_api['enable'])) {
+    http_response_code(403);
+    mxgj_json_out(['code'=>403,'msg'=>'App 接口已禁用','url'=>''], 403);
+    exit;
+}
+if (!empty($_api['require_key'])) {
+    $_visitKey = trim((string)($_api['api_key'] ?? ''));
+    if ($_visitKey === '') $_visitKey = trim((string)(@include MXGJ_CONFIG.'/key.php'));
+    if ($_visitKey !== '' && (($_GET['key'] ?? '') !== $_visitKey)) {
+        http_response_code(403);
+        mxgj_json_out(['code'=>403,'msg'=>'访问被拒绝：缺少或无效的 key 参数','url'=>''], 403);
+        exit;
+    }
+}
+
 $url = trim((string)($_GET['url'] ?? $_GET['u'] ?? ''));
 $cb  = trim((string)($_GET['callback'] ?? ''));
 
