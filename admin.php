@@ -642,7 +642,7 @@ switch ($ACTION) {
         if ($idx < 0) mxgj_json_out(['ok' => false, 'msg' => '请先选择一个资源站']);
         $sites = mxgj_sites();
         if (!isset($sites[$idx])) mxgj_json_out(['ok' => false, 'msg' => '资源站不存在（已被删除）']);
-        if ($wd === '') mxgj_json_out(['ok' => false, 'msg' => '请输入搜索关键词']);
+        // wd 允许为空 — 空时返回该资源站最新资源
 
         $site     = $sites[$idx];
         $template = $site['template'] ?? ($site['url'] ?? '');
@@ -1734,7 +1734,7 @@ function renderSiteListView($sites)
 
     <!-- 工具栏 -->
     <div class="sv-toolbar">
-        <select class="sv-select" id="sv-site">
+        <select class="sv-select" id="sv-site" onchange="svSearch()">
             <option value="-1">-- 选择资源站 --</option>
             <?php foreach ($siteOptions as $i => $name): ?>
                 <option value="<?= $i ?>" <?= empty($sites[$i]['enabled']) ? 'disabled' : '' ?>>
@@ -1778,11 +1778,23 @@ let svCurrentPg = 1;
 let svCurrentWd = '';
 let svTotal = 0;
 
+// 全局 toast 函数（可被 svCopy / svCopyFallback 等复用）
+function toast(msg, type){
+    const t = document.getElementById('toast');
+    if(!t){ alert(msg); return; }
+    type = type || 'ok';
+    t.textContent = msg;
+    t.style.background = type === 'warn' ? '#f59e0b' : (type === 'err' ? '#ef4444' : '#10b981');
+    t.style.display = 'block';
+    clearTimeout(window._svToastT);
+    window._svToastT = setTimeout(function(){ t.style.display='none'; }, 1800);
+}
+
 function svSearch(pg){
     const idx = parseInt(document.getElementById('sv-site').value);
     const wd  = document.getElementById('sv-wd').value.trim();
     if(idx < 0){ toast('请先选择一个资源站','warn'); return; }
-    if(!wd){ toast('请输入剧名关键词','warn'); document.getElementById('sv-wd').focus(); return; }
+    // wd 允许为空 — 空时返回该资源站最新资源
 
     svCurrentSite = idx;
     svCurrentWd = wd;
@@ -1901,14 +1913,47 @@ function svCloseModal(){
 }
 
 function svCopy(btn, url){
-    btn.textContent = '✅';
-    btn.style.color = '#10b981';
-    navigator.clipboard.writeText(url).then(function(){
-        setTimeout(function(){
-            btn.textContent = '📋';
-            btn.style.color = '#4f7cff';
-        }, 800);
-    });
+    btn.textContent = '⏳';
+    // 优先用现代 API（HTTPS / 新浏览器）
+    if(navigator.clipboard && window.isSecureContext){
+        navigator.clipboard.writeText(url).then(function(){
+            btn.textContent = '✅';
+            btn.style.color = '#10b981';
+            toast('链接已复制到剪贴板');
+            setTimeout(function(){ btn.textContent='📋'; btn.style.color='#4f7cff'; }, 1000);
+        }).catch(function(){ svCopyFallback(btn,url); });
+    }else{
+        svCopyFallback(btn, url);
+    }
+}
+function svCopyFallback(btn, url){
+    // execCommand('copy') fallback — 兼容 HTTP + 旧手机浏览器
+    try{
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, url.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if(ok){
+            btn.textContent = '✅';
+            btn.style.color = '#10b981';
+            toast('链接已复制到剪贴板');
+        }else{
+            btn.textContent = '❌';
+            btn.style.color = '#ef4444';
+            toast('复制失败，请手动长按复制', 'warn');
+        }
+    }catch(e){
+        btn.textContent = '❌';
+        btn.style.color = '#ef4444';
+        toast('复制失败：'+e.message, 'warn');
+    }
+    setTimeout(function(){ btn.textContent='📋'; btn.style.color='#4f7cff'; }, 1500);
 }
 
 function svEscape(s){
