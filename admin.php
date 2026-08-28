@@ -11,7 +11,7 @@
  * 密码默认 moxi123，登录后请在「设置」页修改。
  */
 
-require __DIR__ . '/lib/bootstrap.php';
+require_once __DIR__ . '/lib/bootstrap.php';
 
 session_start();
 
@@ -1743,10 +1743,12 @@ function renderSiteListView($sites)
 .sv-source-title{font-weight:600;color:#1e293b;font-size:13.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .sv-source-title .dot{width:8px;height:8px;border-radius:50%;background:#4f7cff;flex-shrink:0}
 .sv-eps{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}
-.sv-ep{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;transition:all .15s}
-.sv-ep:hover{background:#eef2ff;border-color:#4f7cff}
-.sv-ep .ep-name{color:#374151}
-.sv-ep .ep-copy{background:none;border:none;cursor:pointer;color:#4f7cff;font-size:11px;padding:2px 4px;border-radius:3px}
+.sv-ep{display:flex;align-items:center;gap:4px;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;transition:all .15s}
+.sv-ep:hover{background:#eef2ff;border-color:#6366f1}
+.sv-ep .ep-name{color:#374151;cursor:pointer}
+.sv-ep .ep-play{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;cursor:pointer;font-size:11px;padding:4px 8px;border-radius:4px;flex-shrink:0;line-height:1}
+.sv-ep .ep-play:hover{opacity:.85}
+.sv-ep .ep-copy{background:none;border:none;cursor:pointer;color:#6366f1;font-size:11px;padding:4px 6px;border-radius:4px;flex-shrink:0}
 .sv-ep .ep-copy:hover{background:#e0e7ff}
 
 .sv-loading{text-align:center;padding:40px;color:#94a3b8;font-size:13px}
@@ -1757,6 +1759,8 @@ function renderSiteListView($sites)
     .sv-select{min-width:auto}
     .sv-table{font-size:12px}
     .sv-table th,.sv-table td{padding:8px 6px}
+    .sv-table td:nth-child(3),.sv-table td:nth-child(4){display:none}
+    .sv-table th:nth-child(3),.sv-table th:nth-child(4){display:none}
     .sv-table .sv-type{display:none}
     .sv-modal{max-width:100%;max-height:100%;border-radius:0}
     .sv-eps{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}
@@ -1875,12 +1879,13 @@ function svRenderResult(d){
     html += '</div></div>';
 
     html += '<div class="sv-table-wrap"><table class="sv-table"><thead><tr>'
-        + '<th>片名</th><th class="sv-type">类别</th><th>地区</th><th>年份</th><th>更新时间</th><th>详情</th>'
+        + '<th>缩略图</th><th>片名</th><th class="sv-type">类别</th><th>更新时间</th><th>详情</th>'
         + '</tr></thead><tbody>';
 
     items.forEach(function(it, i){
         const remarks = it.remarks ? '<span class="sv-badge">'+it.remarks+'</span>' : '';
         html += '<tr>'
+            + '<td>'+(it.pic?'<img src="'+svEscape(it.pic)+'" onerror="this.style.display=\'none\'" style="width:48px;height:68px;object-fit:cover;border-radius:4px;background:#f1f5f9;border:1px solid #e9d5ff;cursor:pointer" onclick="svOpenDetail('+i+')">':'<span style="color:#cbd5e1;font-size:11px">无图</span>')+'</td>'
             + '<td><span class="sv-name" onclick="svOpenDetail('+i+')">'+svEscape(it.name)+'</span> '
             + remarks + (it.sub ? '<span style="color:#f59e0b;font-size:11px"> '+svEscape(it.sub)+'</span>' : '') + '</td>'
             + '<td class="sv-type">'+svEscape(it.type)+'</td>'
@@ -1910,8 +1915,29 @@ function svOpenDetail(i){
     document.getElementById('sv-modal-title').textContent = it.name + (it.sub ? ' '+it.sub : '');
     let body = '';
 
-    // 基本信息
-    body += '<div class="sv-info-row">'
+    // 封面图 + 基本信息（两栏布局）
+    body += '<div style="display:flex;gap:14px;margin-bottom:14px">';
+    if(it.pic){
+        body += '<img src="'+svEscape(it.pic)+'" onerror="this.style.display=\'none\'" style="width:110px;height:155px;object-fit:cover;border-radius:8px;background:#f1f5f9;flex-shrink:0;border:1px solid #e9d5ff">';
+    }
+    body += '<div style="flex:1;min-width:0">';
+    body += '<div style="font-size:15px;font-weight:700;color:#1e293b;margin-bottom:6px">'+svEscape(it.name)+(it.sub?' <span style="color:#f59e0b;font-size:12px">'+svEscape(it.sub)+'</span>':'')+'</div>';
+    if(it.remarks) body += '<div style="margin-bottom:6px"><span class="sv-badge">'+svEscape(it.remarks)+'</span></div>';
+    body += '<div class="sv-info-row">';
+    body += '<div class="sv-info-item"><b>类别：</b>'+svEscape(it.type)+'</div>';
+    body += '<div class="sv-info-item"><b>地区：</b>'+svEscape(it.area)+'</div>';
+    body += '<div class="sv-info-item"><b>年份：</b>'+svEscape(it.year)+'</div>';
+    body += '<div class="sv-info-item"><b>更新：</b>'+svEscape(it.time)+'</div>';
+    body += '</div>';
+    body += '</div></div>';
+
+    // 导演/主演/简介（单独行）
+    if(it.actor)    body += '<div class="sv-info-item" style="margin-bottom:4px"><b>主演：</b>'+svEscape(it.actor)+'</div>';
+    if(it.director) body += '<div class="sv-info-item" style="margin-bottom:4px"><b>导演：</b>'+svEscape(it.director)+'</div>';
+    if(it.content)  body += '<div class="sv-desc">'+svEscape(it.content)+'</div>';
+
+    // 基本信息（保留兼容）
+    body += '<div class="sv-info-row" style="display:none">'
         + '<div class="sv-info-item"><b>类别：</b>'+svEscape(it.type)+'</div>'
         + '<div class="sv-info-item"><b>地区：</b>'+svEscape(it.area)+'</div>'
         + '<div class="sv-info-item"><b>年份：</b>'+svEscape(it.year)+'</div>'
@@ -1926,14 +1952,17 @@ function svOpenDetail(i){
     if(sources.length === 0){
         body += '<div style="color:#f59e0b;padding:12px;background:#fffbeb;border-radius:6px">⚠️ 这个资源站没有返回可播放的源链接（可能需要先保存到苹果CMS 再调用）</div>';
     } else {
-        body += '<div style="font-size:12px;color:#94a3b8;margin-bottom:10px">📺 共 '+sources.length+' 个播放源，点击集数旁 📋 复制播放链接</div>';
+        body += '<div style="font-size:12px;color:#94a3b8;margin-bottom:10px">📺 共 '+sources.length+' 个播放源，点击 ▶ 直接播放，点击 📋 复制链接</div>';
         sources.forEach(function(src, si){
             body += '<div class="sv-source">'
                 + '<div class="sv-source-title"><span class="dot"></span>'+svEscape(src.name)+' <span style="color:#94a3b8;font-weight:normal;font-size:11px">('+(src.episodes.length)+' 集)</span></div>'
                 + '<div class="sv-eps">';
             src.episodes.forEach(function(ep){
-                body += '<div class="sv-ep"><span class="ep-name">'+svEscape(ep.name)+'</span>'
-                    + '<button class="ep-copy" onclick="svCopy(this, '+JSON.stringify(ep.url)+')" title="复制链接">📋</button></div>';
+                body += '<div class="sv-ep" data-url="'+svEscape(ep.url.replace(/"/g,'&quot;'))+'">
+                    <span class="ep-name" onclick="svPlayFromEl(this.parentElement)">▶</span>
+                    <span class="ep-name" style="flex:1;padding-left:4px">'+svEscape(ep.name)+'</span>
+                    <button class="ep-copy" onclick="svCopy(this.parentElement.dataset.url)" title="复制链接">📋</button>
+                    <button class="ep-play" onclick="svPlayFromEl(this.parentElement)" title="播放">▶</button></div>;
             });
             body += '</div></div>';
         });
@@ -1989,6 +2018,22 @@ function svCopyFallback(btn, url){
         toast('复制失败：'+e.message, 'warn');
     }
     setTimeout(function(){ btn.textContent='📋'; btn.style.color='#4f7cff'; }, 1500);
+}
+
+// 播放: 跳 /play.php?u=<base64url 代理转发>（也可直接跳 /player/?u= 用 lgzym3u8 播放）
+function svPlay(url, name){
+    if(!url){ toast('没有播放地址','warn'); return; }
+    // 用 base64url 加密 URL 传给 play.php（代理转发，隐藏真实源）
+    const b64 = btoa(unescape(encodeURIComponent(url))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/g,'');
+    const playPath = 'player/index.php?u=' + b64;  // 用 lgzym3u8 播放器
+    // 在新窗口打开，或当前窗口打开
+    window.open(playPath, '_blank');
+    toast('正在打开播放页…');
+}
+function svPlayFromEl(el){
+    const url = el.dataset.url || el.getAttribute('data-url');
+    const name = el.querySelector('.ep-name')?.textContent || '';
+    svPlay(url, name);
 }
 
 function svEscape(s){

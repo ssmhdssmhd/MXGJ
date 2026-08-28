@@ -10,7 +10,7 @@
  *       /player/?u=<base64url 加密地址>  （与表面播放链接同款加密，可作播放入口）
  */
 
-require __DIR__ . '/../lib/bootstrap.php';
+require_once __DIR__ . '/../lib/bootstrap.php';
 
 // 读取播放地址（优先明文 url，其次 base64url 加密的 u）
 $playUrl = trim((string)($_GET['url'] ?? ''));

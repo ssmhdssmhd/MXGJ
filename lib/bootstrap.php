@@ -1,4 +1,7 @@
 <?php
+// 防重复加载（允许 api.php → index.php 链路内 bootstrap 不重复声明）
+if (defined("MXGJ_BOOTSTRAP_LOADED")) return;
+define("MXGJ_BOOTSTRAP_LOADED", true);
 /**
  * 沫兮官替系统 - 公共引导文件
  *
@@ -12,7 +15,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.16.9');
+define('MXGJ_VERSION', '1.17.0');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
