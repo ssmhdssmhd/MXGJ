@@ -632,100 +632,44 @@ switch ($ACTION) {
             ],
         ]);
 
-    case 'search_site_api':
-        // 🔍 资源站查看：直接调苹果CMS videolist 接口，返回搜索结果 + 播放源 + 集数链接
-        $idx   = (int)($_POST['idx'] ?? -1);
-        $wd    = trim((string)($_POST['wd'] ?? ''));
-        $pg    = max(1, (int)($_POST['pg'] ?? 1));
-        $limit = min(50, max(1, (int)($_POST['limit'] ?? 20)));
-
-        if ($idx < 0) mxgj_json_out(['ok' => false, 'msg' => '请先选择一个资源站']);
+    case 'fetch_site_list':
+        // 🔍 资源站查看：给定资源站 index + 关键词 → 测试搜索（遍历集数 1-3）
+        $idx = (int)($_POST['idx'] ?? -1);
+        $wd  = trim((string)($_POST['wd'] ?? ''));
+        if ($idx < 0) mxgj_json_out(['ok' => false, 'msg' => '缺少 idx']);
         $sites = mxgj_sites();
         if (!isset($sites[$idx])) mxgj_json_out(['ok' => false, 'msg' => '资源站不存在（已被删除）']);
-        if ($wd === '') mxgj_json_out(['ok' => false, 'msg' => '请输入搜索关键词']);
+        if ($wd === '') mxgj_json_out(['ok' => false, 'msg' => '请输入搜索关键词（剧名）']);
 
-        $site     = $sites[$idx];
-        $template = $site['template'] ?? ($site['url'] ?? '');
-        if (empty($template)) mxgj_json_out(['ok' => false, 'msg' => '该资源站无可用 URL 模板']);
+        $site = $sites[$idx];
+        $timeout = (int)(mxgj_settings()['timeout'] ?? 10);
 
-        // 构建请求 URL
-        $url = str_replace('%u', urlencode($wd), $template);
-        if (strpos($url, 'ac=videolist') !== false) {
-            $url .= (strpos($url, '?') === false ? '?' : '&') . "pg={$pg}&limit={$limit}";
-        }
-
-        $timeout = max(3, (int)(mxgj_settings()['timeout'] ?? 15));
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => $timeout,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-            CURLOPT_REFERER        => 'https://test.com/',
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
-        ]);
-        mxgj_apply_proxy($ch, $url);
-        $body     = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr  = curl_error($ch);
-        curl_close($ch);
-
-        if ($body === false)  mxgj_json_out(['ok' => false, 'msg' => '请求失败：' . ($curlErr ?: '网络错误')]);
-        if ($httpCode !== 200) mxgj_json_out(['ok' => false, 'msg' => "HTTP {$httpCode}"]);
-
-        $data = json_decode($body, true);
-        if (!$data) mxgj_json_out(['ok' => false, 'msg' => '返回内容不是有效 JSON', 'raw' => substr($body, 0, 200)]);
-
-        $list  = $data['list'] ?? [];
-        $items = [];
-        foreach ($list as $v) {
-            // 解析播放源 + 集数链接
-            $sources = [];
-            $pf = $v['vod_play_from'] ?? '';
-            $pu = $v['vod_play_url'] ?? '';
-            if ($pf && $pu) {
-                $names = explode('$$$', $pf);
-                $urls  = explode('$$$', $pu);
-                foreach ($names as $ni => $name) {
-                    if (!isset($urls[$ni])) continue;
-                    $episodes = [];
-                    foreach (explode('#', $urls[$ni]) as $part) {
-                        $kv = explode('$', $part, 2);
-                        if (count($kv) === 2 && trim($kv[1]) !== '') {
-                            $episodes[] = ['name' => trim($kv[0]), 'url' => trim($kv[1])];
-                        }
-                    }
-                    if ($episodes) {
-                        $sources[] = ['name' => trim($name), 'episodes' => $episodes];
-                    }
-                }
+        // 先测集数 1-5，收集结果
+        $results = [];
+        $errors  = [];
+        for ($ep = 1; $ep <= 5; $ep++) {
+            $res = SiteSearcher::search([$site], $wd, $ep, $timeout);
+            if (!empty($res['url'])) {
+                $results[] = [
+                    'episode' => $ep,
+                    'url'     => $res['url'],
+                    'site'    => $res['site'] ?? '',
+                    'code'    => $res['code'],
+                ];
+            } else {
+                $errors[] = ['episode' => $ep, 'msg' => $res['msg'] ?? ''];
             }
-            $items[] = [
-                'id'        => $v['vod_id'] ?? 0,
-                'name'      => $v['vod_name'] ?? '',
-                'sub'       => $v['vod_sub'] ?? '',
-                'remarks'   => $v['vod_remarks'] ?? '',
-                'pic'       => $v['vod_pic'] ?? '',
-                'type'      => $v['type_name'] ?? '',
-                'area'      => $v['vod_area'] ?? '',
-                'year'      => $v['vod_year'] ?? '',
-                'director'  => $v['vod_director'] ?? '',
-                'actor'     => $v['vod_actor'] ?? '',
-                'time'      => $v['vod_time'] ?? '',
-                'content'   => $v['vod_content'] ?? '',
-                'total'     => $v['vod_total'] ?? 0,
-                'sources'   => $sources,
-            ];
         }
 
         mxgj_json_out([
-            'ok'        => true,
-            'site_name' => $site['name'] ?? '',
-            'search_url'=> $url,
-            'total'     => count($items),
-            'pg'        => $pg,
-            'items'     => $items,
+            'ok'         => !empty($results),
+            'site_name'  => $site['name'] ?? '',
+            'template'   => $site['template'] ?? ($site['url'] ?? ''),
+            'search_url' => str_replace('%u', urlencode($wd), $site['template'] ?? ($site['url'] ?? '')),
+            'results'    => $results,
+            'errors'     => $errors,
+            'count_ok'   => count($results),
+            'count_err'  => count($errors),
         ]);
 
     default:
@@ -1652,280 +1596,161 @@ function renderSitesForm($sites)
 
 function renderSiteListView($sites)
 {
-    $enabledSites = array_filter($sites, function($s) { return !empty($s['enabled']); });
-    $siteOptions  = [];
-    foreach ($sites as $i => $s) {
-        $siteOptions[$i] = ($s['name'] ?? '未命名') . (!empty($s['enabled']) ? '' : ' [已禁用]');
-    }
+    $health = SiteHealth::status();  // 各站点健康状态
+    $settings = mxgj_settings();
     ?>
-<style>
-/* ====== 资源站查看 Tab 专用样式 ====== */
-.sv-toolbar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;align-items:center}
-.sv-select,.sv-input,.sv-btn{padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none;background:#fff}
-.sv-select{min-width:160px}
-.sv-input{flex:1;min-width:180px}
-.sv-input:focus,.sv-select:focus{border-color:#4f7cff;box-shadow:0 0 0 2px rgba(79,124,255,.15)}
-.sv-btn{cursor:pointer;border:none;color:#fff;background:#4f7cff;white-space:nowrap}
-.sv-btn:hover{background:#3b6ae6}
-.sv-btn:disabled{background:#94a3b8;cursor:not-allowed}
-.sv-btn-sec{background:#64748b}
-.sv-btn-sec:hover{background:#475569}
+    <div class="panel" style="padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+                <h2 style="margin:0;font-size:16px">🔍 资源站查看</h2>
+                <div style="font-size:12.5px;color:#9aa4bc;margin-top:4px">
+                    点击站点卡片可展开搜索测试 — 输入剧名关键词，系统会自动测试集数 1-5 的返回结果
+                </div>
+            </div>
+            <div style="font-size:13px;color:#9aa4bc">共 <?= count($sites) ?> 个站点</div>
+        </div>
 
-.sv-table-wrap{background:#fff;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden}
-.sv-table{width:100%;border-collapse:collapse;font-size:13px}
-.sv-table th{background:#f8fafc;text-align:left;padding:10px 12px;font-weight:600;color:#374151;border-bottom:1px solid #e2e8f0;font-size:12px}
-.sv-table td{padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569}
-.sv-table tr:last-child td{border-bottom:none}
-.sv-table tr:hover td{background:#f8fafc}
-.sv-table .sv-name{font-weight:600;color:#1e293b;cursor:pointer}
-.sv-table .sv-name:hover{color:#4f7cff;text-decoration:underline}
-.sv-table .sv-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:#eef2ff;color:#4f7cff}
-.sv-table .sv-type{color:#64748b}
-.sv-table .sv-time{color:#94a3b8;font-size:12px;white-space:nowrap}
-.sv-table .sv-detail-btn{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px}
-.sv-table .sv-detail-btn:hover{opacity:.9}
+        <?php if (empty($sites)): ?>
+            <div style="text-align:center;padding:40px;color:#9aa4bc">
+                <div style="font-size:36px;margin-bottom:10px">🌐</div>
+                <div>还没有配置资源站</div>
+                <a href="?tab=sites" style="display:inline-block;margin-top:14px;padding:8px 20px;background:#4f7cff;color:#fff;border-radius:6px;text-decoration:none;font-size:13px">去配置 →</a>
+            </div>
+        <?php else: ?>
 
-.sv-empty{text-align:center;padding:60px 20px;color:#94a3b8}
-.sv-empty .sv-emoji{font-size:48px;margin-bottom:12px}
-.sv-empty .sv-text{font-size:14px}
+        <div id="site-list-view" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
+            <?php foreach ($sites as $i => $s):
+                $h = $health[$i] ?? [];
+                $ok = !empty($h['ok']);
+                $enabled = !empty($s['enabled']);
+            ?>
+            <div class="site-view-card" data-idx="<?= $i ?>" style="
+                background:linear-gradient(135deg,#111927 0%,#0f172a 100%);
+                border:1px solid rgba(99,102,241,0.15);
+                border-radius:12px;
+                overflow:hidden;
+                transition:all .2s;
+                <?= !$enabled ? 'opacity:.55' : '' ?>
+            ">
+                <!-- 卡片头部 -->
+                <div style="padding:14px;cursor:pointer" onclick="toggleSiteCard(<?= $i ?>)">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                        <div style="flex:1;min-width:0">
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                                <span style="font-weight:600;font-size:14px;color:#fff"><?= htmlspecialchars($s['name'] ?? '未命名') ?></span>
+                                <?php if (!$enabled): ?><span style="background:#ef4444;color:#fff;font-size:10px;padding:1px 6px;border-radius:3px">禁用</span><?php endif; ?>
+                                <?php if ($ok): ?><span style="background:#10b981;color:#fff;font-size:10px;padding:1px 6px;border-radius:3px">● 可达</span><?php else: ?><span style="background:#f59e0b;color:#fff;font-size:10px;padding:1px 6px;border-radius:3px">● 待检测</span><?php endif; ?>
+                                <?php if (!empty($s['is_special'])): ?><span style="background:#6366f1;color:#fff;font-size:10px;padding:1px 6px;border-radius:3px">特殊站</span><?php endif; ?>
+                            </div>
+                            <div style="font-size:11.5px;color:#64748b;word-break:break-all;line-height:1.5">
+                                <?= htmlspecialchars($s['template'] ?? ($s['url'] ?? '')) ?>
+                            </div>
+                        </div>
+                        <span style="color:#64748b;font-size:14px;transition:transform .25s" class="chevron-<?= $i ?>">▶</span>
+                    </div>
+                </div>
 
-/* Modal */
-.sv-modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
-.sv-modal-mask.show{display:flex}
-.sv-modal{background:#fff;border-radius:12px;max-width:720px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-.sv-modal-head{padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
-.sv-modal-head h3{margin:0;font-size:16px;color:#1e293b;flex:1}
-.sv-modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:#64748b;padding:4px 8px;border-radius:4px}
-.sv-modal-close:hover{background:#f1f5f9}
-.sv-modal-body{padding:16px 20px;overflow-y:auto;flex:1}
-.sv-modal-foot{padding:12px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0}
+                <!-- 展开的测试区域（默认隐藏）-->
+                <div id="site-expand-<?= $i ?>" style="display:none;border-top:1px solid rgba(99,102,241,0.15);padding:14px;background:rgba(15,23,42,.6)">
+                    <!-- 健康状态 -->
+                    <div style="margin-bottom:12px;font-size:12px;color:#9aa4bc">
+                        <b>心跳：</b>
+                        <?php if (!empty($h['latency'])): ?>
+                            <?php if ($ok): ?>🟢 <?= (int)$h['latency'] ?>ms<?php else: ?>🔴 <?= htmlspecialchars($h['msg'] ?? '不可达') ?><?php endif; ?>
+                        <?php else: ?>
+                            ⚪ 未检测过
+                        <?php endif; ?>
+                    </div>
 
-.sv-info-row{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
-.sv-info-item{font-size:12.5px;color:#64748b}
-.sv-info-item b{color:#374151}
-.sv-desc{font-size:13px;color:#475569;line-height:1.7;margin-bottom:16px;background:#f8fafc;padding:12px;border-radius:8px}
-.sv-source{margin-bottom:14px}
-.sv-source-title{font-weight:600;color:#1e293b;font-size:13.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
-.sv-source-title .dot{width:8px;height:8px;border-radius:50%;background:#4f7cff;flex-shrink:0}
-.sv-eps{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}
-.sv-ep{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;transition:all .15s}
-.sv-ep:hover{background:#eef2ff;border-color:#4f7cff}
-.sv-ep .ep-name{color:#374151}
-.sv-ep .ep-copy{background:none;border:none;cursor:pointer;color:#4f7cff;font-size:11px;padding:2px 4px;border-radius:3px}
-.sv-ep .ep-copy:hover{background:#e0e7ff}
+                    <!-- 搜索模板 -->
+                    <div style="margin-bottom:12px;font-size:11.5px;color:#64748b;word-break:break-all">
+                        <b style="color:#9aa4bc">模板：</b>
+                        <code style="color:#a5b4fc"><?= htmlspecialchars($s['template'] ?? '') ?></code>
+                    </div>
 
-.sv-loading{text-align:center;padding:40px;color:#94a3b8;font-size:13px}
+                    <!-- 测试输入 -->
+                    <div style="display:flex;gap:8px;margin-bottom:10px">
+                        <input type="text" class="wd-input" placeholder="输入剧名关键词 如：斗罗大陆" style="flex:1;padding:8px 12px;background:#1a2236;border:1px solid #2a3550;border-radius:6px;color:#fff;font-size:13px;outline:none" onkeydown="if(event.key==='Enter')testSite(<?= $i ?>)">
+                        <button onclick="testSite(<?= $i ?>)" class="btn" style="padding:8px 14px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;white-space:nowrap">🔍 测试</button>
+                    </div>
 
-/* 手机适配 */
-@media (max-width: 768px){
-    .sv-toolbar{flex-direction:column;align-items:stretch}
-    .sv-select{min-width:auto}
-    .sv-table{font-size:12px}
-    .sv-table th,.sv-table td{padding:8px 6px}
-    .sv-table .sv-type{display:none}
-    .sv-modal{max-width:100%;max-height:100%;border-radius:0}
-    .sv-eps{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}
-}
-</style>
-
-<div class="panel" style="padding:16px">
-    <h2 style="margin:0 0 4px;font-size:16px;color:#1e293b">🔍 资源站查看</h2>
-    <p style="margin:0 0 14px;font-size:12.5px;color:#94a3b8">选一个资源站 → 搜索剧名 → 点详情看所有播放源和集数链接</p>
-
-    <!-- 工具栏 -->
-    <div class="sv-toolbar">
-        <select class="sv-select" id="sv-site">
-            <option value="-1">-- 选择资源站 --</option>
-            <?php foreach ($siteOptions as $i => $name): ?>
-                <option value="<?= $i ?>" <?= empty($sites[$i]['enabled']) ? 'disabled' : '' ?>>
-                    <?= htmlspecialchars($name) ?>
-                </option>
+                    <!-- 结果区域 -->
+                    <div id="site-result-<?= $i ?>" style="font-size:12px"></div>
+                </div>
+            </div>
             <?php endforeach; ?>
-        </select>
-        <input class="sv-input" id="sv-wd" type="text" placeholder="输入剧名关键词，如：斗罗大陆" onkeydown="if(event.key==='Enter')svSearch()">
-        <button class="sv-btn" onclick="svSearch()">🔍 搜索</button>
-        <button class="sv-btn sv-btn-sec" onclick="svReset()">重置</button>
+        </div>
+
+        <?php endif; ?>
     </div>
 
-    <!-- 搜索结果 -->
-    <div id="sv-result">
-        <div class="sv-empty">
-            <div class="sv-emoji">🎬</div>
-            <div class="sv-text">选择一个资源站，输入剧名开始搜索吧</div>
-        </div>
-    </div>
-</div>
-
-<!-- 详情弹窗 -->
-<div class="sv-modal-mask" id="sv-modal" onclick="if(event.target===this)svCloseModal()">
-    <div class="sv-modal">
-        <div class="sv-modal-head">
-            <h3 id="sv-modal-title">视频详情</h3>
-            <button class="sv-modal-close" onclick="svCloseModal()">✕</button>
-        </div>
-        <div class="sv-modal-body" id="sv-modal-body">
-            <div class="sv-loading">加载中...</div>
-        </div>
-        <div class="sv-modal-foot">
-            <button class="sv-btn sv-btn-sec" onclick="svCloseModal()">关闭</button>
-        </div>
-    </div>
-</div>
-
-<script>
-let svCurrentSite = -1;
-let svCurrentPg = 1;
-let svCurrentWd = '';
-let svTotal = 0;
-
-function svSearch(pg){
-    const idx = parseInt(document.getElementById('sv-site').value);
-    const wd  = document.getElementById('sv-wd').value.trim();
-    if(idx < 0){ toast('请先选择一个资源站','warn'); return; }
-    if(!wd){ toast('请输入剧名关键词','warn'); document.getElementById('sv-wd').focus(); return; }
-
-    svCurrentSite = idx;
-    svCurrentWd = wd;
-    svCurrentPg = pg || 1;
-
-    const box = document.getElementById('sv-result');
-    box.innerHTML = '<div class="sv-loading">⏳ 正在请求资源站，请稍候...</div>';
-
-    const fd = new FormData();
-    fd.append('action','search_site_api');
-    fd.append('idx', idx);
-    fd.append('wd', wd);
-    fd.append('pg', svCurrentPg);
-    fd.append('limit', 20);
-
-    fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(function(d){
-        svRenderResult(d);
-    }).catch(function(e){
-        box.innerHTML = '<div class="sv-empty"><div class="sv-emoji">😵</div><div class="sv-text">请求失败：'+e+'</div></div>';
-    });
-}
-
-function svRenderResult(d){
-    const box = document.getElementById('sv-result');
-    if(!d.ok){
-        box.innerHTML = '<div class="sv-empty"><div class="sv-emoji">😶</div><div class="sv-text">'+(d.msg||'搜索失败')+'</div>'
-            + (d.search_url ? '<div style="margin-top:10px;font-size:11px;color:#cbd5e1;word-break:break-all">URL: '+d.search_url+'</div>' : '')
-            + '</div>';
-        return;
+    <script>
+    function toggleSiteCard(idx){
+        const el = document.getElementById('site-expand-'+idx);
+        const chv = document.querySelector('.chevron-'+idx);
+        if(el.style.display==='none'){
+            el.style.display='block';
+            if(chv) chv.style.transform='rotate(90deg)';
+        }else{
+            el.style.display='none';
+            if(chv) chv.style.transform='rotate(0)';
+        }
     }
-    const items = d.items || [];
-    svTotal = items.length;
-
-    if(items.length === 0){
-        box.innerHTML = '<div class="sv-empty"><div class="sv-emoji">🤷</div><div class="sv-text">没有找到"'+svCurrentWd+'"相关的视频</div></div>';
-        return;
-    }
-
-    let html = '<div style="margin-bottom:10px;font-size:12.5px;color:#64748b">🔎 '+d.site_name+' 共找到 <b style="color:#1e293b">'+items.length+'</b> 条结果'
-        + '<div style="float:right">';
-    if(svCurrentPg > 1) html += '<button class="sv-btn sv-btn-sec" style="padding:4px 10px;font-size:12px" onclick="svSearch('+(svCurrentPg-1)+')">← 上一页</button> ';
-    if(items.length === 20) html += '<button class="sv-btn" style="padding:4px 10px;font-size:12px" onclick="svSearch('+(svCurrentPg+1)+')">下一页 →</button>';
-    html += '</div></div>';
-
-    html += '<div class="sv-table-wrap"><table class="sv-table"><thead><tr>'
-        + '<th>片名</th><th class="sv-type">类别</th><th>地区</th><th>年份</th><th>更新时间</th><th>详情</th>'
-        + '</tr></thead><tbody>';
-
-    items.forEach(function(it, i){
-        const remarks = it.remarks ? '<span class="sv-badge">'+it.remarks+'</span>' : '';
-        html += '<tr>'
-            + '<td><span class="sv-name" onclick="svOpenDetail('+i+')">'+svEscape(it.name)+'</span> '
-            + remarks + (it.sub ? '<span style="color:#f59e0b;font-size:11px"> '+svEscape(it.sub)+'</span>' : '') + '</td>'
-            + '<td class="sv-type">'+svEscape(it.type)+'</td>'
-            + '<td>'+svEscape(it.area)+'</td>'
-            + '<td>'+svEscape(it.year)+'</td>'
-            + '<td class="sv-time">'+svEscape(it.time)+'</td>'
-            + '<td><button class="sv-detail-btn" onclick="svOpenDetail('+i+')">查看 →</button></td>'
-            + '</tr>';
-    });
-    html += '</tbody></table></div>';
-
-    // 缓存 items 给详情弹窗用
-    window._svItems = items;
-    box.innerHTML = html;
-}
-
-function svReset(){
-    document.getElementById('sv-site').value = -1;
-    document.getElementById('sv-wd').value = '';
-    document.getElementById('sv-result').innerHTML = '<div class="sv-empty"><div class="sv-emoji">🎬</div><div class="sv-text">选择一个资源站，输入剧名开始搜索吧</div></div>';
-}
-
-function svOpenDetail(i){
-    const it = window._svItems[i];
-    if(!it) return;
-
-    document.getElementById('sv-modal-title').textContent = it.name + (it.sub ? ' '+it.sub : '');
-    let body = '';
-
-    // 基本信息
-    body += '<div class="sv-info-row">'
-        + '<div class="sv-info-item"><b>类别：</b>'+svEscape(it.type)+'</div>'
-        + '<div class="sv-info-item"><b>地区：</b>'+svEscape(it.area)+'</div>'
-        + '<div class="sv-info-item"><b>年份：</b>'+svEscape(it.year)+'</div>'
-        + '<div class="sv-info-item"><b>更新：</b>'+svEscape(it.time)+'</div>'
-        + '</div>';
-    if(it.actor)    body += '<div class="sv-info-item" style="margin-bottom:6px"><b>主演：</b>'+svEscape(it.actor)+'</div>';
-    if(it.director) body += '<div class="sv-info-item" style="margin-bottom:6px"><b>导演：</b>'+svEscape(it.director)+'</div>';
-    if(it.content)  body += '<div class="sv-desc">'+svEscape(it.content)+'</div>';
-
-    // 播放源列表
-    const sources = it.sources || [];
-    if(sources.length === 0){
-        body += '<div style="color:#f59e0b;padding:12px;background:#fffbeb;border-radius:6px">⚠️ 这个资源站没有返回可播放的源链接（可能需要先保存到苹果CMS 再调用）</div>';
-    } else {
-        body += '<div style="font-size:12px;color:#94a3b8;margin-bottom:10px">📺 共 '+sources.length+' 个播放源，点击集数旁 📋 复制播放链接</div>';
-        sources.forEach(function(src, si){
-            body += '<div class="sv-source">'
-                + '<div class="sv-source-title"><span class="dot"></span>'+svEscape(src.name)+' <span style="color:#94a3b8;font-weight:normal;font-size:11px">('+(src.episodes.length)+' 集)</span></div>'
-                + '<div class="sv-eps">';
-            src.episodes.forEach(function(ep){
-                body += '<div class="sv-ep"><span class="ep-name">'+svEscape(ep.name)+'</span>'
-                    + '<button class="ep-copy" onclick="svCopy(this, '+JSON.stringify(ep.url)+')" title="复制链接">📋</button></div>';
-            });
-            body += '</div></div>';
+    function testSite(idx){
+        const card = document.querySelector('.site-view-card[data-idx="'+idx+'"]');
+        if(!card) return;
+        const input = card.querySelector('.wd-input');
+        const wd = input.value.trim();
+        if(!wd){input.focus();return;}
+        const box = document.getElementById('site-result-'+idx);
+        box.innerHTML = '<div style="color:#9aa4bc;padding:8px 0">⏳ 测试中...（集数 1-5）</div>';
+        const fd = new FormData();
+        fd.append('action','fetch_site_list');
+        fd.append('idx',idx);
+        fd.append('wd',wd);
+        fetch('admin.php',{method:'POST',body:fd}).then(r=>r.json()).then(function(d){
+            let html = '';
+            if(!d.ok && d.results.length===0){
+                html = '<div style="color:#f87171;padding:10px;background:rgba(239,68,68,.1);border-radius:6px">❌ '+(d.msg||'没有返回结果')+'</div>';
+                if(d.errors && d.errors.length){
+                    html += '<div style="margin-top:8px;color:#64748b;font-size:11px">'+d.errors.length+' 个集数失败</div>';
+                }
+            }else{
+                html += '<div style="color:#4ade80;padding:8px 10px;background:rgba(74,222,128,.1);border-radius:6px;margin-bottom:10px">✅ 成功 '+d.count_ok+' 集'+(d.count_err?'，'+d.count_err+' 集失败':'')+'</div>';
+                html += '<div style="max-height:260px;overflow-y:auto">';
+                d.results.forEach(function(r){
+                    html += '<div style="padding:8px 10px;background:#0c111d;border:1px solid #1f2940;border-radius:6px;margin-bottom:6px;font-size:12px">';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+                    html += '<span style="color:#fbbf24;font-weight:600">第 '+r.episode+' 集</span>';
+                    html += '<button onclick="copyText(''+r.url.replace(/'/g,"\'")+'')" style="background:#22c55e;border:none;color:#fff;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">📋 复制</button>';
+                    html += '</div>';
+                    html += '<a href="'+r.url+'" target="_blank" style="color:#7fc1ff;text-decoration:none;word-break:break-all;font-size:11px;display:block">'+r.url+'</a>';
+                    html += '</div>';
+                });
+                html += '</div>';
+            }
+            if(d.search_url){
+                html += '<div style="margin-top:10px;font-size:11px;color:#64748b">';
+                html += '<b>搜索链接：</b><code style="color:#a5b4fc;word-break:break-all">'+d.search_url+'</code>';
+                html += '</div>';
+            }
+            box.innerHTML = html;
+        }).catch(function(e){
+            box.innerHTML = '<div style="color:#f87171;padding:8px">❌ 请求失败: '+e+'</div>';
         });
     }
-
-    document.getElementById('sv-modal-body').innerHTML = body;
-    document.getElementById('sv-modal').classList.add('show');
-}
-
-function svCloseModal(){
-    document.getElementById('sv-modal').classList.remove('show');
-}
-
-function svCopy(btn, url){
-    btn.textContent = '✅';
-    btn.style.color = '#10b981';
-    navigator.clipboard.writeText(url).then(function(){
-        setTimeout(function(){
-            btn.textContent = '📋';
-            btn.style.color = '#4f7cff';
-        }, 800);
-    });
-}
-
-function svEscape(s){
-    if(!s) return '';
-    return String(s).replace(/[&<>"']/g, function(c){
-        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-    });
-}
-
-// 点击遮罩关闭 + ESC 关闭
-document.addEventListener('keydown', function(e){
-    if(e.key === 'Escape') svCloseModal();
-});
-</script>
+    function copyText(t){
+        navigator.clipboard.writeText(t).then(function(){
+            const toast = document.getElementById('toast');
+            toast.textContent='已复制 m3u8 链接';toast.style.display='block';
+            setTimeout(function(){toast.style.display='none'},1500);
+        });
+    }
+    </script>
 
     <?php
 }
+
 function renderMappingForm($mapping)
 {
     $titles  = $mapping['title'] ?? [];
