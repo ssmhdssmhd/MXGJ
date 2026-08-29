@@ -24,6 +24,11 @@ define('MXGJ_CONFIG', MXGJ_ROOT . '/config');
 define('MXGJ_DATA', MXGJ_ROOT . '/data');
 define('MXGJ_CACHE', MXGJ_DATA . '/cache');
 
+// 播放器目录（苹果CMS10 MacPlayer 兼容后台）
+define('MXGJ_PLAYER', MXGJ_ROOT . '/player');
+define('MXGJ_PLAYER_DATA', MXGJ_PLAYER . '/data');
+define('MXGJ_PLAYER_FILE', MXGJ_PLAYER_DATA . '/players.json');
+
 // 错误日志路径（此时 MXGJ_DATA 已可用）
 @ini_set('error_log', MXGJ_DATA . '/php_errors.log');
 
@@ -491,4 +496,61 @@ function mxgj_purge_runtime(): array
     $cleaned['cron'] = 'cron_mapping.log';
 
     return $cleaned;
+}
+
+/**
+ * 获取全部播放器列表（静态缓存，一次请求内只读一次文件）
+ */
+function mxgj_players(): array
+{
+    static $players = null;
+    if ($players === null) {
+        $data = mxgj_read_json(MXGJ_PLAYER_FILE);
+        $players = isset($data['players']) && is_array($data['players']) ? $data['players'] : [];
+    }
+    return $players;
+}
+
+/**
+ * 获取默认播放器（优先 is_default=true 且 enabled，否则第一个启用的）
+ */
+function mxgj_default_player(): ?array
+{
+    $players = mxgj_players();
+    foreach ($players as $p) {
+        if (!empty($p['enabled']) && !empty($p['is_default'])) {
+            return $p;
+        }
+    }
+    foreach ($players as $p) {
+        if (!empty($p['enabled'])) {
+            return $p;
+        }
+    }
+    return $players[0] ?? null;
+}
+
+/**
+ * 按 ID 或 player_code 获取播放器
+ */
+function mxgj_get_player($key): ?array
+{
+    $players = mxgj_players();
+    foreach ($players as $p) {
+        if ((is_int($key) && (int)($p['id'] ?? 0) === $key)
+            || (is_string($key) && $p['player_code'] === $key)) {
+            return $p;
+        }
+    }
+    return null;
+}
+
+/**
+ * 保存播放器列表到 players.json
+ */
+function mxgj_save_players(array $players): bool
+{
+    $dir = dirname(MXGJ_PLAYER_FILE);
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    return mxgj_write_json(MXGJ_PLAYER_FILE, ['players' => array_values($players)]);
 }
