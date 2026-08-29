@@ -1977,11 +1977,11 @@ function svOpenDetail(i){
                 + '<div class="sv-source-title"><span class="dot"></span>'+svEscape(src.name)+' <span style="color:#94a3b8;font-weight:normal;font-size:11px">('+(src.episodes.length)+' 集)</span></div>'
                 + '<div class="sv-eps">';
             src.episodes.forEach(function(ep){
-                body += '<div class="sv-ep" data-url="'+svEscape(ep.url.replace(/"/g,'&quot;'))+'">
-                    <span class="ep-name" onclick="svPlayFromEl(this.parentElement)">▶</span>
-                    <span class="ep-name" style="flex:1;padding-left:4px">'+svEscape(ep.name)+'</span>
-                    <button class="ep-copy" onclick="svCopy(this.parentElement.dataset.url)" title="复制链接">📋</button>
-                    <button class="ep-play" onclick="svPlayFromEl(this.parentElement)" title="播放">▶</button></div>;
+                body += '<div class="sv-ep" data-url="'+svEscape(ep.url.replace(/"/g,'&quot;'))+'">'
+                    + '<span class="ep-name" onclick="svPlayFromEl(this.parentElement)">▶</span>'
+                    + '<span class="ep-name" style="flex:1;padding-left:4px">'+svEscape(ep.name)+'</span>'
+                    + '<button class="ep-copy" onclick="svCopy(this.parentElement.dataset.url)" title="复制链接">📋</button>'
+                    + '<button class="ep-play" onclick="svPlayFromEl(this.parentElement)" title="播放">▶</button></div>';
             });
             body += '</div></div>';
         });

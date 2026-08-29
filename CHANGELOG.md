@@ -1,5 +1,40 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.4] 2026-08-29 · 🐛 修复后台「资源站查看」选择站点后不加载的问题
+
+### 问题描述
+后台 → 资源站查看 → 选择资源站后页面无任何反应，Console 报 `SyntaxError: Invalid or unexpected token`，导致 `svSearch`、`svRenderResult`、`svOpenDetail` 等所有前端函数未定义。
+
+### 根因
+`admin.php` 第 1980 行附近，PHP heredoc/echo 模板输出的 JavaScript 单引号字符串内直接包含了**多行真实换行符**（`svOpenDetail` 函数构建播放源集数 `<div class="sv-ep">` 的 body 拼接语句跨了 5 行）。PHP 输出时换行符原样进入 JS 字符串，浏览器 JS 解析器看到单引号内有未转义的字面换行 → 立即抛出 SyntaxError → 整个 `<script>` 块中断 → 后续所有函数定义失效。
+
+### 修复方案
+将 `admin.php:1979-1984` 的多行字符串拼接（单引号内直接换行）改为**单行 `+` 连接的独立字符串常量**：
+
+```javascript
+// 修复前：单引号内包含真实换行 → SyntaxError
+body += '<div class="sv-ep" data-url="...">'
+                    '<span class="ep-name"...'
+                    '<span class="ep-name"...'
+                    '<button class="ep-copy"...'
+                    '<button class="ep-play"...';
+
+// 修复后：每行一个完整的 '...' 常量 + 连接符
+body += '<div class="sv-ep" data-url="'+svEscape(ep.url.replace(/"/g,'&quot;'))+'">'
+    + '<span class="ep-name" onclick="svPlayFromEl(this.parentElement)">▶</span>'
+    + '<span class="ep-name" style="flex:1;padding-left:4px">'+svEscape(ep.name)+'</span>'
+    + '<button class="ep-copy" onclick="svCopy(this.parentElement.dataset.url)" title="复制链接">📋</button>'
+    + '<button class="ep-play" onclick="svPlayFromEl(this.parentElement)" title="播放">▶</button></div>';
+```
+
+### 端到端回归测试 ✅
+- JS 语法验证：`node --check` 通过，0 错误
+- 浏览器 Console：0 error / 0 warning（仅调试 log）
+- 选择西瓜资源站 → 自动加载 20 条最新资源 ✅
+- 输入"斗罗大陆"搜索 → 返回 13 条匹配结果 ✅
+- 点击详情弹窗 → 正常显示 2 个播放源 + 168 集列表 + 播放/复制按钮 ✅
+- 切换蓝光资源站 → 同样流程正常 ✅
+
 ## [v1.17.2] 2026-08-28 · App 接口 key 参数前置 + 完整 key 鉴权
 
 ### 核心改动
