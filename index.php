@@ -129,21 +129,46 @@ $sites    = mxgj_sites();
 $now      = time();
 
 // 5. 缓存命中（相同 剧名+集数）
-$cacheKey    = 'search:' . mxgj_lower($name) . ':' . $episode;
-$cached      = Cache::get($cacheKey);
-$cachedIsHit = false;
+//    缓存 key 加层区分：
+//      search:xxx:yyy          = 主池命中（含降级到平替的最终结果）
+//      search_fb:xxx:yyy       = 仅平替池命中（用 step2_retry_main 控制是否需要重查主池）
+$fallbackCfg = is_array($settings['fallback'] ?? null) ? $settings['fallback'] : [];
+$fallbackEnable  = !empty($fallbackCfg['enable']);
+$retryMainOnFb   = !empty($fallbackCfg['step2_retry_main']);
+
+$primaryKey = 'search:' . mxgj_lower($name) . ':' . $episode;
+$fallbackKey= 'search_fb:' . mxgj_lower($name) . ':' . $episode;
+$now        = time();
+
+$cached       = Cache::get($primaryKey);
+$cachedFromFb = false;
 if ($cached && isset($cached['code'], $cached['url']) && ($cached['time'] ?? 0) + (int)$settings['cache_ttl'] > $now) {
-    $cachedIsHit = true;
+    // 主缓存命中：如果是之前平替命中的且 step2_retry_main=true，这次再去主池试试
+    if (!empty($cached['from_fallback']) && $retryMainOnFb && $fallbackEnable) {
+        Logger::log('search', '缓存为平替命中，重新尝试主池：' . $name . ' 第' . $episode . '集', 'info');
+        $cached = null; // 让下面重新搜
+    } else {
+        $cachedFromFb = !empty($cached['from_fallback']);
+    }
+} else {
+    $cached = null;
 }
 
-if ($cachedIsHit) {
+if ($cached) {
     $result = $cached;
 } else {
-    // 6. 多线程搜索全部资源站
-    $result = SiteSearcher::search($sites, $name, $episode, (int)$settings['timeout']);
-    if ($result['code'] === 200) {
+    // 6. 🔄 两级搜索：主池 → 平替池（平替开关开启且主池未命中时自动降级）
+    $result = SiteSearcher::searchWithFallback(
+        $sites,
+        $name,
+        $episode,
+        (int)$settings['timeout'],
+        $fallbackCfg
+    );
+    if (($result['code'] ?? 0) === 200 && !empty($result['url'])) {
         $result['time'] = $now;
-        Cache::set($cacheKey, $result, (int)$settings['cache_ttl']);
+        // 写缓存：主池 / 平替池 命中都写主缓存，下次直接用
+        Cache::set($primaryKey, $result, (int)$settings['cache_ttl']);
     }
 }
 
@@ -174,6 +199,9 @@ $vars = [
     'site_special' => $isSpecial,                     // 同 is_special，兼容两种命名
     'player_url'   => $playerUrl,                     // 本地播放器入口 URL
     'raw_url'      => $rawPlayUrl,                    // 资源站原始返回地址（未套 proxy / 播放器）
+    // 🔄 平替命中标记
+    'from_fallback' => !empty($result['from_fallback']), // 是否命中了平替池
+    'from_pool'     => $result['from_pool'] ?? 'primary', // 命中的池：primary / fallback
 ];
 if ($debug) {
     $vars['debug'] = [

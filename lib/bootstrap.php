@@ -15,7 +15,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.4');
+define('MXGJ_VERSION', '1.17.5');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -123,22 +123,53 @@ function mxgj_settings(): array
                 'max_size_mb'  => 10,
                 'rate_limit'   => 0,
             ],
+            // 🔄 资源平替（资源互换 / 主池失败自动降级到备用池）
+            'fallback'       => [
+                'enable'           => false,  // 总开关（默认关闭，需手动开启）
+                'step2_retry_main' => true,   // 平替命中后，下次请求是否再尝试主池
+            ],
         ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
     }
     return $settings;
 }
 
 /**
- * 读取后台配置的资源站列表
+ * 读取后台配置的资源站列表（自动补全 role 字段）
  */
 function mxgj_sites(): array
 {
     static $sites = null;
     if ($sites === null) {
         $data = mxgj_read_json(MXGJ_CONFIG . '/sites.json');
-        $sites = isset($data['sites']) && is_array($data['sites']) ? $data['sites'] : [];
+        $raw  = isset($data['sites']) && is_array($data['sites']) ? $data['sites'] : [];
+        // 自动补全 role 字段：缺省为 primary
+        foreach ($raw as $i => $s) {
+            if (!isset($s['role']) || !in_array($s['role'], ['primary', 'fallback'], true)) {
+                $raw[$i]['role'] = 'primary';
+            }
+        }
+        $sites = $raw;
     }
     return $sites;
+}
+
+/**
+ * 按 role 筛选资源站
+ *
+ * @param array  $sites 资源站列表（mxgj_sites()）
+ * @param string $role  'primary'（主池） | 'fallback'（平替池） | 'all'（全部）
+ * @return array
+ */
+function mxgj_sites_by_role(array $sites, string $role = 'primary'): array
+{
+    if ($role === 'all') return $sites;
+    $out = [];
+    foreach ($sites as $s) {
+        if (($s['role'] ?? 'primary') === $role && !empty($s['enabled'])) {
+            $out[] = $s;
+        }
+    }
+    return $out;
 }
 
 /**
@@ -391,7 +422,8 @@ function mxgj_build_output(array $vars, bool $debug): array
     $fields = is_array($cfg['fields'] ?? null) ? $cfg['fields'] : [];
     // 系统值来源映射：扩展特殊资源站专用字段
     $fMap   = ['code', 'msg', 'url', 'title', 'episode', 'site', 'source', 'time',
-               'is_special', 'site_special', 'player_url', 'raw_url'];
+               'is_special', 'site_special', 'player_url', 'raw_url',
+               'from_fallback', 'from_pool'];
 
     $out = [];
     if ($fields === []) {

@@ -74,5 +74,9 @@
       "https://m.mgtv.com/b/857348/24330424.html",
       "https://www.bilibili.com/bangumi/play/ep431046"
     ]
+  },
+  "fallback": {
+    "enable": false,
+    "step2_retry_main": true
   }
 }

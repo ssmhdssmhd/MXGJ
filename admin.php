@@ -71,6 +71,9 @@ switch ($ACTION) {
             if (!in_array($method, ['post'], true)) $method = 'get';
             $parse = mxgj_lower(trim($s['parse'] ?? ''));
             if (!in_array($parse, ['json', 'text', 'apple'], true)) $parse = '';
+            // 🔄 role：primary=主用（默认） / fallback=平替
+            $role = mxgj_lower(trim($s['role'] ?? 'primary'));
+            if (!in_array($role, ['primary', 'fallback'], true)) $role = 'primary';
             $clean[] = [
                 'name'       => $name,
                 'url'        => $url,          // 兼容旧字段
@@ -78,6 +81,7 @@ switch ($ACTION) {
                 'proxy'      => trim($s['proxy'] ?? ''), // 跟随播放链接（中转前缀），仅该站启用
                 'enabled'    => array_key_exists('enabled', $s) ? !empty($s['enabled']) : true, // 启用开关（默认启用）
                 'is_special' => array_key_exists('is_special', $s) ? !empty($s['is_special']) : false, // 特殊资源站：返回 URL 自动套本地 /player/ 播放器
+                'role'       => $role,         // 🔄 资源站角色：primary=主用 / fallback=平替
                 // 特殊调用方法（可留空走默认）
                 'method'     => $method,       // get=GET（默认） / post=POST（特殊调用）
                 'headers'    => trim($s['headers'] ?? ''), // 自定义请求头：每行 `Key: Value`
@@ -208,6 +212,20 @@ switch ($ACTION) {
         mxgj_purge_runtime();
         // 更换密码后重登
         header('Location: admin.php?tab=settings&saved=1');
+        exit;
+
+    case 'save_fallback':
+        // 🔄 保存资源平替设置
+        $st = mxgj_settings();
+        $st['fallback'] = [
+            'enable'           => !empty($_POST['fb_enable']),
+            'step2_retry_main' => !empty($_POST['fb_retry_main']),
+        ];
+        mxgj_write_json($settingsFile, $st);
+        Logger::log('operation', '保存资源平替设置（' . ($st['fallback']['enable'] ? '已开启' : '已关闭') . '）', 'success');
+        Logger::log('config', '资源平替配置保存成功', 'success', $st['fallback']);
+        mxgj_purge_runtime();
+        header('Location: admin.php?tab=fallback&saved=1');
         exit;
 
     case 'heartbeat_now':
@@ -464,14 +482,20 @@ switch ($ACTION) {
         if (!in_array($method, ['post'], true)) $method = 'get';
         $parse = mxgj_lower(trim($_POST['parse'] ?? ''));
         if (!in_array($parse, ['json', 'text', 'apple'], true)) $parse = '';
+        // 🔄 role
+        $role = mxgj_lower(trim($_POST['role'] ?? 'primary'));
+        if (!in_array($role, ['primary', 'fallback'], true)) $role = 'primary';
         $entry['method']  = $method;
         $entry['headers'] = trim($_POST['headers'] ?? '');
         $entry['post']    = trim($_POST['post'] ?? '');
         $entry['parse']   = $parse;
+        $entry['role']    = $role;
         if ($hit !== null) {
             $entry['enabled']    = array_key_exists('enabled', $list[$hit]) ? !empty($list[$hit]['enabled']) : true; // 保留原启用状态
             $entry['proxy']      = (string)($list[$hit]['proxy'] ?? ''); // 保留跟随播放链接
             $entry['is_special'] = array_key_exists('is_special', $list[$hit]) ? !empty($list[$hit]['is_special']) : false; // 保留特殊站标记
+            // 🔄 保留原有 role（除非显式传参覆盖）
+            $entry['role']       = array_key_exists('role', $_POST) ? $role : ($list[$hit]['role'] ?? 'primary');
             // 保留原有特殊调用方法配置（弹窗未提交这些字段时不覆盖）
             $entry['method']     = (string)($list[$hit]['method'] ?? $entry['method']);
             $entry['headers']    = (string)($list[$hit]['headers'] ?? $entry['headers']);
@@ -866,6 +890,7 @@ function renderDashboard()
         'sites_view'  => ['label' => '资源站查看',   'icon' => '🔍', 'crumb' => '资源配置'],
         'app_api'     => ['label' => 'App接口',      'icon' => '🎬', 'crumb' => '资源配置'],
         'mapping'     => ['label' => '映射表',       'icon' => '🗂️', 'crumb' => '资源配置'],
+        'fallback'    => ['label' => '资源平替',     'icon' => '🔄', 'crumb' => '资源配置'],
         'update'      => ['label' => '在线更新',     'icon' => '⬆️', 'crumb' => '系统更新'],
         'logs'        => ['label' => '日志',         'icon' => '📋', 'crumb' => '日志中心'],
         'help'        => ['label' => '帮助',         'icon' => '❓', 'crumb' => '使用帮助'],
@@ -1052,6 +1077,7 @@ tr.out-row[draggable="true"]{transition:background .12s}
       <a class="nav-item <?= $tab==='sites_view'?'active':'' ?>" href="?tab=sites_view"><span class="icon">🔍</span><span>资源站查看</span></a>
       <a class="nav-item <?= $tab==='app_api'?'active':'' ?>" href="?tab=app_api"><span class="icon">🎬</span><span>App接口</span></a>
       <a class="nav-item <?= $tab==='mapping'?'active':'' ?>" href="?tab=mapping"><span class="icon">🗂️</span><span>映射表</span></a>
+      <a class="nav-item <?= $tab==='fallback'?'active':'' ?>" href="?tab=fallback"><span class="icon">🔄</span><span>资源平替</span></a>
     </div>
     <div class="nav-group">
       <div class="nav-group-title">系统</div>
@@ -1092,6 +1118,8 @@ tr.out-row[draggable="true"]{transition:background .12s}
 <?php renderAppApiForm($settings); ?>
 <?php elseif ($tab === 'mapping'): ?>
 <?php renderMappingForm($mapping); ?>
+<?php elseif ($tab === 'fallback'): ?>
+<?php renderFallbackForm($settings, $sites); ?>
 <?php elseif ($tab === 'update'): ?>
 <?php renderUpdateForm(); ?>
 <?php elseif ($tab === 'logs'): ?>
@@ -1335,12 +1363,13 @@ function renderSitesForm($sites)
                 </div>
             </div>
             <table id="site-tbl">
-                <tr><th style="width:110px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>特殊调用方法</th><th style="width:80px">特殊站</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
+                <tr><th style="width:110px">站点名称</th><th>搜索地址模板（含 %s / %u / %p）</th><th>跟随播放链接（中转前缀）</th><th>特殊调用方法</th><th style="width:100px">角色</th><th style="width:80px">特殊站</th><th style="width:60px">启用</th><th style="width:120px"></th></tr>
                 <?php if ($sites): foreach ($sites as $i => $s): ?>
                     <?php $sEnabled = !array_key_exists('enabled', $s) || !empty($s['enabled']); ?>
                     <?php $sMethod = mxgj_lower(trim($s['method'] ?? '')); ?>
                     <?php $sParse  = mxgj_lower(trim($s['parse'] ?? '')); ?>
                     <?php $sSpecial = !empty($s['is_special']); ?>
+                    <?php $sRole    = mxgj_lower(trim($s['role'] ?? 'primary')); ?>
                     <tr class="<?= $sEnabled ? '' : 'row-disabled' ?>">
                         <td><input type="text" name="sites[<?= $i ?>][name]" value="<?= htmlspecialchars($s['name']) ?>"></td>
                         <td><input type="text" name="sites[<?= $i ?>][template]" value="<?= htmlspecialchars($s['template']) ?>" onclick="this.select()"></td>
@@ -1358,6 +1387,12 @@ function renderSitesForm($sites)
                             </select>
                             <input type="text" name="sites[<?= $i ?>][headers]" value="<?= htmlspecialchars($s['headers'] ?? '') ?>" placeholder="自定义Header（每行 Key: Value）">
                             <input type="text" name="sites[<?= $i ?>][post]" value="<?= htmlspecialchars($s['post'] ?? '') ?>" placeholder="POST体（如 wd=%u&ep=%p）">
+                        </td>
+                        <td>
+                            <select name="sites[<?= $i ?>][role]" title="🔄 平替角色：主用=正常搜索，平替=主用失败才搜索">
+                                <option value="primary" <?= $sRole !== 'fallback' ? 'selected' : '' ?>>主用</option>
+                                <option value="fallback" <?= $sRole === 'fallback' ? 'selected' : '' ?>>平替</option>
+                            </select>
                         </td>
                         <td class="center">
                             <label class="toggle" title="开启后：该站返回的 URL 自动套 本地//player/ 播放器">
@@ -1387,6 +1422,12 @@ function renderSitesForm($sites)
                             <select name="sites[0][parse]"><option value="">自动</option><option value="json">JSON</option><option value="text">纯文本</option><option value="apple">苹果CMS</option></select>
                             <input type="text" name="sites[0][headers]" placeholder="自定义Header（每行 Key: Value）">
                             <input type="text" name="sites[0][post]" placeholder="POST体（如 wd=%u&ep=%p）">
+                        </td>
+                        <td>
+                            <select name="sites[0][role]" title="🔄 平替角色：主用=正常搜索，平替=主用失败才搜索">
+                                <option value="primary" selected>主用</option>
+                                <option value="fallback">平替</option>
+                            </select>
                         </td>
                         <td class="center"><input type="checkbox" name="sites[0][is_special]" value="1" title="特殊资源站：自动套本地播放器"></td>
                         <td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>
@@ -1438,6 +1479,8 @@ function renderSitesForm($sites)
                 '<input type="text" name="sites['+rowIndex+'][headers]" placeholder="自定义Header（每行 Key: Value）">'+
                 '<input type="text" name="sites['+rowIndex+'][post]" placeholder="POST体（如 wd=%u&ep=%p）">'+
             '</td>'+
+            '<td><select name="sites['+rowIndex+'][role]" title="🔄 平替角色：主用=正常搜索，平替=主用失败才搜索"><option value="primary" selected>主用</option><option value="fallback">平替</option></select></td>'+
+            '<td class="center"><input type="checkbox" name="sites['+rowIndex+'][is_special]" value="1" title="特殊资源站：自动套本地播放器"></td>'+
             '<td class="center"><input type="checkbox" checked disabled title="新站点默认启用"></td>'+
             '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
         tbl.appendChild(tr);rowIndex++;
@@ -2450,6 +2493,173 @@ function renderHelp()
         </div>
     </div>
     <?php
+}
+
+/**
+ * 🔄 资源平替 - 独立设置页面
+ *
+ * 思路：
+ *   - 资源站配置里可给每个站标记「主用」或「平替」（role 字段）
+ *   - 平时系统只用「主用」池搜索
+ *   - 当主用池全部未命中 → 若本页总开关已开启，自动降级到「平替」池再搜一次
+ *   - 平替是**独立的配置入口**，与心跳/轮训互不干扰
+ *
+ * @param array $settings 全局设置
+ * @param array $sites    资源站列表（mxgj_sites()，已含 role 字段）
+ */
+function renderFallbackForm($settings, $sites)
+{
+    $fb   = is_array($settings['fallback'] ?? null) ? $settings['fallback'] : [];
+    $enable        = !empty($fb['enable']);
+    $retryMain     = !empty($fb['step2_retry_main']);
+
+    // 分类站点
+    $primarySites = [];
+    $fallbackSites = [];
+    foreach ($sites as $s) {
+        $role = ($s['role'] ?? 'primary');
+        if ($role === 'fallback') {
+            $fallbackSites[] = $s;
+        } else {
+            $primarySites[] = $s;
+        }
+    }
+    $primaryEnabledCnt  = count(array_filter($primarySites,  fn($s) => !empty($s['enabled'])));
+    $fallbackEnabledCnt = count(array_filter($fallbackSites, fn($s) => !empty($s['enabled'])));
+    ?>
+<style>
+.fb-hero{background:linear-gradient(135deg,#4f7cff 0%,#8b5cf6 100%);color:#fff;border-radius:14px;padding:22px 26px;margin-bottom:18px;box-shadow:0 10px 30px rgba(79,124,255,.25);position:relative;overflow:hidden}
+.fb-hero::after{content:"🔄";position:absolute;right:18px;top:50%;transform:translateY(-50%);font-size:88px;opacity:.15}
+.fb-hero h2{font-size:18px;margin:0 0 6px}
+.fb-hero p{font-size:13px;opacity:.85;margin:0;line-height:1.7}
+.fb-stats{display:flex;gap:14px;margin-top:16px}
+.fb-stat{background:rgba(255,255,255,.18);backdrop-filter:blur(6px);border-radius:10px;padding:12px 18px;flex:1}
+.fb-stat b{display:block;font-size:28px}
+.fb-stat span{font-size:12px;opacity:.85}
+.fb-tip{background:#fefce8;border-left:3px solid #facc15;border-radius:6px;padding:12px 14px;font-size:13px;color:#713f12;line-height:1.7;margin-bottom:16px}
+.fb-switch{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8fafc;border-radius:10px;margin-bottom:10px;cursor:pointer;user-select:none;border:1px solid #e2e8f0;transition:border-color .15s}
+.fb-switch:hover{border-color:#4f7cff}
+.fb-switch label{flex:1;cursor:pointer;font-size:14px;font-weight:500}
+.fb-switch .fb-sub{display:block;font-size:12px;color:#64748b;margin-top:3px;font-weight:400}
+.fb-switch input[type=checkbox]{width:40px;height:20px;appearance:none;background:#cbd5e1;border-radius:20px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+.fb-switch input[type=checkbox]:checked{background:linear-gradient(135deg,#4f7cff,#8b5cf6)}
+.fb-switch input[type=checkbox]::after{content:"";position:absolute;width:16px;height:16px;background:#fff;border-radius:50%;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.fb-switch input[type=checkbox]:checked::after{left:22px}
+.fb-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;margin-left:6px}
+.fb-badge.on{background:#dcfce7;color:#166534}
+.fb-badge.off{background:#fee2e2;color:#991b1b}
+.fb-sites-table td small{color:#64748b}
+.fb-empty{text-align:center;padding:30px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;color:#64748b;font-size:13px}
+</style>
+
+<div class="fb-hero">
+    <h2>🔄 资源平替 · 智能降级</h2>
+    <p>主资源站无法返回结果时，自动启用「平替池」搜索。平时关闭，主池失败才生效。</p>
+    <div class="fb-stats">
+        <div class="fb-stat">
+            <b><?= $primaryEnabledCnt ?></b>
+            <span>主用资源站（启用）</span>
+        </div>
+        <div class="fb-stat">
+            <b><?= $fallbackEnabledCnt ?></b>
+            <span>平替资源站（启用）</span>
+        </div>
+        <div class="fb-stat">
+            <b><?= $enable ? '已开启' : '已关闭' ?></b>
+            <span>平替功能状态</span>
+        </div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>一、平替开关</h2>
+    <div class="fb-tip">
+        💡 <strong>设计理念：</strong>资源平替是 <strong>独立开关</strong>。平时完全不影响原系统，只有当「主用资源站全部搜索失败」且本开关开启时，才会自动去「平替资源站」再搜一次。这样即使平替资源站质量差，也不会拖累日常请求速度。
+    </div>
+    <form method="post" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='保存中...'">
+        <input type="hidden" name="action" value="save_fallback">
+        <label class="fb-switch">
+            <input type="checkbox" name="fb_enable" value="1" <?= $enable ? 'checked' : '' ?>>
+            <label for="fb_enable_check" style="cursor:pointer">
+                启用资源平替
+                <span class="fb-sub">主资源站全部搜索失败后，自动去平替资源站搜索作为兜底返回</span>
+            </label>
+        </label>
+        <label class="fb-switch">
+            <input type="checkbox" name="fb_retry_main" value="1" <?= $retryMain ? 'checked' : '' ?>>
+            <label for="fb_retry_check" style="cursor:pointer">
+                平替命中后，下次请求再尝试主池
+                <span class="fb-sub">避免主池只是临时故障却一直用平替。开关关闭则缓存期内一直用平替</span>
+            </label>
+        </label>
+        <div style="margin-top:16px;display:flex;gap:10px">
+            <button type="submit" class="btn">💾 保存平替设置</button>
+            <a class="btn" href="?tab=sites" style="text-decoration:none;background:#f1f5f9;color:#475569">→ 去资源站配置打标签</a>
+        </div>
+    </form>
+</div>
+
+<div class="panel">
+    <h2>二、主用资源站</h2>
+    <?php if ($primarySites === []): ?>
+        <div class="fb-empty">暂无主用资源站，请先去「资源站配置」添加</div>
+    <?php else: ?>
+    <table class="fb-sites-table">
+        <thead><tr><th style="width:44px"></th><th>资源站名称</th><th style="width:320px">模板</th><th style="width:80px">状态</th><th style="width:100px">角色</th></tr></thead>
+        <tbody>
+        <?php foreach ($primarySites as $s): ?>
+            <tr>
+                <td><?= !empty($s['enabled']) ? '🟢' : '⚪️' ?></td>
+                <td><?= htmlspecialchars($s['name'] ?? '未知') ?></td>
+                <td><small><?= htmlspecialchars(mb_substr($s['template'] ?? ($s['url'] ?? ''), 0, 60)) ?></small></td>
+                <td><?= !empty($s['enabled']) ? '<span class="fb-badge on">启用</span>' : '<span class="fb-badge off">禁用</span>' ?></td>
+                <td><span class="fb-badge on">主用</span></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php endif; ?>
+</div>
+
+<div class="panel">
+    <h2>三、平替资源站</h2>
+    <div style="margin-bottom:12px"><small style="color:#64748b">主用站全部未命中时，自动在这些资源站里搜索作为兜底返回。</small></div>
+    <?php if ($fallbackSites === []): ?>
+        <div class="fb-empty">
+            还没有标记任何「平替」资源站。<br>
+            <strong>去「资源站配置」编辑任意站点 → 将「角色」改为「平替」即可。</strong>
+        </div>
+    <?php else: ?>
+    <table class="fb-sites-table">
+        <thead><tr><th style="width:44px"></th><th>资源站名称</th><th style="width:320px">模板</th><th style="width:80px">状态</th><th style="width:100px">角色</th></tr></thead>
+        <tbody>
+        <?php foreach ($fallbackSites as $s): ?>
+            <tr>
+                <td><?= !empty($s['enabled']) ? '🟢' : '⚪️' ?></td>
+                <td><?= htmlspecialchars($s['name'] ?? '未知') ?></td>
+                <td><small><?= htmlspecialchars(mb_substr($s['template'] ?? ($s['url'] ?? ''), 0, 60)) ?></small></td>
+                <td><?= !empty($s['enabled']) ? '<span class="fb-badge on">启用</span>' : '<span class="fb-badge off">禁用</span>' ?></td>
+                <td><span class="fb-badge off">平替</span></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php endif; ?>
+</div>
+
+<div class="panel" style="border-left:4px solid #4f7cff">
+    <h2>💡 使用流程</h2>
+    <ol style="padding-left:22px;line-height:2;color:#374151;font-size:13px">
+        <li>进入「<a href="?tab=sites" style="color:#4f7cff;text-decoration:underline">资源站配置</a>」，给每个站点设置「角色」：<strong>主用</strong> 或 <strong>平替</strong>。默认为「主用」</li>
+        <li>把你认为最稳的几个站保留为「主用」，其他备用的站改为「平替」</li>
+        <li>回到本页面，开启 <strong>启用资源平替</strong> 开关，保存</li>
+        <li>平时请求只跑「主用池」，速度和之前完全一样</li>
+        <li>主用池全部未命中 → 自动去「平替池」再搜一次 → 命中即返回</li>
+        <li>API 返回值会多一个 <code>from_fallback</code> 字段，可感知本次是否走了平替</li>
+    </ol>
+</div>
+
+<?php
 }
 
 function renderSettingsForm($settings)

@@ -1,5 +1,54 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.5] 2026-08-29 · 🔄 资源平替 / 资源站互换（主池失败自动降级）
+
+### 背景与思路
+当用户的主资源站无法播放（接口返回空 / HTTP 错误 / 被风控限流）时，
+系统自动去「平替资源站」里再搜一次作为兜底返回。
+
+关键设计：
+- **平替是独立开关**：平时完全不影响原系统的性能与逻辑
+- **主用池 ≠ 平替池**：资源站配置里每个站多了一个 `role` 字段
+  - `primary`（默认）= 主用，正常参与搜索
+  - `fallback` = 平替，仅在主用池全部未命中时才参与
+- **两级缓存**：主池命中 / 平替命中 共享同一条缓存
+- **自动回主池重试**（`step2_retry_main`）：平替命中后，
+  下次请求会再次尝试主池，避免主池只是临时故障却一直用平替
+
+### 改动文件
+| 文件 | 改动 |
+|------|------|
+| `lib/bootstrap.php` | 版本号 1.17.4→1.17.5；settings 默认值新增 `fallback` 节；新增 `mxgj_sites_by_role()` 辅助函数；`mxgj_sites()` 自动补全 role 字段；`mxgj_build_output` fMap 注册 `from_fallback`/`from_pool` |
+| `lib/SiteSearcher.php` | 新增 `searchWithFallback()` 统一调度入口：主池 → 平替池 两级搜索，返回值带 `from_fallback`/`from_pool` 标记 |
+| `index.php` | 改用 `searchWithFallback()`；缓存支持平替命中后的自动回主池重试 |
+| `admin.php` | 侧边栏新增「资源平替」tab；`save_fallback` 保存接口；`renderFallbackForm` 全新 UI；资源站配置表格 + 新增动态行均增加「角色」下拉；`save_sites`/`save_site_one` 后端接口支持 role 字段 |
+| `config/settings.json` | 新增 `fallback: {enable:false, step2_retry_main:true}` 节（默认关闭） |
+| `config/sites.json` | 向后兼容（role 字段自动补 primary） |
+| `version.json` | 版本号 1.17.4→1.17.5 |
+
+### API 返回变化
+新增两个感知字段：
+```json
+{
+  "from_fallback": true,    // true=本次由平替池命中
+  "from_pool": "fallback"   // primary=主用池 / fallback=平替池
+}
+```
+
+### 使用步骤
+1. 进入「资源站配置」→ 给每个站设置角色（主用 / 平替）
+2. 进入「资源平替」→ 开启「启用资源平替」开关 → 保存
+3. 平时请求只跑主用池，速度与之前完全一样
+4. 主用池全部未命中 → 自动去平替池再搜一次
+
+### 向后兼容性 ✅
+- 旧 sites.json 没有 role 字段时，`mxgj_sites()` 自动补 primary
+- 旧 settings.json 没有 fallback 节时，bootstrap 默认值兜底（enable=false，相当于不启用平替）
+- 不开平替开关时，searchWithFallback 与 search 行为完全一致，无额外网络开销
+
+
+
+## [v1.17.4] 2026-08-29 · 🐛 修复后台「资源站查看」选择站点后不加载的问题
 ## [v1.17.4] 2026-08-29 · 🐛 修复后台「资源站查看」选择站点后不加载的问题
 
 ### 问题描述

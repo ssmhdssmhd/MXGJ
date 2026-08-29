@@ -9,6 +9,75 @@
 class SiteSearcher
 {
     /**
+     * 🔄 主池 → 平替池 两级搜索（资源平替统一调度）
+     *
+     * 流程：
+     *   1. 用 `mxgj_sites_by_role($sites, 'primary')` 过滤主池资源站，走多线程搜索
+     *   2. 主池全部失败 + 平替开关开启 + 存在平替资源站 → 再用 'fallback' 池搜索一次
+     *   3. 返回结构保持一致；命中平替时额外附加 from_fallback=true / from_pool='fallback'
+     *
+     * @param array  $sites   资源站列表（mxgj_sites()）
+     * @param string $title   剧名
+     * @param int    $episode 集数
+     * @param int    $timeout 单请求超时
+     * @param array  $fallbackCfg fallback 配置（mxgj_settings()['fallback']）
+     *
+     * @return array{code:int,url:string,site:string,msg:string,episode:int,from_fallback:bool,from_pool:string}
+     */
+    public static function searchWithFallback(
+        array $sites,
+        string $title,
+        int $episode,
+        int $timeout = 15,
+        array $fallbackCfg = []
+    ): array {
+        // 默认值（旧 config 未含 fallback 节时兜底）
+        $fallbackEnable = !empty($fallbackCfg['enable']);
+
+        // 主池搜索（兼容旧 sites：没有 role 字段的默认归入 primary）
+        $primaryPool = mxgj_sites_by_role($sites, 'primary');
+        $result = self::search($primaryPool, $title, $episode, $timeout);
+        $result['from_fallback'] = false;
+        $result['from_pool']     = 'primary';
+
+        // 主池命中 → 直接返回
+        if (($result['code'] ?? 0) === 200 && !empty($result['url'])) {
+            return $result;
+        }
+
+        // 平替未开启 → 返回主池结果
+        if (!$fallbackEnable) {
+            return $result;
+        }
+
+        // 平替池搜索
+        $fallbackPool = mxgj_sites_by_role($sites, 'fallback');
+        if ($fallbackPool === []) {
+            // 没有平替资源站，把原始 msg 补一下提示
+            $result['msg'] = ($result['msg'] ?? '') . '（平替已启用但未配置任何平替资源站）';
+            return $result;
+        }
+
+        Logger::log(
+            'search',
+            '主池未命中，启动平替池搜索：《' . $title . '》第' . $episode . '集',
+            'info',
+            ['pool_count' => count($fallbackPool)]
+        );
+
+        $fbResult = self::search($fallbackPool, $title, $episode, $timeout);
+        if (($fbResult['code'] ?? 0) === 200 && !empty($fbResult['url'])) {
+            $fbResult['from_fallback'] = true;
+            $fbResult['from_pool']     = 'fallback';
+            $fbResult['msg']           = 'success (from fallback)';
+            return $fbResult;
+        }
+
+        // 平替也失败 —— 返回主池原始结果（保留完整 msg）
+        return $result;
+    }
+
+    /**
      * 多线程搜索所有资源站
      *
      * @param array  $sites    资源站配置列表
