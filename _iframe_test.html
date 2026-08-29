@@ -1,0 +1,42 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>IFRAME 隔离测试</title>
+<style>
+body { background:#f0f0f0; padding:20px; font-family:sans-serif; }
+h2 { margin:10px 0; }
+.box { background:#fff; padding:10px; margin-bottom:30px; border-radius:8px; }
+#f1, #f2, #f3 { width:100%; aspect-ratio:16/9; border:1px solid #ddd; border-radius:8px; }
+</style></head><body>
+<h2>测试 1: 直接 iframe 嵌入 play.php（带 aspect-ratio）</h2>
+<div class="box" id="f1-wrap">
+<iframe id="f1" src="http://localhost:8080/player/play.php?code=lgzym3u8&url=https://lgvideo.xyz/player/caTBbS3v" allowfullscreen></iframe>
+</div>
+
+<h2>测试 2: admin.php 预览页面完整 iframe（模拟真实场景）</h2>
+<div class="box">
+<div style="width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;margin-top:12px" id="wrap2">
+<iframe style="width:100%;height:100%;border:0" src="http://localhost:8080/player/play.php?code=lgzym3u8&url=https://lgvideo.xyz/player/caTBbS3v" allowfullscreen></iframe>
+</div>
+</div>
+
+<h2>测试 3: 纯 100% 宽高（无 aspect-ratio）</h2>
+<div class="box" style="height:500px">
+<iframe id="f3" src="http://localhost:8080/player/play.php?code=lgzym3u8&url=https://lgvideo.xyz/player/caTBbS3v" allowfullscreen style="width:100%;height:100%;border:0"></iframe>
+</div>
+
+<script>
+// 记录每个 iframe 的加载状态
+['f1','wrap2>iframe','f3'].forEach((s,i)=>{
+    const el = document.querySelector(s);
+    if(el) {
+        el.addEventListener('load', () => {
+            const doc = el.contentDocument;
+            if(doc) {
+                const hasBar = !!doc.querySelector('.bar');
+                const hasPlayer = !!doc.querySelector('#player');
+                const playerHTML = doc.querySelector('#player')?.innerHTML?.substring(0,200) || '(空)';
+                console.log(`Test ${i+1} load: bar=${hasBar}, player=${hasPlayer}, playerHTML=${playerHTML}`);
+            }
+        });
+    }
+});
+</script>
+</body></html>
