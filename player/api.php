@@ -19,7 +19,14 @@ require_once __DIR__ . '/../lib/bootstrap.php';
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, Range');
+
+// 浏览器预检：直接返回 204
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
+    http_response_code(204);
+    header('Content-Length: 0');
+    exit;
+}
 
 // ====== App 接口开关 & key 鉴权 ======
 $_api = mxgj_settings()['app_api'] ?? [];
@@ -101,6 +108,9 @@ function mxgj_api_proxy_media(string $url): void
             if ($line === '') { $out[] = ''; continue; }
             if ($line[0] === '#') {
                 if (preg_match('/#EXT-X-(?:KEY|MAP):.*?URI="([^"]+)"/i', $line, $m)) {
+                    $abs = mxgj_api_resolve($m[1], $finalUrl);
+                    $line = str_replace('URI="' . $m[1] . '"', 'URI="' . $entry . mxgj_b64url($abs) . '"', $line);
+                } elseif (preg_match('/#EXT-X-MEDIA:.*?URI="([^"]+)"/i', $line, $m)) {
                     $abs = mxgj_api_resolve($m[1], $finalUrl);
                     $line = str_replace('URI="' . $m[1] . '"', 'URI="' . $entry . mxgj_b64url($abs) . '"', $line);
                 }

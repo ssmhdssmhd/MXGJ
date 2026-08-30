@@ -50,18 +50,18 @@
         ]
     },
     "app_api": {
-        "enable": false,
+        "enable": true,
         "require_key": false,
         "api_key": "",
         "player_type": "lgzym3u8",
-        "proxy_enable": false,
+        "proxy_enable": true,
         "cors": "*",
         "max_size_mb": 10,
         "rate_limit": 0
     },
     "fallback": {
         "enable": false,
-        "step2_retry_main": false
+        "step2_retry_main": true
     },
     "cron": {
         "key": "",

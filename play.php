@@ -16,6 +16,16 @@
 
 require_once __DIR__ . '/lib/bootstrap.php';
 
+// ====== CORS 头 + OPTIONS 预检（必须在参数校验之前，否则预检会被 400 挡掉）======
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
+header('Access-Control-Allow-Headers: Range, Content-Type');
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
+    http_response_code(204);
+    header('Content-Length: 0');
+    exit;
+}
+
 // 表面播放链接功能已移除，此入口固定为「代理转发」模式，可作独立的手动播放入口
 $mode = 'proxy';
 $path = 'play.php';
@@ -49,9 +59,6 @@ if (empty($parts['scheme']) || $host === '' || preg_match('~[\x00-\x20]~', $host
     header('Content-Type: text/plain; charset=utf-8');
     exit('bad request: invalid url');
 }
-
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
 
 $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
@@ -205,6 +212,11 @@ if ($isM3u8) {
                 $abs = mxgj_play_resolve($m[1], $finalUrl);
                 $line = str_replace('URI="' . $m[1] . '"', 'URI="' . $entry . mxgj_b64url($abs) . '"', $line);
             }
+            // EXT-X-MEDIA: TYPE=SUBTITLES ... URI="xxx" （字幕音轨等）
+            elseif (preg_match('/#EXT-X-MEDIA:.*?URI="([^"]+)"/i', $line, $m)) {
+                $abs = mxgj_play_resolve($m[1], $finalUrl);
+                $line = str_replace('URI="' . $m[1] . '"', 'URI="' . $entry . mxgj_b64url($abs) . '"', $line);
+            }
             $out[] = $line;
             continue;
         }
@@ -227,6 +239,13 @@ while (ob_get_level() > 0) {
 }
 header('Content-Type: ' . $ctype);
 header('Cache-Control: no-cache');
+// 透传 Range 请求头（支持视频拖动快进/后退）
+$range = $_SERVER['HTTP_RANGE'] ?? '';
+$httpHeaders = ['Accept: */*', 'Referer: ' . (parse_url($real, PHP_URL_SCHEME) ? $real : '')];
+if ($range !== '') {
+    $httpHeaders[] = 'Range: ' . $range;
+    header('Accept-Ranges: bytes');
+}
 $ch = curl_init($finalUrl);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => false, // 直接输出到客户端
@@ -237,7 +256,7 @@ curl_setopt_array($ch, [
     CURLOPT_SSL_VERIFYPEER => false,
     CURLOPT_SSL_VERIFYHOST => false,
     CURLOPT_USERAGENT      => $ua,
-    CURLOPT_HTTPHEADER     => ['Accept: */*', 'Referer: ' . (parse_url($real, PHP_URL_SCHEME) ? $real : '')],
+    CURLOPT_HTTPHEADER     => $httpHeaders,
 ]);
 curl_exec($ch);
 curl_close($ch);
