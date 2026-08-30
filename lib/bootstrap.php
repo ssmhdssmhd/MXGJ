@@ -15,7 +15,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.5');
+define('MXGJ_VERSION', '1.17.6');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -62,6 +62,8 @@ function mxgj_read_json(string $file, $default = [])
 
 /**
  * 写入 JSON 文件（自动创建目录）
+ *
+ * @return bool  true=写入成功；false=写入失败（含目录不存在、权限不足、磁盘满等）
  */
 function mxgj_write_json(string $file, array $data): bool
 {
@@ -69,8 +71,48 @@ function mxgj_write_json(string $file, array $data): bool
     if (!is_dir($dir)) {
         @mkdir($dir, 0755, true);
     }
+    if (!is_dir($dir)) {
+        Logger::log('error', 'mxgj_write_json 失败：目录不可创建', 'error', ['dir' => $dir]);
+        return false;
+    }
+    if (!is_writable($dir)) {
+        Logger::log('error', 'mxgj_write_json 失败：目录不可写（请 chmod / chown）', 'error', ['dir' => $dir]);
+        return false;
+    }
     $content = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-    return @file_put_contents($file, $content) !== false;
+    if ($content === false) {
+        Logger::log('error', 'mxgj_write_json 失败：JSON 编码错误', 'error', ['file' => $file]);
+        return false;
+    }
+    $ok = file_put_contents($file, $content) !== false;
+    if (!$ok) {
+        Logger::log('error', 'mxgj_write_json 失败：file_put_contents 返回 false（权限不足或磁盘满）', 'error', ['file' => $file]);
+    }
+    return $ok;
+}
+
+/**
+ * 检测配置/数据目录的可写性（admin.php 启动时用于 UI 警告）
+ *
+ * @return array ['ok'=>bool, 'config'=>bool, 'data'=>bool, 'warnings'=>string[]]
+ */
+function mxgj_env_check(): array
+{
+    $warnings = [];
+    $configOk = is_dir(MXGJ_CONFIG) && is_writable(MXGJ_CONFIG);
+    $dataOk   = is_dir(MXGJ_DATA)   && is_writable(MXGJ_DATA);
+    if (!$configOk) {
+        $warnings[] = '⚠️ config/ 目录不可写 — 后台保存会静默失败。请执行：chmod 777 ' . MXGJ_CONFIG . ' 或 chown www-data:www-data ' . MXGJ_CONFIG;
+    }
+    if (!$dataOk) {
+        $warnings[] = '⚠️ data/ 目录不可写 — 搜索缓存、日志、心跳探测都无法工作。请执行：chmod 777 ' . MXGJ_DATA . ' 或 chown www-data:www-data ' . MXGJ_DATA;
+    }
+    return [
+        'ok'       => $configOk && $dataOk,
+        'config'   => $configOk,
+        'data'     => $dataOk,
+        'warnings' => $warnings,
+    ];
 }
 
 /**

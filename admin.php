@@ -25,6 +25,25 @@ function isLoggedIn(): bool {
     return !empty($_SESSION['mxgj_admin']);
 }
 
+/** 写入失败时，输出清晰的错误页（而不是盲目 redirect） */
+function mxgj_save_fail(string $file): void {
+    $env = mxgj_env_check();
+    $hint = !$env['config']
+        ? "config/ 目录不可写 — 请先执行 `chmod 777 config` 或 `chown www-data:www-data config`"
+        : (string)($env['warnings'][0] ?? "写入文件失败：" . $file . " — 目录权限或磁盘空间问题");
+    http_response_code(500);
+    echo '<!doctype html><html><head><meta charset="utf-8"><title>保存失败</title>';
+    echo '<style>body{font-family:-apple-system,Segoe UI,sans-serif;background:#fef2f2;color:#7f1d1d;padding:40px;line-height:1.7}';
+    echo '.box{max-width:640px;margin:40px auto;background:#fff;border:1px solid #fecaca;border-radius:12px;padding:28px}';
+    echo 'h1{color:#b91c1c;margin-top:0;font-size:18px}code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:12px}</style></head><body>';
+    echo '<div class="box"><h1>🚨 保存失败</h1>';
+    echo '<p><strong>' . htmlspecialchars($hint) . '</strong></p>';
+    echo '<p>目标文件：<code>' . htmlspecialchars($file) . '</code></p>';
+    echo '<p style="font-size:12px;color:#94a3b8;margin-top:12px">检查 <code>data/logs/*.json</code> 可以看到详细错误日志</p>';
+    echo '<p><a href="javascript:history.back()" style="color:#4f7cff;text-decoration:none">← 返回上一页</a></p></div></body></html>';
+    exit;
+}
+
 /* ---------------- 各操作处理 ---------------- */
 
 // 默认：登录页或管理主界面
@@ -89,7 +108,7 @@ switch ($ACTION) {
                 'parse'      => $parse,        // 返回解析模式：空/json/text/apple
             ];
         }
-        mxgj_write_json($sitesFile, ['sites' => $clean]);
+        if (!mxgj_write_json($sitesFile, ['sites' => $clean])) { mxgj_save_fail($sitesFile); }
         Logger::log('operation', '保存资源站列表（共 ' . count($clean) . ' 个）', 'success');
         Logger::log('config', '资源站配置保存成功：' . count($clean) . ' 个站点', 'success', ['sites' => $clean]);
         mxgj_purge_runtime(); // 保存后自动清理运行时数据
@@ -139,7 +158,7 @@ switch ($ACTION) {
                 $mapping['episode'][$id] = ['name' => $en, 'episode' => $ep];
             }
         }
-        mxgj_write_json($mappingFile, $mapping);
+        if (!mxgj_write_json($mappingFile, $mapping)) { mxgj_save_fail($mappingFile); }
         Logger::log('operation', '保存映射表（title ' . count($mapping['title']) . ' / cid ' . count($mapping['cid']) . ' / episode ' . count($mapping['episode']) . '）', 'success');
         Logger::log('config', '映射表配置保存成功', 'success', ['count' => ['title' => count($mapping['title']), 'cid' => count($mapping['cid']), 'episode' => count($mapping['episode'])]]);
         mxgj_purge_runtime(); // 保存后自动清理运行时数据
@@ -205,7 +224,7 @@ switch ($ACTION) {
             'show_source' => !empty($_POST['out_show_source']),
             'fields'      => $fields,
         ];
-        mxgj_write_json($settingsFile, $st);
+        if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
         Logger::log('operation', '保存系统设置', 'success');
         Logger::log('config', '系统设置保存成功', 'success', ['timeout' => $st['timeout'], 'cache_ttl' => $st['cache_ttl'], 'output_fields' => count($fields)]);
         // 自动清理运行时数据（缓存 / 站点健康 / 日志），让新配置立即生效
@@ -221,7 +240,7 @@ switch ($ACTION) {
             'enable'           => !empty($_POST['fb_enable']),
             'step2_retry_main' => !empty($_POST['fb_retry_main']),
         ];
-        mxgj_write_json($settingsFile, $st);
+        if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
         Logger::log('operation', '保存资源平替设置（' . ($st['fallback']['enable'] ? '已开启' : '已关闭') . '）', 'success');
         Logger::log('config', '资源平替配置保存成功', 'success', $st['fallback']);
         mxgj_purge_runtime();
@@ -362,7 +381,7 @@ switch ($ACTION) {
         // 📝 保存用户自定义模板
         $userList = json_decode((string)($_POST['templates'] ?? '[]'), true);
         if (!is_array($userList)) mxgj_json_out(['ok' => false, 'msg' => 'JSON 格式错误']);
-        mxgj_write_json(MXGJ_CONFIG . '/search_templates_user.json', $userList);
+        if (!mxgj_write_json(MXGJ_CONFIG . '/search_templates_user.json', $userList)) { mxgj_save_fail(MXGJ_CONFIG . '/search_templates_user.json'); }
         mxgj_json_out(['ok' => true, 'msg' => '已保存']);
 
     case 'render_from_template':
@@ -435,7 +454,7 @@ switch ($ACTION) {
                 $mapping['episode'][$epKey] = ['name' => $detected['name'], 'episode' => $detected['episode']];
                 $savedMap[] = "episode[$epKey] → {$detected['name']} 第{$detected['episode']}集";
             }
-            mxgj_write_json($mappingFile, $mapping);
+            if (!mxgj_write_json($mappingFile, $mapping)) { mxgj_save_fail($mappingFile); }
             $result['saved'] = true;
             $result['saved_map'] = $savedMap;
             $result['msg'] = '映射表已写入 ' . count($savedMap) . ' 条';
@@ -510,7 +529,7 @@ switch ($ACTION) {
             $list[] = $entry;
             $mode = 'add';
         }
-        mxgj_write_json($sitesFile, ['sites' => $list]);
+        if (!mxgj_write_json($sitesFile, ['sites' => $list])) { mxgj_save_fail($sitesFile); }
         mxgj_purge_runtime(); // 保存后自动清理运行时数据
         Logger::log('operation', ($mode === 'add' ? '添加' : '修改') . '资源站：' . $name_, 'success');
         Logger::log('config', ($mode === 'add' ? '新增' : '修改') . '资源站成功：' . $name_, 'success');
@@ -528,7 +547,7 @@ switch ($ACTION) {
         }
         if ($hit === null) mxgj_json_out(['code' => 404, 'msg' => '资源站不存在']);
         $list[$hit]['enabled'] = $on;
-        mxgj_write_json($sitesFile, ['sites' => $list]);
+        if (!mxgj_write_json($sitesFile, ['sites' => $list])) { mxgj_save_fail($sitesFile); }
         mxgj_purge_runtime(); // 保存后自动清理运行时数据
         Logger::log('operation', ($on ? '启用' : '禁用') . '资源站：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn', ['enabled' => $on]);
         Logger::log('config', ($on ? '启用' : '禁用') . '资源站配置：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn');
@@ -552,7 +571,7 @@ switch ($ACTION) {
         if ($on && $idx !== false)     unset($d[$idx]);   // 启用：从禁用列表移除
         if (!$on && $idx === false)    $d[] = $key;       // 禁用：加入禁用列表
         $d = array_values($d);
-        mxgj_write_json($mappingFile, $map);
+        if (!mxgj_write_json($mappingFile, $map)) { mxgj_save_fail($mappingFile); }
         mxgj_purge_runtime(); // 快捷开关也要清缓存
         Logger::log('operation', ($on ? '启用' : '禁用') . '映射：' . $sec . ' → ' . $key, $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '启用' : '禁用') . '映射条目：' . $sec . ' → ' . $key, $on ? 'success' : 'warn');
@@ -567,7 +586,7 @@ switch ($ACTION) {
         if (!isset($fields[$idx])) mxgj_json_out(['code' => 404, 'msg' => '字段不存在']);
         $fields[$idx]['enabled'] = $on;
         $st['output']['fields'] = $fields;
-        mxgj_write_json($settingsFile, $st);
+        if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
         mxgj_purge_runtime(); // 快捷开关也要清缓存
         Logger::log('operation', ($on ? '启用' : '禁用') . '输出字段：' . ($fields[$idx]['k'] ?? ''), $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '启用' : '禁用') . '输出字段「' . ($fields[$idx]['k'] ?? '') . '」', $on ? 'success' : 'warn');
@@ -586,7 +605,7 @@ switch ($ACTION) {
         } else {
             mxgj_json_out(['code' => 400, 'msg' => '不支持的设置项']);
         }
-        mxgj_write_json($settingsFile, $st);
+        if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
         mxgj_purge_runtime(); // 快捷开关也要清缓存
         Logger::log('operation', ($on ? '开启' : '关闭') . '设置：' . ($labels[$name] ?? $name), $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '开启' : '关闭') . '设置「' . ($labels[$name] ?? $name) . '」', $on ? 'success' : 'warn');
@@ -1108,6 +1127,17 @@ tr.out-row[draggable="true"]{transition:background .12s}
 <div class="toast" id="toast">保存成功</div>
 <?php if ($saved): ?><script>document.getElementById('toast').style.display='block';setTimeout(()=>document.getElementById('toast').style.display='none',2000);</script><?php endif; ?>
 <?php if ($cleared): ?><script>alert('缓存已清空');</script><?php endif; ?>
+<?php
+$env = mxgj_env_check();
+if (!$env['ok']):
+?>
+<div style="background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #ef4444;border-radius:8px;padding:14px 18px;margin-bottom:16px;font-size:13px;color:#7f1d1d">
+    <div style="font-weight:700;margin-bottom:6px;color:#b91c1c">🚨 环境问题：保存会失败</div>
+    <?php foreach ($env['warnings'] as $w): ?>
+        <div style="margin:4px 0;line-height:1.7"><?= htmlspecialchars($w) ?></div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 <?php if ($tab === 'dashboard'): ?>
 <?php renderOverview($sites, $cacheCnt, $mapping); ?>
 <?php elseif ($tab === 'sites'): ?>

@@ -1,82 +1,82 @@
 {
-  "admin_password": "moxi123",
-  "updater_key": "",
-  "timeout": 15,
-  "cache_ttl": 600,
-  "page_size": 50,
-  "replace_domain": "",
-  "repo_owner": "ssmhdssmhd",
-  "repo_name": "MXGJ",
-  "repo_branch": "main",
-  "site_control": {
-    "search_interval": 10,
-    "heartbeat_enable": false,
-    "heartbeat_interval": 300,
-    "heartbeat_timeout": 5,
-    "heartbeat_max_fail": 3,
-    "cooldown_seconds": 600,
-    "rotation_enable": false,
-    "rotation_interval": 300,
-    "max_sites_per_request": 0
-  },
-  "output": {
-    "show_source": false,
-    "fields": [
-      {
-        "k": "code",
-        "v": "code",
-        "enabled": true
-      },
-      {
-        "k": "url",
-        "v": "url",
-        "enabled": true
-      },
-      {
-        "k": "msg",
-        "v": "url",
-        "enabled": true
-      },
-      {
-        "k": "title",
-        "v": "title",
-        "enabled": true
-      },
-      {
-        "k": "time",
-        "v": "time",
-        "enabled": true
-      }
-    ]
-  },
-  "app_api": {
-    "enable": false,
-    "require_key": false,
-    "api_key": "",
-    "player_type": "lgzym3u8",
-    "proxy_enable": false,
-    "cors": "*",
-    "max_size_mb": 10,
-    "rate_limit": 0
-  },
-  "cron": {
-    "key": "",
-    "interval_mins": 60,
-    "scan_sites": true,
-    "scan_pages": 1,
-    "timeout": 20,
-    "seed_links": [
-      "https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce",
-      "https://www.iqiyi.com/v_19hly1wd1gg.html",
-      "https://m.youku.com/alipay_video/id_fcad042e84ef43ce8309.html",
-      "https://m.youku.com/alipay_video/id_cbff0b0703e54d659628.html",
-      "https://m.mgtv.com/b/731684/24269945.html",
-      "https://m.mgtv.com/b/857348/24330424.html",
-      "https://www.bilibili.com/bangumi/play/ep431046"
-    ]
-  },
-  "fallback": {
-    "enable": false,
-    "step2_retry_main": true
-  }
+    "admin_password": "moxi123",
+    "updater_key": "",
+    "timeout": 15,
+    "cache_ttl": 600,
+    "page_size": 50,
+    "replace_domain": "",
+    "repo_owner": "ssmhdssmhd",
+    "repo_name": "MXGJ",
+    "repo_branch": "main",
+    "site_control": {
+        "search_interval": 10,
+        "heartbeat_enable": false,
+        "heartbeat_interval": 300,
+        "heartbeat_timeout": 5,
+        "heartbeat_max_fail": 3,
+        "cooldown_seconds": 600,
+        "rotation_enable": false,
+        "rotation_interval": 300,
+        "max_sites_per_request": 0
+    },
+    "output": {
+        "show_source": false,
+        "fields": [
+            {
+                "k": "code",
+                "v": "code",
+                "enabled": true
+            },
+            {
+                "k": "url",
+                "v": "url",
+                "enabled": true
+            },
+            {
+                "k": "msg",
+                "v": "url",
+                "enabled": true
+            },
+            {
+                "k": "title",
+                "v": "title",
+                "enabled": true
+            },
+            {
+                "k": "time",
+                "v": "time",
+                "enabled": true
+            }
+        ]
+    },
+    "app_api": {
+        "enable": false,
+        "require_key": false,
+        "api_key": "",
+        "player_type": "lgzym3u8",
+        "proxy_enable": false,
+        "cors": "*",
+        "max_size_mb": 10,
+        "rate_limit": 0
+    },
+    "fallback": {
+        "enable": false,
+        "step2_retry_main": false
+    },
+    "cron": {
+        "key": "",
+        "interval_mins": 60,
+        "scan_sites": true,
+        "scan_pages": 1,
+        "timeout": 20,
+        "seed_links": [
+            "https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce",
+            "https://www.iqiyi.com/v_19hly1wd1gg.html",
+            "https://m.youku.com/alipay_video/id_fcad042e84ef43ce8309.html",
+            "https://m.youku.com/alipay_video/id_cbff0b0703e54d659628.html",
+            "https://m.mgtv.com/b/731684/24269945.html",
+            "https://m.mgtv.com/b/857348/24330424.html",
+            "https://www.bilibili.com/bangumi/play/ep431046"
+        ]
+    }
 }
