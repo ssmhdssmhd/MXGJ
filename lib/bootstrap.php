@@ -15,7 +15,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.7');
+define('MXGJ_VERSION', '1.17.8');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -31,6 +31,16 @@ define('MXGJ_PLAYER_FILE', MXGJ_PLAYER_DATA . '/players.json');
 
 // 错误日志路径（此时 MXGJ_DATA 已可用）
 @ini_set('error_log', MXGJ_DATA . '/php_errors.log');
+
+// ====== 全局 CORS 头 + OPTIONS 预检（所有入口自动生效，避免各文件重复写）======
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, HEAD, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Range, X-Requested-With, Authorization');
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
+    http_response_code(204);
+    header('Content-Length: 0');
+    exit;
+}
 
 // 自动加载 lib 目录下的类
 spl_autoload_register(function ($class) {
@@ -356,9 +366,7 @@ function mxgj_json_out(array $data, int $status = 200): void
 {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
-    header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type');
+    // 注意：CORS 头已在 bootstrap 顶部全局设置，这里不需要重复
 
     $callback = isset($_GET['callback']) ? preg_replace('/[^A-Za-z0-9_.]/', '', $_GET['callback']) : '';
     $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

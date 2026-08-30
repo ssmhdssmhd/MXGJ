@@ -2,3 +2,9 @@
 [30-Aug-2026 04:02:44 UTC] PHP Stack trace:
 [30-Aug-2026 04:02:44 UTC] PHP   1. {main}() Command line code:0
 [30-Aug-2026 04:02:44 UTC] PHP   2. file_get_contents($filename = 'data/mock.m3u8') Command line code:3
+[30-Aug-2026 12:54:51 UTC] PHP Warning:  Undefined variable $cachedIsHit in /workspace/index.php on line 230
+[30-Aug-2026 12:54:51 UTC] PHP Stack trace:
+[30-Aug-2026 12:54:51 UTC] PHP   1. {main}() /workspace/index.php:0
+[30-Aug-2026 12:58:13 UTC] PHP Warning:  Undefined variable $cachedIsHit in /workspace/index.php on line 230
+[30-Aug-2026 12:58:13 UTC] PHP Stack trace:
+[30-Aug-2026 12:58:13 UTC] PHP   1. {main}() /workspace/index.php:0

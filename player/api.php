@@ -17,17 +17,6 @@
 
 require_once __DIR__ . '/../lib/bootstrap.php';
 
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Range');
-
-// 浏览器预检：直接返回 204
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
-    http_response_code(204);
-    header('Content-Length: 0');
-    exit;
-}
-
 // ====== App 接口开关 & key 鉴权 ======
 $_api = mxgj_settings()['app_api'] ?? [];
 $_api = array_merge(['enable'=>true,'require_key'=>false,'api_key'=>''], $_api);

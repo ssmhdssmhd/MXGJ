@@ -16,16 +16,6 @@
 
 require_once __DIR__ . '/lib/bootstrap.php';
 
-// ====== CORS 头 + OPTIONS 预检（必须在参数校验之前，否则预检会被 400 挡掉）======
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
-header('Access-Control-Allow-Headers: Range, Content-Type');
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
-    http_response_code(204);
-    header('Content-Length: 0');
-    exit;
-}
-
 // 表面播放链接功能已移除，此入口固定为「代理转发」模式，可作独立的手动播放入口
 $mode = 'proxy';
 $path = 'play.php';
