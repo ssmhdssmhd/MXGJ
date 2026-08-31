@@ -1,5 +1,64 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.10] 2026-08-31 · 🆕 在线更新页面升级：版本对比 + 差异文件预览
+
+### 背景
+v1.17.9 加了基础的版本检测（`Updater::check()`），但用户只能看到"本地 vX vs 远程 vY"，**不知道具体哪些文件有变化**。对于代码有本地改动的场景，升级前无法预判影响范围。
+
+### 核心改动
+
+| 文件 | 改动 |
+|------|------|
+| `lib/Updater.php` | 新增 `diffLocalRemote()` — 测速选节点→下载 GitHub zip→解压→用 sha1 对比本地 vs 远程文件清单→返回 **新增/修改/删除** 三类列表；新增 `collectFileMap()` / `walkFiles()` 递归收集相对路径 + hash + size + mtime；跳过 `config/` `data/` `.git`；限制最多 500 条差异避免返回过大 |
+| `admin.php` | 后端新增 `check_diff` action（计时 + 日志）；前端 `renderUpdateForm` 版本卡片新增 **📁 差异预览** 按钮（紫色）；新增差异结果面板（按 🟢新增 / 🟡修改 / 🔴删除 分段展示，sticky header + 320px 可滚动高度 + 条纹表）；`renderVersionCard` 动态生成的按钮区也加了差异预览入口 |
+
+### 实测
+```
+耗时: 13s
+本地 45 文件 vs 远程 45 文件
+📁 差异预览：0 新增 / 9 修改 / 0 删除
+
+🟡 admin.php        184KB → 207KB   （版本检测 + 差异预览 + 顶栏保存）
+🟡 lib/Updater.php   10KB → 24KB   （check + run 清 opcache + diffLocalRemote）
+🟡 lib/bootstrap.php  24KB → 31KB  （四段式 + 清 runtime 增强）
+🟡 index.php           9KB → 10KB
+🟡 CHANGELOG.md       41KB → 50KB
+🟡 README.md          39KB → 40KB
+🟡 version.json      1.0KB → 1.2KB
+```
+
+### 返回示例（admin.php POST `action=check_diff`）
+```json
+{
+  "ok": true,
+  "added":    [],
+  "modified": [
+    {"path": "lib/Updater.php", "local_size": 10872, "remote_size": 23934,
+     "local_date": "2026-08-30 05:59", "remote_date": "2026-08-31 22:39"},
+    ...
+  ],
+  "removed":  [],
+  "total_local": 45,
+  "total_remote": 45,
+  "total_diff": 9,
+  "truncated": false,
+  "elapsed_ms": 13224,
+  "speed": {"gh-proxy.com": 128.5, "ghfast.top": 312.1, ...},
+  "msg": "📁 差异预览：0 个新增 / 9 个修改 / 0 个删除（本地共 45 文件，远程共 45 文件）"
+}
+```
+
+### 使用场景
+- **升级前预览**：点 📁 差异预览 → 看清楚会被替换的是哪些文件，本地临时 patch 过的文件记得先备份
+- **代码改动核对**：推代码后重新预览，确认远程 vs 本地没有意外漂移
+- **排障**：更新不生效？看删除列表是不是把你要的文件删了
+
+### 版本号
+- `lib/bootstrap.php` MXGJ_VERSION: `1.17.9` → `1.17.10`
+- `version.json`: `1.17.9` → `1.17.10`
+
+---
+
 ## [v1.17.9] 2026-08-31 · 📦 标准化 JSON 响应（code/msg/data/meta 四段式）
 
 ### 背景与思路

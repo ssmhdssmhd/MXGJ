@@ -646,6 +646,20 @@ switch ($ACTION) {
         Logger::log('update', '版本检测：' . $res['msg'], 'info', ['local' => $res['local'], 'latest' => $res['latest'], 'has_update' => $res['has_update']]);
         mxgj_json_out($res);
 
+    case 'check_diff':
+        // 🆕 差异预览：下载远程 zip → 对比本地 vs 远程文件清单
+        // 注意：慢（需下载 zip 并 sha1 所有文件），前端按钮会禁用超时保护
+        $t0 = microtime(true);
+        $res = Updater::diffLocalRemote(300);
+        $res['elapsed_ms'] = round((microtime(true) - $t0) * 1000, 1);
+        Logger::log('update', '差异预览：' . $res['msg'] . '（耗时 ' . $res['elapsed_ms'] . 'ms）', 'info', [
+            'total_diff' => $res['total_diff'] ?? 0,
+            'added'      => count($res['added'] ?? []),
+            'modified'   => count($res['modified'] ?? []),
+            'removed'    => count($res['removed'] ?? []),
+        ]);
+        mxgj_json_out($res);
+
     case 'do_update':
         // 后台触发的在线更新（dry=1 时仅测速）
         $st  = mxgj_settings();
@@ -2517,10 +2531,22 @@ function renderUpdateForm()
             </div>
             <div style="display:flex;gap:10px">
                 <button class="btn" id="btn-check-update" onclick="checkVersion()" style="background:#4f7cff;color:#fff">🔄 检查更新</button>
+                <button class="btn" id="btn-check-diff" onclick="checkDiff()" style="background:#a855f7;color:#fff">📁 差异预览</button>
                 <?php if ($hasUpdate): ?>
                 <button class="btn btn-green" onclick="runUpdater(false)" style="background:#10b981;color:#fff">🚀 立即更新</button>
                 <?php endif; ?>
             </div>
+        </div>
+
+        <!-- 🆕 差异预览面板（初始隐藏） -->
+        <div id="diff-panel" style="display:none;margin-bottom:18px;padding:14px 16px;border-radius:10px;background:#0b1020;border:1px solid rgba(168,85,247,.3);color:#e2e8f0">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                <div style="font-size:14px;font-weight:600">📁 本地 vs GitHub 差异文件</div>
+                <button class="btn small" onclick="document.getElementById('diff-panel').style.display='none'">折叠</button>
+            </div>
+            <div id="diff-summary" style="font-size:12.5px;color:#94a3b8;margin-bottom:10px"></div>
+            <div id="diff-loading" style="padding:20px;text-align:center;color:#94a3b8">⏳ 正在下载远程源码包并对比 sha1（约 10~30 秒，请稍候...）</div>
+            <div id="diff-body" style="display:none"></div>
         </div>
 
         <div class="note" style="margin-bottom:16px">
@@ -2578,9 +2604,83 @@ function renderUpdateForm()
         cardHTML+='</div>';
         cardHTML+='<div style="display:flex;gap:10px">';
         cardHTML+='<button class="btn" onclick="checkVersion()" style="background:#4f7cff;color:#fff">🔄 检查更新</button>';
+        cardHTML+='<button class="btn" onclick="checkDiff()" style="background:#a855f7;color:#fff">📁 差异预览</button>';
         if(hasUpd) cardHTML+='<button class="btn btn-green" onclick="runUpdater(false)" style="background:#10b981;color:#fff">🚀 立即更新</button>';
         cardHTML+='</div>';
         card.innerHTML=cardHTML;
+    }
+    /* ===== 差异预览（下载远程 zip → sha1 对比 → 展示新增/修改/删除）===== */
+    function checkDiff(){
+        var panel=document.getElementById('diff-panel');
+        var loading=document.getElementById('diff-loading');
+        var body=document.getElementById('diff-body');
+        var summary=document.getElementById('diff-summary');
+        panel.style.display='block';
+        loading.style.display='block'; body.style.display='none';
+        summary.textContent='';
+        var btn=document.getElementById('btn-check-diff');
+        if(btn){btn.disabled=true; btn.textContent='⏳ 对比中...';}
+        // 差异预览慢（10~30s），不设 15s 默认超时
+        var fd=new FormData(); fd.append('action','check_diff');
+        fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
+            loading.style.display='none';
+            if(btn){btn.disabled=false; btn.textContent='📁 差异预览';}
+            if(!d.ok){
+                summary.innerHTML='<span style="color:#e74c3c">✘ 对比失败：</span>'+(d.msg||'未知错误');
+                return;
+            }
+            // summary
+            var added=d.added||[], modified=d.modified||[], removed=d.removed||[];
+            var totalDiff=(d.total_diff||(added.length+modified.length+removed.length));
+            summary.innerHTML='✅ 对比完成（耗时 '+(d.elapsed_ms||'?')+'ms）· 本地 '+(d.total_local||'?')+' 文件 vs 远程 '+(d.total_remote||'?')+' 文件 · 差异共 '+totalDiff+' 项'
+                +(d.truncated?' <span style="color:#e2b93b">· 已截断</span>':'')
+                +(d.speed&&Object.keys(d.speed).length?' <span style="color:#6b7280">· 测速: '+Object.keys(d.speed).map(function(k){return k+d.speed[k]+'ms';}).join(' · ')+'</span>':'');
+            body.style.display='block';
+            body.innerHTML=renderDiffSections(added,modified,removed);
+        }).catch(function(e){
+            loading.style.display='none';
+            if(btn){btn.disabled=false; btn.textContent='📁 差异预览';}
+            summary.innerHTML='<span style="color:#e74c3c">✘ 请求失败：</span>'+e;
+        });
+    }
+    function renderDiffSections(added, modified, removed){
+        function table(title, color, badgeColor, rows, cols){
+            if(!rows||rows.length===0) return '';
+            var html='<div style="margin-bottom:14px">';
+            html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">';
+            html+='<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+color+'"></span>';
+            html+='<span style="font-weight:600;font-size:13px">'+title+'</span>';
+            html+='<span style="font-size:11px;padding:1px 8px;border-radius:10px;background:'+badgeColor+';color:'+color+'">'+rows.length+'</span>';
+            html+='</div>';
+            html+='<div style="max-height:320px;overflow:auto;border-radius:6px;border:1px solid rgba(255,255,255,.08)">';
+            html+='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+            html+='<thead style="position:sticky;top:0;background:#111827;z-index:2"><tr>';
+            cols.forEach(function(c){ html+='<th style="padding:6px 10px;text-align:left;font-size:11px;color:#94a3b8;border-bottom:1px solid rgba(255,255,255,.08)">'+c+'</th>'; });
+            html+='</tr></thead><tbody>';
+            rows.forEach(function(r,idx){
+                html+='<tr style="background:'+(idx%2?'#0e1428':'transparent')+'">';
+                if(cols.length===3){
+                    // added / removed: path, size, date
+                    html+='<td style="padding:5px 10px;color:#e2e8f0;font-family:monospace;word-break:break-all">'+(r.path||'')+'</td>';
+                    html+='<td style="padding:5px 10px;color:#94a3b8;white-space:nowrap">'+(r.size||0)+' B</td>';
+                    html+='<td style="padding:5px 10px;color:#94a3b8;white-space:nowrap">'+(r.date||'')+'</td>';
+                } else {
+                    // modified: path, local_size→remote_size, local_date→remote_date
+                    html+='<td style="padding:5px 10px;color:#e2e8f0;font-family:monospace;word-break:break-all">'+(r.path||'')+'</td>';
+                    html+='<td style="padding:5px 10px;color:#94a3b8;white-space:nowrap">'+(r.local_size||0)+' → '+(r.remote_size||0)+' B</td>';
+                    html+='<td style="padding:5px 10px;color:#94a3b8;white-space:nowrap">'+(r.local_date||'')+' → '+(r.remote_date||'')+'</td>';
+                }
+                html+='</tr>';
+            });
+            html+='</tbody></table></div></div>';
+            return html;
+        }
+        var h='';
+        h+=table('🟢 新增（远程有，本地没有）',  '#4ade80', 'rgba(74,222,128,.15)', added,    ['文件', '大小', '修改时间']);
+        h+=table('🟡 修改（远程内容不同）',    '#fbbf24', 'rgba(251,191,36,.15)',  modified, ['文件', '大小 (本地→远程)', '修改时间 (本地→远程)']);
+        h+=table('🔴 删除（本地有，远程没有）', '#ef4444', 'rgba(239,68,68,.15)',   removed,  ['文件', '大小', '修改时间']);
+        if(!h){ h='<div style="color:#4ade80;padding:20px;text-align:center">🎉 本地与远程完全一致，无差异文件！</div>'; }
+        return h;
     }
     /* ===== 在线更新 ===== */
     function runUpdater(dry){
@@ -3017,7 +3117,7 @@ function renderSettingsForm($settings)
                 <div class="note" style="margin:0 0 8px;font-size:12px">
                     <b>standard 示例：</b>
                     <code style="background:#1e293b;color:#93c5fd;padding:2px 6px;border-radius:4px">
-                        {"code":200,"msg":"success","data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,...},"meta":{"api_version":"1.17.9","request_id":"abc123","elapsed_ms":85.2,...}}
+                        {"code":200,"msg":"success","data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,...},"meta":{"api_version":"1.17.10","request_id":"abc123","elapsed_ms":85.2,...}}
                     </code>
                 </div>
                 <div class="note" style="margin:0 0 8px;font-size:12px">

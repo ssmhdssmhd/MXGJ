@@ -325,6 +325,189 @@ class Updater
         return ($err === '' && is_string($body)) ? $body : '';
     }
 
+    /* ---------------- 差异文件对比 ---------------- */
+
+    /**
+     * 下载远程 zip → 解压 → 对比本地与远程的文件清单
+     *
+     * 对比逻辑（与 Updater::run() 一致）：
+     *   - 仅对比会被 update 覆盖的代码文件
+     *   - 保留 config/、data/、.git（这些不参与对比）
+     *   - 用 sha1 做内容对比（哈希相同视为无变化）
+     *
+     * @param int $maxFiles 最多返回多少条差异（避免文件太大超时）
+     * @return array{ok:bool,added:array,modified:array,removed:array,
+     *              total_local:int,total_remote:int,speed:array,msg:string}
+     */
+    public static function diffLocalRemote(int $maxFiles = 500): array
+    {
+        $mirrors = self::mirrors();
+        $repo    = self::repo();
+        $ignored = ['config', 'data', '.git']; // 对比中要跳过的目录
+
+        // 1) 测速选节点
+        $probeUrl = "/{$repo['owner']}/{$repo['repo']}/raw/{$repo['branch']}/version.json";
+        $speeds   = [];
+        $usable   = [];
+        foreach ($mirrors as $name => $prefix) {
+            $ms = self::speedMeter($prefix . $probeUrl);
+            if ($ms > 0) { $speeds[$name] = round($ms, 1); $usable[] = ['name' => $name, 'prefix' => $prefix, 'ms' => $ms]; }
+        }
+        usort($usable, fn($a, $b) => $a['ms'] <=> $b['ms']);
+        if ($usable === []) {
+            return ['ok' => false, 'added' => [], 'modified' => [], 'removed' => [],
+                    'total_local' => 0, 'total_remote' => 0, 'speed' => $speeds,
+                    'msg' => '所有加速节点均不可达'];
+        }
+
+        // 2) 下载到临时目录（与 run() 不同，不设并发锁）
+        $tmpDir  = MXGJ_DATA . '/upddiff_' . substr(bin2hex(random_bytes(4)), 0, 8);
+        @mkdir($tmpDir, 0777, true);
+        $zipFile = $tmpDir . '/src.zip';
+        $ok      = false;
+        foreach ($usable as $node) {
+            $zipUrl = $node['prefix'] . "/{$repo['owner']}/{$repo['repo']}/archive/refs/heads/{$repo['branch']}.zip";
+            if (self::download($zipUrl, $zipFile, 90)) {
+                if ((int)@filesize($zipFile) > 1000) { $ok = true; break; }
+            }
+            @unlink($zipFile);
+        }
+        if (!$ok) {
+            self::rrmdir($tmpDir);
+            return ['ok' => false, 'added' => [], 'modified' => [], 'removed' => [],
+                    'total_local' => 0, 'total_remote' => 0, 'speed' => $speeds,
+                    'msg' => '下载源码包失败'];
+        }
+
+        // 3) 解压
+        $zip = new ZipArchive();
+        if ($zip->open($zipFile) !== true) {
+            self::rrmdir($tmpDir);
+            return ['ok' => false, 'added' => [], 'modified' => [], 'removed' => [],
+                    'total_local' => 0, 'total_remote' => 0, 'speed' => $speeds,
+                    'msg' => '解压失败'];
+        }
+        $zip->extractTo($tmpDir);
+        $zip->close();
+
+        // 4) 找源码根（zip 内通常为 MXGJ-main/）
+        $srcRoot = null;
+        foreach (glob($tmpDir . '/[!.]*') ?: [] as $d) {
+            if (is_dir($d) && is_file($d . '/index.php')) { $srcRoot = $d; break; }
+        }
+        if ($srcRoot === null) {
+            self::rrmdir($tmpDir);
+            return ['ok' => false, 'added' => [], 'modified' => [], 'removed' => [],
+                    'total_local' => 0, 'total_remote' => 0, 'speed' => $speeds,
+                    'msg' => '未在源码包中找到项目根目录'];
+        }
+
+        // 5) 收集文件清单（相对路径 + sha1）
+        $localMap  = self::collectFileMap(MXGJ_ROOT, $ignored);
+        $remoteMap = self::collectFileMap($srcRoot, $ignored);
+
+        // 6) 对比
+        $added    = [];  // 远程有、本地没有
+        $modified = [];  // 两边都有但 hash 不同
+        $removed  = [];  // 本地有、远程没有
+        foreach ($remoteMap as $rel => $rh) {
+            if (!isset($localMap[$rel])) {
+                $added[] = ['path' => $rel, 'size' => $rh['size'], 'date' => $rh['date']];
+            } elseif ($localMap[$rel]['hash'] !== $rh['hash']) {
+                $modified[] = [
+                    'path'         => $rel,
+                    'local_size'   => $localMap[$rel]['size'],
+                    'remote_size'  => $rh['size'],
+                    'local_date'   => $localMap[$rel]['date'],
+                    'remote_date'  => $rh['date'],
+                ];
+            }
+        }
+        foreach ($localMap as $rel => $lh) {
+            if (!isset($remoteMap[$rel])) {
+                $removed[] = ['path' => $rel, 'size' => $lh['size'], 'date' => $lh['date']];
+            }
+        }
+
+        // 排序（路径字典序）
+        $sort = function (&$arr) { usort($arr, fn($a, $b) => strcmp($a['path'], $b['path'])); };
+        $sort($added); $sort($modified); $sort($removed);
+
+        // 限制条数，避免返回太大
+        $truncated = false;
+        $totalDiff = count($added) + count($modified) + count($removed);
+        if ($totalDiff > $maxFiles) {
+            $added    = array_slice($added, 0, (int)($maxFiles * 0.35));
+            $modified = array_slice($modified, 0, (int)($maxFiles * 0.5));
+            $removed  = array_slice($removed, 0, $maxFiles - count($added) - count($modified));
+            $truncated = true;
+        }
+
+        // 7) 清理临时目录
+        self::rrmdir($tmpDir);
+
+        return [
+            'ok'              => true,
+            'added'           => $added,
+            'modified'        => $modified,
+            'removed'         => $removed,
+            'total_local'     => count($localMap),
+            'total_remote'    => count($remoteMap),
+            'total_diff'      => $totalDiff,
+            'truncated'       => $truncated,
+            'speed'           => $speeds,
+            'msg'             => sprintf(
+                '📁 差异预览：%d 个新增 / %d 个修改 / %d 个删除（本地共 %d 文件，远程共 %d 文件）%s',
+                count($added), count($modified), count($removed),
+                count($localMap), count($remoteMap),
+                $truncated ? ' · 已截断（差异过多）' : ''
+            ),
+        ];
+    }
+
+    /**
+     * 递归收集目录下所有文件：返回 [相对路径 => [hash, size, date]]
+     *
+     * @param string $root     根目录
+     * @param array  $ignored  要跳过的顶层目录名（config、data、.git 等）
+     * @return array<string, array{hash:string,size:int,date:string}>
+     */
+    protected static function collectFileMap(string $root, array $ignored = []): array
+    {
+        $map  = [];
+        $root = rtrim($root, '/\\');
+        if (!is_dir($root)) return $map;
+
+        // 顶层先跳过 ignored 目录，不深入
+        foreach (array_diff(scandir($root) ?: [], ['.', '..']) as $top) {
+            if (in_array($top, $ignored, true)) continue;
+            self::walkFiles($root . '/' . $top, strlen($root) + 1, $map);
+        }
+        return $map;
+    }
+
+    /** walkFiles 递归辅助：把文件写入 $map */
+    protected static function walkFiles(string $path, int $rootLen, array &$map): void
+    {
+        if (!file_exists($path)) return;
+        if (is_dir($path)) {
+            foreach (array_diff(scandir($path) ?: [], ['.', '..']) as $child) {
+                self::walkFiles($path . '/' . $child, $rootLen, $map);
+            }
+        } elseif (is_file($path)) {
+            $rel = substr($path, $rootLen);
+            // 远程 zip 里是正斜杠，统一一下
+            $rel = str_replace('\\', '/', $rel);
+            $stat = @stat($path);
+            // sha1_file 很快（1MB 文件 ~5ms），足够精确
+            $map[$rel] = [
+                'hash' => substr(@sha1_file($path) ?: md5($rel), 0, 16),  // 16 位足够区分
+                'size' => (int)($stat['size'] ?? 0),
+                'date' => date('Y-m-d H:i', $stat['mtime'] ?? 0),
+            ];
+        }
+    }
+
     /* ---------------- 工具方法 ---------------- */
 
     /** 测速：请求小文件并返回耗时(ms)，失败返回 -1 */
