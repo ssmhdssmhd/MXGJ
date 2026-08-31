@@ -20,7 +20,9 @@
         "max_sites_per_request": 0
     },
     "output": {
+        "mode": "standard",
         "show_source": false,
+        "show_meta": true,
         "fields": [
             {
                 "k": "code",

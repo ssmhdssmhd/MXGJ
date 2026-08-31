@@ -221,7 +221,9 @@ switch ($ACTION) {
             ];
         }
         $st['output'] = [
+            'mode'        => ($_POST['out_mode'] ?? 'standard') === 'legacy' ? 'legacy' : 'standard',
             'show_source' => !empty($_POST['out_show_source']),
+            'show_meta'   => !empty($_POST['out_show_meta']),
             'fields'      => $fields,
         ];
         if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
@@ -2728,15 +2730,29 @@ function renderSettingsForm($settings)
             </div>
 
             <div class="full" style="margin-top:8px">
-                <h3 style="margin:0 0 4px;font-size:14px">输出返回设置（自定义返回字段映射）</h3>
+                <h3 style="margin:0 0 4px;font-size:14px">输出返回设置（JSON 响应格式）</h3>
                 <div class="note" style="margin:4px 0 8px">
-                    自定义前台返回的 JSON 字段。<b>键名</b>（k）= 对外输出的字段名；<b>值来源</b>（v）可填系统字段名
-                    （<code>code</code> 状态码 / <code>url</code> 播放链接 / <code>title</code> 影视剧名 / <code>episode</code> 集数 /
-                    <code>time</code> 耗时ms / <code>site</code> 命中站点 / <code>source</code> 请求链接 / <code>msg</code> 提示），
-                    或直接填<b>固定文本</b>（常量，如 <code>沫兮官替系统</code>）作为该字段的值。<br>
-                    例如想返回 <code>JM=庆余年</code> <code>JJ=第2集</code>：键名填 <code>JM</code> 值来源填 <code>title</code>，键名 <code>JJ</code> 值来源填 <code>episode</code>。
+                    选择前台 API 返回的 JSON 结构，方便网页 / APP / 小程序等外部调用。
                 </div>
-                <label style="margin:0"><input type="checkbox" name="out_show_source" value="1" <?= !empty($output['show_source']) ? 'checked' : '' ?>> 在返回中附带原始请求链接（默认隐藏）</label>
+                <div style="display:flex;gap:24px;align-items:center;margin-bottom:10px">
+                    <label style="margin:0">输出格式：
+                        <select name="out_mode" style="padding:4px 8px">
+                            <option value="standard" <?= ($output['mode'] ?? 'standard') === 'standard' ? 'selected' : '' ?>>standard（推荐 · code/msg/data/meta 四段式）</option>
+                            <option value="legacy"   <?= ($output['mode'] ?? 'standard') === 'legacy'   ? 'selected' : '' ?>>legacy（旧版扁平结构，向后兼容）</option>
+                        </select>
+                    </label>
+                    <label style="margin:0"><input type="checkbox" name="out_show_meta" value="1" <?= !empty($output['show_meta']) ? 'checked' : '' ?>> standard 模式返回 meta 元信息段（版本、耗时、请求ID等）</label>
+                    <label style="margin:0"><input type="checkbox" name="out_show_source" value="1" <?= !empty($output['show_source']) ? 'checked' : '' ?>> 附带原始请求链接</label>
+                </div>
+                <div class="note" style="margin:0 0 8px;font-size:12px">
+                    <b>standard 示例：</b>
+                    <code style="background:#1e293b;color:#93c5fd;padding:2px 6px;border-radius:4px">
+                        {"code":200,"msg":"success","data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,...},"meta":{"api_version":"1.17.9","request_id":"abc123","elapsed_ms":85.2,...}}
+                    </code>
+                </div>
+                <div class="note" style="margin:0 0 8px;font-size:12px">
+                    <b>legacy 模式</b>下可自定义字段映射（下方表格）：键名 = 输出字段名；值来源 = 系统字段（code / url / title / episode / site / platform / vid / cid / player_url / raw_url / from_pool / from_fallback / is_special / msg / source / time / cached）或常量文本。
+                </div>
                 <table id="out-tbl" style="margin-top:8px">
                     <tr><th style="width:30px">↕</th><th style="width:140px">键名 k（输出字段）</th><th>值来源/常量 v</th><th style="width:60px">启用</th><th style="width:60px">操作</th></tr>
                     <?php if (!empty($output['fields'])): foreach ($output['fields'] as $i => $f): $on = !array_key_exists('enabled', $f) || !empty($f['enabled']); ?>
@@ -2765,7 +2781,10 @@ function renderSettingsForm($settings)
                 <datalist id="src-list">
                     <option value="code"></option><option value="msg"></option><option value="url"></option>
                     <option value="title"></option><option value="episode"></option><option value="site"></option>
-                    <option value="source"></option><option value="time"></option>
+                    <option value="platform"></option><option value="vid"></option><option value="cid"></option>
+                    <option value="player_url"></option><option value="raw_url"></option>
+                    <option value="from_pool"></option><option value="from_fallback"></option><option value="is_special"></option>
+                    <option value="source"></option><option value="time"></option><option value="cached"></option>
                 </datalist>
                 <button type="button" class="btn" style="margin-top:8px" onclick="addOutRow()">+ 添加返回字段</button>
             </div>

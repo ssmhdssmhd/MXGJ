@@ -1,5 +1,91 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.9] 2026-08-31 · 📦 标准化 JSON 响应（code/msg/data/meta 四段式）
+
+### 背景与思路
+原来的 JSON 返回是扁平结构，字段可配置但缺乏统一的元信息（版本号、请求 ID、耗时等），
+网页 / APP / 小程序等外部调用方难以做统一的错误分发和兼容性判断。
+
+本次改造引入 **标准四段式响应**，同时保留 **legacy 旧版兼容模式** 一键切换，
+所有错误分支（鉴权失败、参数错误、链接无法识别等）也统一走标准格式，不再出现部分接口返回扁平、部分返回嵌套的混乱情况。
+
+### 改动文件
+| 文件 | 改动 |
+|------|------|
+| `lib/bootstrap.php` | 版本号 1.17.8→1.17.9；新增 `mxgj_build_standard_response()` 四段式构建；新增 `mxgj_code_message()` 错误码→描述映射；新增 `mxgj_request_id()` 请求唯一 ID；新增 `mxgj_early_response()` 错误快速返回；`mxgj_build_output()` 按 `output.mode` 分派 standard/legacy；`mxgj_settings()` output 默认值新增 `mode`/`show_meta`；fMap 字段扩展到 platform/vid/cid/cached |
+| `index.php` | 错误路径全部改用 `mxgj_early_response()`；`$vars` 增加 platform/vid/cid/cached/params；修复 `$cachedIsHit` 未定义 BUG（统一为 `$cachedHit`） |
+| `admin.php` | 保存设置新增 `mode`/`show_meta`；输出设置 UI 新增格式下拉、meta 开关、standard 响应示例、扩展值来源 datalist |
+| `config/settings.json` | 新增 `output.mode: standard` + `output.show_meta: true` |
+| `version.json` | 版本号 1.17.8→1.17.9；features 新增标准四段式、API 自描述、错误码规范化 |
+
+### 标准响应格式
+```json
+// 成功
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "url": "https://.../xxx.m3u8",
+    "player_url": "http://host/player/?url=...",
+    "raw_url": "https://...raw.m3u8",
+    "title": "庆余年",
+    "episode": 2,
+    "platform": "腾讯视频",
+    "site": "A站",
+    "is_special": false,
+    "site_special": false,
+    "from_fallback": false,
+    "from_pool": "primary"
+  },
+  "meta": {
+    "api_version": "1.17.9",
+    "service": "沫兮官替系统",
+    "mode": "standard",
+    "request_id": "ed5b98779c979a54",
+    "elapsed_ms": 85.2,
+    "timestamp": 1756000000,
+    "cached": false,
+    "platform": "腾讯视频",
+    "vid": "k4102szvyce",
+    "cid": "mzc00200zx8psx0",
+    "params": { "page": 1, "debug": 0 }
+  }
+}
+
+// 失败（data 为 null）
+{ "code": 400, "msg": "缺少 url 参数", "data": null, "meta": { ... } }
+```
+
+### 错误码规范
+| code | 含义 |
+|------|------|
+| 200  | 成功 |
+| 400  | 请求参数错误（缺少 url / url 格式错） |
+| 403  | 访问被拒绝（key 无效） |
+| 404  | 资源未找到 |
+| 501  | 功能未实现（未配置任何资源站） |
+| 502  | 无法识别链接对应的剧名 |
+| 503  | 所有资源站暂不可用 |
+
+### 兼容性 ✅
+- **legacy 模式**：后台「输出格式」下拉切到 legacy，即可恢复 v1.17.8 及以前的扁平结构
+- **旧 settings.json**：没有 mode/show_meta 字段时，bootstrap 默认值兜底
+- **所有错误分支统一格式**：包括 key 校验失败、url 校验失败、映射失败等提前返回场景
+
+### 使用示例
+```bash
+# 标准格式（默认）
+curl "http://114.134.184.91:9007/?url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce"
+
+# legacy 格式（后台切换后生效）
+# 返回 { code, msg, url, title, time, ... } 扁平结构
+
+# JSONP 跨域调用不受影响
+curl "http://114.134.184.91:9007/?url=...&callback=handleResponse"
+```
+
+---
+
 ## [v1.17.5] 2026-08-29 · 🔄 资源平替 / 资源站互换（主池失败自动降级）
 
 ### 背景与思路

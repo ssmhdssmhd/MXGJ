@@ -1,15 +1,15 @@
 {
   "name": "沫兮官替系统",
   "name_en": "MXGJ",
-  "version": "1.17.8",
-  "release": "2026-08-29",
+  "version": "1.17.9",
+  "release": "2026-08-31",
   "php": ">=7.4",
   "extensions": [
     "curl",
     "json"
   ],
   "storage": "无数据库（JSON 文件存储）",
-  "description": "官方视频链接 → 多线程资源站搜索 → JSON 输出 m3u8 的替换解析系统",
+  "description": "官方视频链接 → 多线程资源站搜索 → 标准 JSON 输出（code/msg/data/meta 四段式）",
   "features": [
     "多线程资源站并发搜索 (curl_multi)",
     "主流视频平台官方链接解析",
@@ -24,6 +24,10 @@
     "资源站特殊调用方法(GET/POST/自定义Header/POST体/返回解析模式)",
     "文件缓存",
     "可视化后台管理",
-    "JSONP / CORS"
+    "JSONP / CORS",
+    "标准四段式 JSON 响应 (code/msg/data/meta)",
+    "API 版本自描述 + 请求唯一 ID",
+    "错误码规范化 (4xx/5xx)",
+    "legacy 模式向后兼容"
   ]
 }

@@ -7,6 +7,10 @@
  *
  * 说明：key 参数固定在 url 之前（key 校验最先执行，key 为空字符串则跳过鉴权）。
  *
+ * 返回格式（v1.17.9+ 默认 standard 四段式，可后台切换 legacy 扁平格式）：
+ *   success: { code:200, msg:"success", data:{url,title,episode,site,...}, meta:{api_version,...} }
+ *   error:   { code:400, msg:"缺少 url 参数", data:null, meta:{...} }
+ *
  * 流程：
  *  0. 校验访问密钥 key（可选）
  *  1. 解析官方链接 → 平台 / vid / cid
@@ -26,7 +30,7 @@ $ip    = $_SERVER['REMOTE_ADDR'] ?? '';
 $visitKey = @include MXGJ_CONFIG . '/key.php';
 if (is_string($visitKey) && $visitKey !== '' && (($_GET['key'] ?? '') !== $visitKey)) {
     Logger::log('error', '访问被拒绝：key 缺失或无效', 'warn', ['ip' => $ip]);
-    mxgj_json_out(['code' => 403, 'msg' => '访问被拒绝：缺少或无效的 key 参数', 'url' => ''], 403);
+    mxgj_early_response(403, '访问被拒绝：缺少或无效的 key 参数', ['source' => '']);
 }
 
 /* 1. 读取 url 参数（位于 key 之后） */
@@ -35,14 +39,14 @@ $raw = isset($_GET['url']) ? trim($_GET['url']) : '';
 // 1. 校验链接
 if ($raw === '') {
     Logger::log('error', '缺少 url 参数', 'warn', ['ip' => $ip]);
-    mxgj_json_out(['code' => 400, 'msg' => '缺少 url 参数', 'url' => ''], 400);
+    mxgj_early_response(400, '缺少 url 参数', ['source' => '']);
 }
 if (strpos($raw, 'http') !== 0) {
     $raw = 'http://' . $raw;
 }
 if (!parse_url($raw, PHP_URL_HOST)) {
     Logger::log('error', '链接格式非法：' . $raw, 'warn', ['ip' => $ip]);
-    mxgj_json_out(['code' => 400, 'msg' => '链接格式非法', 'url' => ''], 400);
+    mxgj_early_response(400, '链接格式非法', ['source' => $raw]);
 }
 
 // 2. 解析官方链接
@@ -115,12 +119,13 @@ if ($name === '') {
     $mapHint = $parsed['vid'] !== '' ? 'vid=' . $parsed['vid']
              : ($parsed['cid'] !== '' ? 'cid=' . $parsed['cid'] : '');
     Logger::log('error', '无法识别剧名：' . $raw, 'warn', ['vid' => $parsed['vid'], 'cid' => $parsed['cid'], 'ip' => $ip]);
-    mxgj_json_out([
-        'code' => 502,
-        'msg'  => '无法识别该链接对应的剧名，请到后台「映射表」添加映射'
-                . ($mapHint !== '' ? '（' . $mapHint . '）' : ''),
-        'url'  => '',
-    ], 200);
+    mxgj_early_response(502, '无法识别该链接对应的剧名，请到后台「映射表」添加映射'
+        . ($mapHint !== '' ? '（' . $mapHint . '）' : ''), [
+            'platform' => $parsed['platform'],
+            'vid'      => $parsed['vid'],
+            'cid'      => $parsed['cid'],
+            'source'   => $raw,
+        ]);
 }
 
 // 4. 读配置
@@ -140,22 +145,23 @@ $primaryKey = 'search:' . mxgj_lower($name) . ':' . $episode;
 $fallbackKey= 'search_fb:' . mxgj_lower($name) . ':' . $episode;
 $now        = time();
 
-$cached       = Cache::get($primaryKey);
-$cachedFromFb = false;
-if ($cached && isset($cached['code'], $cached['url']) && ($cached['time'] ?? 0) + (int)$settings['cache_ttl'] > $now) {
+$cachedResult = Cache::get($primaryKey);
+$cachedHit    = false; // 是否命中缓存（给 debug / 日志用）
+if ($cachedResult && isset($cachedResult['code'], $cachedResult['url'])
+    && ($cachedResult['time'] ?? 0) + (int)$settings['cache_ttl'] > $now) {
     // 主缓存命中：如果是之前平替命中的且 step2_retry_main=true，这次再去主池试试
-    if (!empty($cached['from_fallback']) && $retryMainOnFb && $fallbackEnable) {
+    if (!empty($cachedResult['from_fallback']) && $retryMainOnFb && $fallbackEnable) {
         Logger::log('search', '缓存为平替命中，重新尝试主池：' . $name . ' 第' . $episode . '集', 'info');
-        $cached = null; // 让下面重新搜
+        $cachedResult = null; // 让下面重新搜
     } else {
-        $cachedFromFb = !empty($cached['from_fallback']);
+        $cachedHit = true;
     }
 } else {
-    $cached = null;
+    $cachedResult = null;
 }
 
-if ($cached) {
-    $result = $cached;
+if ($cachedResult) {
+    $result = $cachedResult;
 } else {
     // 6. 🔄 两级搜索：主池 → 平替池（平替开关开启且主池未命中时自动降级）
     $result = SiteSearcher::searchWithFallback(
@@ -173,7 +179,7 @@ if ($cached) {
 }
 
 // 7. 组装返回
-//    - 特殊资源站（is_special=true）自动套 本地//player/ 播放器，无需手动拼接
+//    - 特殊资源站（is_special=true）自动套 本地 //player/ 播放器，无需手动拼接
 //    - 专用字段：is_special / player_url / raw_url / site_special
 $isSpecial  = !empty($result['site_special']);
 $rawPlayUrl = $result['raw_url'] ?? $result['url'] ?? '';  // finalizeUrl 前的原始地址
@@ -188,30 +194,40 @@ if ($isSpecial && $playerUrl !== '') {
 $vars = [
     'code'         => $result['code'],
     'msg'          => $result['msg'] ?? '',
-    'url'          => $finalUrl,                      // 最终可播放地址（特殊站已自动套播放器）
+    'url'          => $finalUrl,               // 最终可播放地址（特殊站已自动套播放器）
     'title'        => $name,
     'episode'      => $episode,
     'site'         => $result['site'] ?? '',
+    'platform'     => $parsed['platform'],     // 解析出的来源平台（腾讯/爱奇艺/...）
+    'vid'          => $parsed['vid'],
+    'cid'          => $parsed['cid'],
     'source'       => $raw,
     'time'         => round((microtime(true) - $t0) * 1000, 1),
     // 特殊资源站专用字段
-    'is_special'   => $isSpecial,                     // 是否特殊资源站命中
-    'site_special' => $isSpecial,                     // 同 is_special，兼容两种命名
-    'player_url'   => $playerUrl,                     // 本地播放器入口 URL
-    'raw_url'      => $rawPlayUrl,                    // 资源站原始返回地址（未套 proxy / 播放器）
+    'is_special'   => $isSpecial,              // 是否特殊资源站命中
+    'site_special' => $isSpecial,              // 同 is_special，兼容两种命名
+    'player_url'   => $playerUrl,              // 本地播放器入口 URL
+    'raw_url'      => $rawPlayUrl,             // 资源站原始返回地址（未套 proxy / 播放器）
     // 🔄 平替命中标记
     'from_fallback' => !empty($result['from_fallback']), // 是否命中了平替池
     'from_pool'     => $result['from_pool'] ?? 'primary', // 命中的池：primary / fallback
+    // 缓存标记
+    'cached'       => $cachedHit,
+    // 本次请求的公开参数（供 meta.params 参考）
+    'params'       => [
+        'page'   => $page,
+        'debug'  => $debug ? 1 : 0,
+    ],
 ];
 if ($debug) {
     $vars['debug'] = [
-        'parsed' => $parsed,
-        'title'  => $name,
-        'episode'=> $episode,
+        'parsed'    => $parsed,
+        'title'     => $name,
+        'episode'   => $episode,
         'name_from' => $nameFrom !== '' ? 'page抓取' : 'mapping/解析',
-        'page_title' => $nameFrom,
-        'sites'  => count($sites),
-        'cached' => $cachedIsHit,
+        'page_title'=> $nameFrom,
+        'sites'     => count($sites),
+        'cached'    => $cachedHit,
     ];
 }
 $out = mxgj_build_output($vars, $debug);
@@ -224,10 +240,11 @@ Logger::log(
     [
         'title'    => $name,
         'episode'  => $episode,
+        'platform' => $parsed['platform'],
         'code'     => $result['code'],
         'site'     => $result['site'] ?? '',
         'url'      => $result['url'] ?? '',
-        'cached'   => $cachedIsHit,
+        'cached'   => $cachedHit,
         'time_ms'  => round((microtime(true) - $t0) * 1000, 1),
         'from'     => $nameFrom !== '' ? 'page抓取' : 'mapping/解析',
         'ip'       => $ip,
