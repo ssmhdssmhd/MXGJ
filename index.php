@@ -53,7 +53,7 @@ if (!parse_url($raw, PHP_URL_HOST)) {
 $parsed = LinkParser::parse($raw);
 
 // 3. 本地映射表（无数据库）
-$mapping = mxgj_read_json(MXGJ_CONFIG . '/mapping.json', []);
+$mapping = mxgj_mapping_data();
 $name    = $parsed['title'];
 $episode = $parsed['episode'] > 0 ? $parsed['episode'] : $page;
 

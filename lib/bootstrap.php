@@ -15,7 +15,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.11');
+define('MXGJ_VERSION', '1.17.13');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -23,6 +23,13 @@ if (!defined('MXGJ_ROOT')) {
 define('MXGJ_CONFIG', MXGJ_ROOT . '/config');
 define('MXGJ_DATA', MXGJ_ROOT . '/data');
 define('MXGJ_CACHE', MXGJ_DATA . '/cache');
+
+/**
+ * 🔐 统一环境变量文件（INI 格式）
+ * 所有后台设置实时读写此文件 — 修改后立即生效（PHP 每个请求重新 stat + 解析）
+ * 老的 settings.json / sites.json / mapping.json 只在首次自动迁移时用一次
+ */
+define('MXGJ_ENV', MXGJ_CONFIG . '/.env.ini');
 
 // 播放器目录（苹果CMS10 MacPlayer 兼容后台）
 define('MXGJ_PLAYER', MXGJ_ROOT . '/player');
@@ -101,6 +108,300 @@ function mxgj_write_json(string $file, array $data): bool
     return $ok;
 }
 
+/* ============================================================
+ * 🔐 .env.ini 统一配置 — 实时读写，修改后立即生效
+ * ============================================================ */
+
+/**
+ * INI 原始值 → PHP 类型
+ * INI_SCANNER_RAW 把所有值都返回字符串，需要手动转换：
+ *   - @json[...]  → json_decode
+ *   - true/false  → boolean
+ *   - 纯数字      → int / float
+ *   - 其余        → string（保留 INI 已剥掉外层引号的内容）
+ */
+function mxgj_env_convert(string $raw): mixed
+{
+    // @json 前缀 → JSON 数组/对象
+    if (strlen($raw) >= 5 && str_starts_with($raw, '@json')) {
+        $decoded = json_decode(substr($raw, 5), true);
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : [];
+    }
+    // 布尔
+    $low = strtolower($raw);
+    if ($low === 'true') return true;
+    if ($low === 'false') return false;
+    if ($low === 'null') return null;
+    // 整数
+    if (preg_match('/^-?\d+$/', $raw)) return (int)$raw;
+    // 浮点数
+    if (preg_match('/^-?\d+\.\d+$/', $raw)) return (float)$raw;
+    // 字符串
+    return $raw;
+}
+
+/**
+ * PHP 值 → INI 可写字符串（mxgj_env_write 内部用）
+ */
+function mxgj_env_enc(mixed $v): string
+{
+    if ($v === true)  return 'true';
+    if ($v === false) return 'false';
+    if ($v === null)  return '""';
+    if (is_int($v) || is_float($v)) return (string)$v;
+    if (is_array($v)) return '@json' . json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $s = (string)$v;
+    if ($s === '') return '""';
+    // 含空白/引号/反斜杠 → 加引号
+    if (preg_match('/[\s"\\\\]/', $s)) return '"' . addcslashes($s, '"\\\\') . '"';
+    return $s;
+}
+
+/**
+ * 读取 .env.ini — **实时读取，filemtime 微缓存**
+ * 每个 PHP-FPM 进程维护自己的 filemtime 快照，文件改了就重新 parse_ini_file
+ * 所以修改 .env.ini 后**下一个请求立即生效**（不需要清任何缓存）
+ *
+ * @return array{sections:array, env_file:string, migrated:bool}
+ */
+function mxgj_env_read(): array
+{
+    static $cache = null;
+    static $last_mtime = 0;
+
+    $envFile = MXGJ_ENV;
+
+    // 自动迁移：如果 .env.ini 不存在但 settings.json 存在 → 自动生成
+    if (!is_file($envFile)) {
+        mxgj_env_migrate();
+    }
+
+    if (!is_file($envFile)) {
+        // 兜底：连 .env.ini 都没生成出来 → 返回空 section
+        return ['sections' => [], 'env_file' => $envFile, 'migrated' => false];
+    }
+
+    // filemtime 微缓存（1 次 stat 系统调用，几乎零开销）
+    $mt = @filemtime($envFile);
+    if ($cache !== null && $mt === $last_mtime) {
+        return ['sections' => $cache, 'env_file' => $envFile, 'migrated' => false];
+    }
+
+    $raw = @file_get_contents($envFile);
+    if ($raw === false) {
+        return ['sections' => [], 'env_file' => $envFile, 'migrated' => false];
+    }
+
+    $parsed = @parse_ini_string($raw, true, INI_SCANNER_RAW);
+    if (!is_array($parsed)) {
+        return ['sections' => [], 'env_file' => $envFile, 'migrated' => false];
+    }
+
+    // 类型转换
+    $cache = [];
+    foreach ($parsed as $section => $pairs) {
+        foreach ($pairs as $k => $v) {
+            $cache[$section][$k] = is_string($v) ? mxgj_env_convert($v) : $v;
+        }
+    }
+    $last_mtime = $mt ?: time();
+
+    return ['sections' => $cache, 'env_file' => $envFile, 'migrated' => false];
+}
+
+/**
+ * 写入整个 .env.ini（原子写入：tmp 文件 + rename）
+ *
+ * @param array $sections 完整 sections 数组，如 ['system'=>[...], 'sites'=>['data'=>[...]]]
+ * @return bool  true=写入成功
+ */
+function mxgj_env_write(array $sections): bool
+{
+    $envFile = MXGJ_ENV;
+    $dir = dirname($envFile);
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    if (!is_writable($dir)) {
+        Logger::log('error', 'mxgj_env_write 失败：config 目录不可写', 'error', ['dir' => $dir]);
+        return false;
+    }
+
+    // 读取旧文件头注释（保留第一行到最后一个 ;== 的注释块）
+    $header = '';
+    if (is_file($envFile)) {
+        $raw = @file_get_contents($envFile);
+        if ($raw !== false && preg_match('/^(;[^\n]*\n)+/', $raw, $m)) {
+            $header = $m[0];
+        }
+    }
+
+    $w = [$header !== '' ? rtrim($header) : '; MXGJ .env.ini — 统一配置文件'];
+    $w[] = '';
+
+    foreach ($sections as $section => $pairs) {
+        if (!is_array($pairs) || $pairs === []) continue;
+        $w[] = "[$section]";
+        foreach ($pairs as $k => $v) {
+            if ($k === '__order__') continue; // 内部标记，不写
+            $w[] = $k . ' = ' . mxgj_env_enc($v);
+        }
+        $w[] = '';
+    }
+
+    $content = implode("\n", $w);
+
+    // 原子写入：先写临时文件，再 rename（防并发写丢数据）
+    $tmp = $envFile . '.' . bin2hex(random_bytes(4)) . '.tmp';
+    $ok = @file_put_contents($tmp, $content, LOCK_EX);
+    if ($ok === false) {
+        @unlink($tmp);
+        Logger::log('error', 'mxgj_env_write 失败：临时文件写入失败', 'error', ['tmp' => $tmp]);
+        return false;
+    }
+    $ok = @rename($tmp, $envFile);
+    if (!$ok) {
+        @unlink($tmp);
+        Logger::log('error', 'mxgj_env_write 失败：rename 到 .env.ini 失败', 'error');
+        return false;
+    }
+    @chmod($envFile, 0664);
+    return true;
+}
+
+/**
+ * 更新 .env.ini 中的某个 section（合并写入）
+ * 先读取完整文件 → 合并目标 section 的键 → 全量写回
+ *
+ * @param string $section  section 名，如 'system' / 'app_api' / 'sites' / 'mapping'
+ * @param array  $pairs    要更新的键值对
+ * @return bool
+ */
+function mxgj_env_upsert(string $section, array $pairs): bool
+{
+    $read = mxgj_env_read();
+    $sections = $read['sections'] ?: [];
+    $sections[$section] = array_merge($sections[$section] ?? [], $pairs);
+    return mxgj_env_write($sections);
+}
+
+/**
+ * 从旧 settings.json / sites.json / mapping.json 自动生成 .env.ini
+ * 只在 .env.ini 不存在时调用一次
+ */
+function mxgj_env_migrate(): void
+{
+    $envFile = MXGJ_ENV;
+    $settingsJson = MXGJ_CONFIG . '/settings.json';
+    $sitesJson    = MXGJ_CONFIG . '/sites.json';
+    $mappingJson  = MXGJ_CONFIG . '/mapping.json';
+
+    if (!is_file($settingsJson)) return; // 连旧的都没，就不迁移
+
+    $settings = mxgj_read_json($settingsJson, []);
+    $sitesRaw = mxgj_read_json($sitesJson, []);
+    $mapping  = mxgj_read_json($mappingJson, []);
+
+    $defaults = [
+        'system' => [
+            'admin_password' => 'moxi123', 'updater_key' => '', 'timeout' => 15,
+            'cache_ttl' => 600, 'page_size' => 50, 'replace_domain' => '',
+            'repo_owner' => 'ssmhdssmhd', 'repo_name' => 'MXGJ', 'repo_branch' => 'main',
+        ],
+        'app_api' => [
+            'enable' => true, 'require_key' => false, 'api_key' => '',
+            'player_type' => 'lgzym3u8', 'proxy_enable' => true,
+            'cors' => '*', 'max_size_mb' => 10, 'rate_limit' => 0,
+        ],
+        'output' => [
+            'mode' => 'standard', 'show_source' => false, 'show_meta' => true,
+            'fields' => [],
+        ],
+        'site_control' => [
+            'search_interval' => 10, 'heartbeat_enable' => false,
+            'heartbeat_interval' => 300, 'heartbeat_timeout' => 5,
+            'heartbeat_max_fail' => 3, 'cooldown_seconds' => 600,
+            'rotation_enable' => false, 'rotation_interval' => 300,
+            'max_sites_per_request' => 0,
+        ],
+        'fallback' => [
+            'enable' => false, 'step2_retry_main' => true,
+        ],
+        'cron' => [
+            'key' => '', 'interval_mins' => 60, 'scan_sites' => true,
+            'scan_pages' => 1, 'timeout' => 20, 'seed_links' => [],
+        ],
+    ];
+
+    $sections = [];
+    foreach ($defaults as $sec => $def) {
+        if (isset($settings[$sec]) && is_array($settings[$sec])) {
+            $sections[$sec] = array_merge($def, $settings[$sec]);
+        } else {
+            $sections[$sec] = [];
+            foreach ($def as $k => $dv) {
+                $sections[$sec][$k] = $settings[$k] ?? $dv;
+            }
+        }
+    }
+
+    // sites section
+    $sites = isset($sitesRaw['sites']) && is_array($sitesRaw['sites']) ? $sitesRaw['sites'] : [];
+    $sections['sites'] = ['data' => $sites];
+    // mapping section
+    $sections['mapping'] = ['data' => is_array($mapping) ? $mapping : []];
+
+    mxgj_env_write($sections);
+    Logger::log('info', '.env.ini 自动迁移完成（从旧 JSON 文件）', 'info', [
+        'sites' => count($sites), 'mapping_keys' => count($sections['mapping']['data'] ?? []),
+    ]);
+}
+
+/**
+ * section 内的单个键值对更新（比 upsert 更轻）
+ */
+function mxgj_env_set(string $section, string $key, mixed $value): bool
+{
+    return mxgj_env_upsert($section, [$key => $value]);
+}
+
+/**
+ * 读某个 section 的全部内容
+ */
+function mxgj_env_section(string $section): array
+{
+    $r = mxgj_env_read();
+    return $r['sections'][$section] ?? [];
+}
+
+/**
+ * 把 mxgj_settings() 返回的扁平数组（含嵌套 section）拆成
+ * .env.ini 需要的 sections 结构，供 mxgj_env_write 写入
+ *
+ * @param array $st mxgj_settings() 返回值（可能是部分更新的子集）
+ * @return array
+ */
+function mxgj_build_env_sections(array $st): array
+{
+    // 先读当前完整 sections（避免写丢 sites/mapping 等非 settings 数据）
+    $r = mxgj_env_read();
+    $sections = $r['sections'] ?: [];
+
+    // 扁平字段 → [system] section
+    $systemKeys = ['admin_password', 'updater_key', 'timeout', 'cache_ttl', 'page_size', 'replace_domain', 'repo_owner', 'repo_name', 'repo_branch'];
+    foreach ($systemKeys as $k) {
+        if (array_key_exists($k, $st)) {
+            $sections['system'][$k] = $st[$k];
+        }
+    }
+    // 嵌套 section 直接赋值（如果存在）
+    foreach (['site_control', 'output', 'app_api', 'fallback', 'cron'] as $sec) {
+        if (isset($st[$sec]) && is_array($st[$sec])) {
+            $sections[$sec] = $st[$sec];
+        }
+    }
+
+    return $sections;
+}
+
 /**
  * 检测配置/数据目录的可写性（admin.php 启动时用于 UI 警告）
  *
@@ -130,81 +431,78 @@ function mxgj_env_check(): array
  */
 function mxgj_settings(): array
 {
-    static $settings = null;
-    if ($settings === null) {
-        $settings = array_merge([
-            'admin_password' => 'moxi123', // 后台登录密码（请修改）
-            'updater_key'    => '',        // 升级密钥（update.php 用，留空则回退 admin_password）
-            'timeout'        => 15,        // 单次资源站请求超时(秒)
-            'cache_ttl'      => 600,       // 搜索缓存时长(秒)
-            'page_size'      => 50,        // 资源站查看每页返回条数（默认50）
-            'replace_domain' => '',        // 域名替换/中转前缀，留空则直接返回资源站地址
-            'repo_owner'     => 'ssmhdssmhd',
-            'repo_name'      => 'MXGJ',
-            'repo_branch'    => 'main',
-            // 资源站调用频率控制（搜索节流 + 心跳探测 + 轮训）
-            'site_control'   => [
-                'search_interval'   => 15,    // 资源站搜索频率：同一站两次实际调用最短间隔(秒)，防刷屏被屏蔽
-                'heartbeat_enable'  => true,  // 是否启用心跳检测
-                'heartbeat_interval'=> 600,   // 资源站心跳频率：多久探测一次资源站可达性(秒)
-                'heartbeat_timeout' => 5,     // 心跳探测单站超时(秒)
-                'heartbeat_max_fail'=> 3,     // 连续失败达 N 次自动禁用该站
-                'cooldown_seconds'  => 1800,  // 被禁用的站在多少秒后自动恢复重试
-                'rotation_enable'   => true,  // 是否启用资源站轮训（定期切换优先顺序/分批调用）
-                'rotation_interval'=> 600,    // 资源站轮训：每隔多少秒切换一次命中顺序(秒)
-                'max_sites_per_request' => 4, // 每次搜索最多并发请求几个资源站(0=不限制)
-            ],
-            // 输出返回设置（自定义返回字段映射）
-            'output'         => [
-                'mode'        => 'standard', // standard=标准四段式(code/msg/data/meta) | legacy=旧版扁平格式
-                'show_source' => false,      // 是否在返回中附带原始请求链接（默认隐藏）
-                'show_meta'   => true,       // standard 模式是否返回 meta 段（关闭则只输出 data 段）
-                'fields'      => [           // legacy 模式的返回字段模板：k=输出键名，v=值来源(系统字段名)或常量字符串
-                    ['k' => 'code', 'v' => 'code'],         // 状态码
-                    ['k' => 'msg',  'v' => 'url'],          // msg 默认等于播放链接(便于兼容)
-                    ['k' => 'url',  'v' => 'url'],          // 播放链接
-                    ['k' => 'time', 'v' => 'time'],         // 耗时(毫秒)
-                    ['k' => 'KFZ',  'v' => '沫兮官替系统'], // 开发者(常量)
-                ],
-            ],
-            'app_api'        => [
-                'enable'       => true,
-                'require_key'  => false,
-                'api_key'      => '',
-                'player_type'  => 'lgzym3u8',
-                'proxy_enable' => true,
-                'cors'         => '*',
-                'max_size_mb'  => 10,
-                'rate_limit'   => 0,
-            ],
-            // 🔄 资源平替（资源互换 / 主池失败自动降级到备用池）
-            'fallback'       => [
-                'enable'           => false,  // 总开关（默认关闭，需手动开启）
-                'step2_retry_main' => true,   // 平替命中后，下次请求是否再尝试主池
-            ],
-        ], mxgj_read_json(MXGJ_CONFIG . '/settings.json'));
+    // 实时读取 .env.ini — filemtime 微缓存，改了文件立即生效
+    // 保持旧版返回结构（扁平 + 嵌套 section），对所有调用方透明
+    $r = mxgj_env_read();
+    $s = $r['sections'];
+
+    // 默认值（和旧版保持一致）
+    $defaults = [
+        'admin_password' => 'moxi123', 'updater_key' => '',
+        'timeout' => 15, 'cache_ttl' => 600, 'page_size' => 50,
+        'replace_domain' => '',
+        'repo_owner' => 'ssmhdssmhd', 'repo_name' => 'MXGJ', 'repo_branch' => 'main',
+        'site_control' => [
+            'search_interval' => 10, 'heartbeat_enable' => false,
+            'heartbeat_interval' => 300, 'heartbeat_timeout' => 5,
+            'heartbeat_max_fail' => 3, 'cooldown_seconds' => 600,
+            'rotation_enable' => false, 'rotation_interval' => 300,
+            'max_sites_per_request' => 0,
+        ],
+        'output' => [
+            'mode' => 'standard', 'show_source' => false, 'show_meta' => true,
+            'fields' => [],
+        ],
+        'app_api' => [
+            'enable' => true, 'require_key' => false, 'api_key' => '',
+            'player_type' => 'lgzym3u8', 'proxy_enable' => true,
+            'cors' => '*', 'max_size_mb' => 10, 'rate_limit' => 0,
+        ],
+        'fallback' => ['enable' => false, 'step2_retry_main' => true],
+        'cron' => [
+            'key' => '', 'interval_mins' => 60, 'scan_sites' => true,
+            'scan_pages' => 1, 'timeout' => 20, 'seed_links' => [],
+        ],
+    ];
+
+    $out = [];
+    // 扁平字段从 [system] section 拿
+    foreach (['admin_password', 'updater_key', 'timeout', 'cache_ttl', 'page_size', 'replace_domain', 'repo_owner', 'repo_name', 'repo_branch'] as $k) {
+        $out[$k] = $s['system'][$k] ?? $defaults[$k];
     }
-    return $settings;
+    // 嵌套 section 直接取
+    foreach (['site_control', 'output', 'app_api', 'fallback', 'cron'] as $sec) {
+        $out[$sec] = isset($s[$sec]) && is_array($s[$sec])
+            ? array_merge($defaults[$sec], $s[$sec])
+            : $defaults[$sec];
+    }
+
+    return $out;
 }
 
 /**
- * 读取后台配置的资源站列表（自动补全 role 字段）
+ * 读取后台配置的资源站列表（实时读 .env.ini，自动补全 role 字段）
  */
 function mxgj_sites(): array
 {
-    static $sites = null;
-    if ($sites === null) {
-        $data = mxgj_read_json(MXGJ_CONFIG . '/sites.json');
-        $raw  = isset($data['sites']) && is_array($data['sites']) ? $data['sites'] : [];
-        // 自动补全 role 字段：缺省为 primary
-        foreach ($raw as $i => $s) {
-            if (!isset($s['role']) || !in_array($s['role'], ['primary', 'fallback'], true)) {
-                $raw[$i]['role'] = 'primary';
-            }
+    // 实时读取 — 不再 static 缓存
+    $r = mxgj_env_section('sites');
+    $raw = isset($r['data']) && is_array($r['data']) ? $r['data'] : [];
+    foreach ($raw as $i => $s) {
+        if (!isset($s['role']) || !in_array($s['role'], ['primary', 'fallback'], true)) {
+            $raw[$i]['role'] = 'primary';
         }
-        $sites = $raw;
     }
-    return $sites;
+    return $raw;
+}
+
+/**
+ * 实时读取映射表（title/vid/cid/episode）
+ */
+function mxgj_mapping_data(): array
+{
+    $r = mxgj_env_section('mapping');
+    return isset($r['data']) && is_array($r['data']) ? $r['data'] : [];
 }
 
 /**
@@ -671,8 +969,7 @@ function mxgj_auto_mapping(array $parsed, string $name, int $episode): bool
     if ($key === '' || $name === '' || $episode <= 0) {
         return false;
     }
-    $file   = MXGJ_CONFIG . '/mapping.json';
-    $mapping = mxgj_read_json($file, []);
+    $mapping = mxgj_env_section('mapping');
     if (!isset($mapping['episode']) || !is_array($mapping['episode'])) {
         $mapping['episode'] = [];
     }
@@ -680,7 +977,7 @@ function mxgj_auto_mapping(array $parsed, string $name, int $episode): bool
         return false; // 已有映射，不覆盖
     }
     $mapping['episode'][$key] = ['name' => $name, 'episode' => (int)$episode];
-    return mxgj_write_json($file, $mapping);
+    return mxgj_env_upsert('mapping', ['data' => $mapping]);
 }
 
 /**

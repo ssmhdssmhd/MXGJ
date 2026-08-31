@@ -26,6 +26,25 @@ function isLoggedIn(): bool {
 }
 
 /** 写入失败时，输出清晰的错误页（而不是盲目 redirect） */
+
+// 判断是否为 AJAX 请求（X-Requested-With: XMLHttpRequest）
+function mxgj_is_ajax(): bool {
+    return !empty($_SERVER['HTTP_X_REQUESTED_WITH']) 
+        && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+}
+
+// 保存成功后的统一退出：AJAX 返回 JSON，非 AJAX 返回重定向
+function mxgj_save_ok(string $tab, string $msg = '已保存'): never {
+    mxgj_purge_runtime();
+    if (mxgj_is_ajax()) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => true, 'msg' => $msg], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    header('Location: admin.php?tab=' . urlencode($tab) . '&saved=1');
+    exit;
+}
+
 function mxgj_save_fail(string $file): void {
     $env = mxgj_env_check();
     $hint = !$env['config']
@@ -108,15 +127,13 @@ switch ($ACTION) {
                 'parse'      => $parse,        // 返回解析模式：空/json/text/apple
             ];
         }
-        if (!mxgj_write_json($sitesFile, ['sites' => $clean])) { mxgj_save_fail($sitesFile); }
+        if (!mxgj_env_upsert('sites', ['data' => $clean])) { mxgj_save_fail('config/.env.ini'); }
         Logger::log('operation', '保存资源站列表（共 ' . count($clean) . ' 个）', 'success');
         Logger::log('config', '资源站配置保存成功：' . count($clean) . ' 个站点', 'success', ['sites' => $clean]);
-        mxgj_purge_runtime(); // 保存后自动清理运行时数据
-        header('Location: admin.php?tab=sites&saved=1');
-        exit;
+        mxgj_save_ok('sites', '已保存资源站');
 
     case 'save_mapping':
-        $oldMap = mxgj_read_json($mappingFile, []);
+        $oldMap = mxgj_mapping_data();
         $mapping = [
             'title' => [],
             'cid'   => [],
@@ -158,12 +175,10 @@ switch ($ACTION) {
                 $mapping['episode'][$id] = ['name' => $en, 'episode' => $ep];
             }
         }
-        if (!mxgj_write_json($mappingFile, $mapping)) { mxgj_save_fail($mappingFile); }
+        if (!mxgj_env_upsert('mapping', ['data' => $mapping])) { mxgj_save_fail('config/.env.ini'); }
         Logger::log('operation', '保存映射表（title ' . count($mapping['title']) . ' / cid ' . count($mapping['cid']) . ' / episode ' . count($mapping['episode']) . '）', 'success');
         Logger::log('config', '映射表配置保存成功', 'success', ['count' => ['title' => count($mapping['title']), 'cid' => count($mapping['cid']), 'episode' => count($mapping['episode'])]]);
-        mxgj_purge_runtime(); // 保存后自动清理运行时数据
-        header('Location: admin.php?tab=mapping&saved=1');
-        exit;
+        mxgj_save_ok('mapping', '已保存映射表');
 
     case 'save_settings':
         $st = mxgj_settings();
@@ -226,14 +241,12 @@ switch ($ACTION) {
             'show_meta'   => !empty($_POST['out_show_meta']),
             'fields'      => $fields,
         ];
-        if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
+        // 写 settings → .env.ini（拆成 sections 统一写入）
+        $_env_sections = mxgj_build_env_sections($st);
+        if (!mxgj_env_write($_env_sections)) { mxgj_save_fail('config/.env.ini'); }
         Logger::log('operation', '保存系统设置', 'success');
         Logger::log('config', '系统设置保存成功', 'success', ['timeout' => $st['timeout'], 'cache_ttl' => $st['cache_ttl'], 'output_fields' => count($fields)]);
-        // 自动清理运行时数据（缓存 / 站点健康 / 日志），让新配置立即生效
-        mxgj_purge_runtime();
-        // 更换密码后重登
-        header('Location: admin.php?tab=settings&saved=1');
-        exit;
+        mxgj_save_ok('settings', '已保存系统设置');
 
     case 'save_fallback':
         // 🔄 保存资源平替设置
@@ -242,12 +255,12 @@ switch ($ACTION) {
             'enable'           => !empty($_POST['fb_enable']),
             'step2_retry_main' => !empty($_POST['fb_retry_main']),
         ];
-        if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
+        // 写 settings → .env.ini（拆成 sections 统一写入）
+        $_env_sections = mxgj_build_env_sections($st);
+        if (!mxgj_env_write($_env_sections)) { mxgj_save_fail('config/.env.ini'); }
         Logger::log('operation', '保存资源平替设置（' . ($st['fallback']['enable'] ? '已开启' : '已关闭') . '）', 'success');
         Logger::log('config', '资源平替配置保存成功', 'success', $st['fallback']);
-        mxgj_purge_runtime();
-        header('Location: admin.php?tab=fallback&saved=1');
-        exit;
+        mxgj_save_ok('fallback', '已保存资源平替设置');
 
     case 'heartbeat_now':
         // 立即触发一次资源站心跳探测
@@ -449,7 +462,7 @@ switch ($ACTION) {
         ];
 
         if ($save && $detected['name'] !== '') {
-            $mapping = mxgj_read_json($mappingFile, ['title' => [], 'cid' => [], 'episode' => []]);
+            $mapping = mxgj_mapping_data();
             $newTitle  = !empty($detected['title_raw']) && $detected['title_raw'] !== $detected['name'];
             $titleKey  = $detected['title_raw'] ?? $detected['name'];
             $epKey     = 'url:' . md5($url);
@@ -468,7 +481,7 @@ switch ($ACTION) {
                 $mapping['episode'][$epKey] = ['name' => $detected['name'], 'episode' => $detected['episode']];
                 $savedMap[] = "episode[$epKey] → {$detected['name']} 第{$detected['episode']}集";
             }
-            if (!mxgj_write_json($mappingFile, $mapping)) { mxgj_save_fail($mappingFile); }
+            if (!mxgj_env_upsert('mapping', ['data' => $mapping])) { mxgj_save_fail('config/.env.ini'); }
             $result['saved'] = true;
             $result['saved_map'] = $savedMap;
             $result['msg'] = '映射表已写入 ' . count($savedMap) . ' 条';
@@ -543,7 +556,7 @@ switch ($ACTION) {
             $list[] = $entry;
             $mode = 'add';
         }
-        if (!mxgj_write_json($sitesFile, ['sites' => $list])) { mxgj_save_fail($sitesFile); }
+        if (!mxgj_env_upsert('sites', ['data' => $list])) { mxgj_save_fail('config/.env.ini'); }
         mxgj_purge_runtime(); // 保存后自动清理运行时数据
         Logger::log('operation', ($mode === 'add' ? '添加' : '修改') . '资源站：' . $name_, 'success');
         Logger::log('config', ($mode === 'add' ? '新增' : '修改') . '资源站成功：' . $name_, 'success');
@@ -561,7 +574,7 @@ switch ($ACTION) {
         }
         if ($hit === null) mxgj_json_out(['code' => 404, 'msg' => '资源站不存在']);
         $list[$hit]['enabled'] = $on;
-        if (!mxgj_write_json($sitesFile, ['sites' => $list])) { mxgj_save_fail($sitesFile); }
+        if (!mxgj_env_upsert('sites', ['data' => $list])) { mxgj_save_fail('config/.env.ini'); }
         mxgj_purge_runtime(); // 保存后自动清理运行时数据
         Logger::log('operation', ($on ? '启用' : '禁用') . '资源站：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn', ['enabled' => $on]);
         Logger::log('config', ($on ? '启用' : '禁用') . '资源站配置：' . ($list[$hit]['name'] ?? ''), $on ? 'success' : 'warn');
@@ -575,7 +588,7 @@ switch ($ACTION) {
         if (!in_array($sec, ['title', 'cid', 'episode'], true) || $key === '') {
             mxgj_json_out(['code' => 400, 'msg' => '参数不合法']);
         }
-        $map = mxgj_read_json($mappingFile, []);
+        $map = mxgj_mapping_data();
         if (!isset($map['disabled']) || !is_array($map['disabled'])) $map['disabled'] = [];
         if (!isset($map['disabled'][$sec]) || !is_array($map['disabled'][$sec])) $map['disabled'][$sec] = [];
         // 不存在该条目则报错
@@ -585,7 +598,7 @@ switch ($ACTION) {
         if ($on && $idx !== false)     unset($d[$idx]);   // 启用：从禁用列表移除
         if (!$on && $idx === false)    $d[] = $key;       // 禁用：加入禁用列表
         $d = array_values($d);
-        if (!mxgj_write_json($mappingFile, $map)) { mxgj_save_fail($mappingFile); }
+        if (!mxgj_env_upsert('mapping', ['data' => $map])) { mxgj_save_fail('config/.env.ini'); }
         mxgj_purge_runtime(); // 快捷开关也要清缓存
         Logger::log('operation', ($on ? '启用' : '禁用') . '映射：' . $sec . ' → ' . $key, $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '启用' : '禁用') . '映射条目：' . $sec . ' → ' . $key, $on ? 'success' : 'warn');
@@ -600,7 +613,9 @@ switch ($ACTION) {
         if (!isset($fields[$idx])) mxgj_json_out(['code' => 404, 'msg' => '字段不存在']);
         $fields[$idx]['enabled'] = $on;
         $st['output']['fields'] = $fields;
-        if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
+        // 写 settings → .env.ini（拆成 sections 统一写入）
+        $_env_sections = mxgj_build_env_sections($st);
+        if (!mxgj_env_write($_env_sections)) { mxgj_save_fail('config/.env.ini'); }
         mxgj_purge_runtime(); // 快捷开关也要清缓存
         Logger::log('operation', ($on ? '启用' : '禁用') . '输出字段：' . ($fields[$idx]['k'] ?? ''), $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '启用' : '禁用') . '输出字段「' . ($fields[$idx]['k'] ?? '') . '」', $on ? 'success' : 'warn');
@@ -619,7 +634,9 @@ switch ($ACTION) {
         } else {
             mxgj_json_out(['code' => 400, 'msg' => '不支持的设置项']);
         }
-        if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
+        // 写 settings → .env.ini（拆成 sections 统一写入）
+        $_env_sections = mxgj_build_env_sections($st);
+        if (!mxgj_env_write($_env_sections)) { mxgj_save_fail('config/.env.ini'); }
         mxgj_purge_runtime(); // 快捷开关也要清缓存
         Logger::log('operation', ($on ? '开启' : '关闭') . '设置：' . ($labels[$name] ?? $name), $on ? 'success' : 'warn');
         Logger::log('config', ($on ? '开启' : '关闭') . '设置「' . ($labels[$name] ?? $name) . '」', $on ? 'success' : 'warn');
@@ -703,7 +720,7 @@ switch ($ACTION) {
         }
 
         $res = SiteSearcher::search(mxgj_sites(), $name, $ep, (int)mxgj_settings()['timeout']);
-        $mapped = mxgj_read_json(MXGJ_CONFIG . '/mapping.json', []);
+        $mapped = mxgj_mapping_data();
         $mapKey = $parsed['vid'] !== '' ? 'vid:' . $parsed['vid'] : ($parsed['cid'] !== '' ? 'cid:' . $parsed['cid'] : '');
         $hasMap = isset($mapped['episode'][$mapKey]);
         mxgj_json_out([
@@ -930,7 +947,7 @@ function renderDashboard()
     global $settingsFile, $sitesFile, $mappingFile;
     $settings = mxgj_settings();
     $sites    = mxgj_sites();
-    $mapping  = mxgj_read_json($mappingFile, ['title' => [], 'cid' => []]);
+    $mapping  = mxgj_mapping_data();
     $cacheCnt = AdminHelper::cacheCount();
     $tab = $_GET['tab'] ?? 'dashboard';
     $saved = isset($_GET['saved']);
@@ -1327,17 +1344,24 @@ if (!$env['ok']):
             fetch(form.action || location.pathname, {
                 method: 'POST',
                 body: data,
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
             }).then(function(res){
-                return res.text().then(function(text){ return { ok: res.ok, html: text }; });
+                if (!res.ok) { hasError = true; }
+                return res.text().then(function(text){
+                    // 优先解析 JSON（后端 mxgj_save_ok 返回 {ok,msg}）
+                    try { return { ok: true, data: JSON.parse(text), isJson: true }; }
+                    catch(e){ return { ok: true, data: text, isJson: false }; }
+                });
             }).then(function(res){
-                if(!res.ok){ hasError = true; }
+                if (!res.ok) { hasError = true; }
+                if (res.isJson && res.data && res.data.ok === false) { hasError = true; }
                 markClean(form);
                 savedCount++;
                 submitNext(i+1);
             }).catch(function(){
                 hasError = true;
-                markClean(form); // 不管怎样移除脏标记，避免死循环
+                markClean(form);
                 savedCount++;
                 submitNext(i+1);
             });
@@ -3007,7 +3031,7 @@ function renderFallbackForm($settings, $sites)
     <div class="fb-tip">
         💡 <strong>设计理念：</strong>资源平替是 <strong>独立开关</strong>。平时完全不影响原系统，只有当「主用资源站全部搜索失败」且本开关开启时，才会自动去「平替资源站」再搜一次。这样即使平替资源站质量差，也不会拖累日常请求速度。
     </div>
-    <form method="post" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='保存中...'">
+    <form method="post" class="auto-save" id="form-fallback" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='保存中...'">
         <input type="hidden" name="action" value="save_fallback">
         <label class="fb-switch">
             <input type="checkbox" name="fb_enable" value="1" <?= $enable ? 'checked' : '' ?>>
@@ -3146,7 +3170,7 @@ function renderSettingsForm($settings)
                 <div class="note" style="margin:0 0 8px;font-size:12px">
                     <b>standard 示例：</b>
                     <code style="background:#1e293b;color:#93c5fd;padding:2px 6px;border-radius:4px">
-                        {"code":200,"msg":"success","data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,...},"meta":{"api_version":"1.17.11","request_id":"abc123","elapsed_ms":85.2,...}}
+                        {"code":200,"msg":"success","data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,...},"meta":{"api_version":"1.17.13","request_id":"abc123","elapsed_ms":85.2,...}}
                     </code>
                 </div>
                 <div class="note" style="margin:0 0 8px;font-size:12px">
@@ -3356,7 +3380,7 @@ function renderAppApiForm($settings)
     <p style="margin:0 0 14px;font-size:12.5px;color:#94a3b8">TVBox / 影视 APP / 小程序 调用接口配置<br>
     当前: <span class="api-badge <?= $api['enable']?'on':'off' ?>"><?= $api['enable']?'✅ 已启用':'⛔ 已禁用' ?></span></p>
 
-    <form method="post">
+    <form method="post" class="auto-save" id="form-app-api">
         <input type="hidden" name="action" value="save_settings">
 
         <div class="api-section">
