@@ -1,5 +1,333 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.11] 2026-08-31 · 🔧 修复在线更新「解压失败」+ mirror 返回 HTML 错误页
+
+### 根因
+用户在远程服务器点「立即更新」返回 `解压失败`。探测发现有两个问题：
+1. **某些 mirror（gh-proxy.net）会返回 HTML 错误页**（404/反爬验证），而之前只检查文件大小 > 1000 字节 — 195 字节的 HTML 刚好没过，其他 mirror 也可能返回更大的 HTML
+2. **原代码直接 `new ZipArchive()->open()` 没检查 PHP 扩展是否存在** — 远程服务器没装 `php-zip` 会直接 fatal error，或返回模糊的"解压失败"四个字，完全不知道是什么原因
+
+### 实测 mirror 状态
+```
+gh-proxy.com    → HTTP 200 · 187KB · ✅ zip (PK\x03\x04)
+ghfast.top      → HTTP 200 · 187KB · ✅ zip
+mirror.ghproxy  → HTTP 000 · 187KB · ✅ zip
+gh-proxy.net    → HTTP 200 · 195B  · ❌ 非zip(<!DOCTYPE → HTML 错误页)
+直连 github.com → 待测速
+```
+
+### 核心改动
+
+| 文件 | 改动 |
+|------|------|
+| `lib/Updater.php` | 新增 `isValidZip()` — 检查前 4 字节是不是 `PK\x03\x04` 魔术头；新增 `extractZip()` — **魔术头验证 → ZipArchive（带错误码映射）→ shell unzip 回退** 三重策略；新增 `shellUnzip()` / `findUnzipBinary()` — shell unzip 回退；新增 `zipErrorName()` — ZipArchive 错误码转可读名称（`ER_NOZIP` → `NOZIP`）；新增 `diagnoseEnv()` — 诊断 ZipArchive / shell unzip / data 可写 / PHP 版本，供前端展示；`run()` 和 `diffLocalRemote()` 下载完先验魔术头，非 zip 自动跳过该 mirror 继续下一个；`mirrors()` 去掉坏节点 |
+| `admin.php` | 版本卡片（首屏 + 动态渲染）新增 PHP 环境诊断行：🗜️ ZipArchive ✅/❌ · 🐚 shell ✅/❌ · 📁 data ✅/⚠️ · PHP 版本号；`renderVersionCard()` JS 函数同步输出 env 行 |
+
+### 解压策略链（extractZip）
+```
+0) 魔术头 PK\x03\x04 验证
+   └─ 失败 → 返回「zip 文件头无效」，附 HTML 错误页 title（如果能抓到）
+1) ZipArchive（如果 PHP 扩展可用）
+   ├─ open(zipFile) → 对照 ER_* 常量输出错误名（如 NOZIP / CRC / READ）
+   └─ extractTo(目录)
+      ├─ 成功 → 返回 "ZipArchive 解压成功（N files）"
+      └─ 失败 → 回退 shell unzip ↓
+2) shell unzip（如果系统有 unzip 命令）
+   └─ exec("unzip -oq zip -d toDir")
+3) 全部失败 → 返回详细诊断 + 安装 php-zip 建议
+```
+
+### 实测（坏 mirror 被正确跳过）
+```
+下载阶段：
+  gh-proxy.net 返回 195B HTML → 魔术头校验失败 → 跳过
+  gh-proxy.com 返回 187KB zip → 魔术头通过 → 用它
+解压阶段：
+  isZip PK\x03\x04 = YES ✅
+  ZipArchive::open = OK (67 files)
+  → "ZipArchive 解压成功（67 files）" ✅
+```
+
+### 返回示例（check_diff + env）
+```json
+{
+  "local": "1.17.11",
+  "latest": "1.17.8",
+  "has_update": false,
+  "env": {
+    "ziparchive": true,
+    "shell_unzip": true,
+    "data_writable": true,
+    "php_version": "8.2.x",
+    "all_ok": true,
+    "notes": "✅ ZipArchive + shell unzip 都可用（双保险）"
+  },
+  "msg": "🚀 当前 v1.17.11 已是最新（比 GitHub main 更新）"
+}
+```
+
+### 版本号
+- `lib/bootstrap.php` MXGJ_VERSION: `1.17.10` → `1.17.11`
+- `version.json`: `1.17.10` → `1.17.11`
+
+---
+
+## [v1.17.10] 2026-08-31 · 🆕 在线更新页面升级：版本对比 + 差异文件预览
+
+### 背景
+v1.17.9 加了基础的版本检测（`Updater::check()`），但用户只能看到"本地 vX vs 远程 vY"，**不知道具体哪些文件有变化**。对于代码有本地改动的场景，升级前无法预判影响范围。
+
+### 核心改动
+
+| 文件 | 改动 |
+|------|------|
+| `lib/Updater.php` | 新增 `diffLocalRemote()` — 测速选节点→下载 GitHub zip→解压→用 sha1 对比本地 vs 远程文件清单→返回 **新增/修改/删除** 三类列表；新增 `collectFileMap()` / `walkFiles()` 递归收集相对路径 + hash + size + mtime；跳过 `config/` `data/` `.git`；限制最多 500 条差异避免返回过大 |
+| `admin.php` | 后端新增 `check_diff` action（计时 + 日志）；前端 `renderUpdateForm` 版本卡片新增 **📁 差异预览** 按钮（紫色）；新增差异结果面板（按 🟢新增 / 🟡修改 / 🔴删除 分段展示，sticky header + 320px 可滚动高度 + 条纹表）；`renderVersionCard` 动态生成的按钮区也加了差异预览入口 |
+
+### 实测
+```
+耗时: 13s
+本地 45 文件 vs 远程 45 文件
+📁 差异预览：0 新增 / 9 修改 / 0 删除
+
+🟡 admin.php        184KB → 207KB   （版本检测 + 差异预览 + 顶栏保存）
+🟡 lib/Updater.php   10KB → 24KB   （check + run 清 opcache + diffLocalRemote）
+🟡 lib/bootstrap.php  24KB → 31KB  （四段式 + 清 runtime 增强）
+🟡 index.php           9KB → 10KB
+🟡 CHANGELOG.md       41KB → 50KB
+🟡 README.md          39KB → 40KB
+🟡 version.json      1.0KB → 1.2KB
+```
+
+### 返回示例（admin.php POST `action=check_diff`）
+```json
+{
+  "ok": true,
+  "added":    [],
+  "modified": [
+    {"path": "lib/Updater.php", "local_size": 10872, "remote_size": 23934,
+     "local_date": "2026-08-30 05:59", "remote_date": "2026-08-31 22:39"},
+    ...
+  ],
+  "removed":  [],
+  "total_local": 45,
+  "total_remote": 45,
+  "total_diff": 9,
+  "truncated": false,
+  "elapsed_ms": 13224,
+  "speed": {"gh-proxy.com": 128.5, "ghfast.top": 312.1, ...},
+  "msg": "📁 差异预览：0 个新增 / 9 个修改 / 0 个删除（本地共 45 文件，远程共 45 文件）"
+}
+```
+
+### 使用场景
+- **升级前预览**：点 📁 差异预览 → 看清楚会被替换的是哪些文件，本地临时 patch 过的文件记得先备份
+- **代码改动核对**：推代码后重新预览，确认远程 vs 本地没有意外漂移
+- **排障**：更新不生效？看删除列表是不是把你要的文件删了
+
+### 版本号
+- `lib/bootstrap.php` MXGJ_VERSION: `1.17.9` → `1.17.10`
+- `version.json`: `1.17.9` → `1.17.10`
+
+---
+
+## [v1.17.9] 2026-08-31 · 📦 标准化 JSON 响应（code/msg/data/meta 四段式）
+
+### 背景与思路
+原来的 JSON 返回是扁平结构，字段可配置但缺乏统一的元信息（版本号、请求 ID、耗时等），
+网页 / APP / 小程序等外部调用方难以做统一的错误分发和兼容性判断。
+
+本次改造引入 **标准四段式响应**，同时保留 **legacy 旧版兼容模式** 一键切换，
+所有错误分支（鉴权失败、参数错误、链接无法识别等）也统一走标准格式，不再出现部分接口返回扁平、部分返回嵌套的混乱情况。
+
+### 改动文件
+| 文件 | 改动 |
+|------|------|
+| `lib/bootstrap.php` | 版本号 1.17.8→1.17.9；新增 `mxgj_build_standard_response()` 四段式构建；新增 `mxgj_code_message()` 错误码→描述映射；新增 `mxgj_request_id()` 请求唯一 ID；新增 `mxgj_early_response()` 错误快速返回；`mxgj_build_output()` 按 `output.mode` 分派 standard/legacy；`mxgj_settings()` output 默认值新增 `mode`/`show_meta`；fMap 字段扩展到 platform/vid/cid/cached |
+| `index.php` | 错误路径全部改用 `mxgj_early_response()`；`$vars` 增加 platform/vid/cid/cached/params；修复 `$cachedIsHit` 未定义 BUG（统一为 `$cachedHit`） |
+| `admin.php` | 保存设置新增 `mode`/`show_meta`；输出设置 UI 新增格式下拉、meta 开关、standard 响应示例、扩展值来源 datalist |
+| `config/settings.json` | 新增 `output.mode: standard` + `output.show_meta: true` |
+| `version.json` | 版本号 1.17.8→1.17.9；features 新增标准四段式、API 自描述、错误码规范化 |
+
+### 标准响应格式
+```json
+// 成功
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "url": "https://.../xxx.m3u8",
+    "player_url": "http://host/player/?url=...",
+    "raw_url": "https://...raw.m3u8",
+    "title": "庆余年",
+    "episode": 2,
+    "platform": "腾讯视频",
+    "site": "A站",
+    "is_special": false,
+    "site_special": false,
+    "from_fallback": false,
+    "from_pool": "primary"
+  },
+  "meta": {
+    "api_version": "1.17.9",
+    "service": "沫兮官替系统",
+    "mode": "standard",
+    "request_id": "ed5b98779c979a54",
+    "elapsed_ms": 85.2,
+    "timestamp": 1756000000,
+    "cached": false,
+    "platform": "腾讯视频",
+    "vid": "k4102szvyce",
+    "cid": "mzc00200zx8psx0",
+    "params": { "page": 1, "debug": 0 }
+  }
+}
+
+// 失败（data 为 null）
+{ "code": 400, "msg": "缺少 url 参数", "data": null, "meta": { ... } }
+```
+
+### 错误码规范
+| code | 含义 |
+|------|------|
+| 200  | 成功 |
+| 400  | 请求参数错误（缺少 url / url 格式错） |
+| 403  | 访问被拒绝（key 无效） |
+| 404  | 资源未找到 |
+| 501  | 功能未实现（未配置任何资源站） |
+| 502  | 无法识别链接对应的剧名 |
+| 503  | 所有资源站暂不可用 |
+
+### 兼容性 ✅
+- **legacy 模式**：后台「输出格式」下拉切到 legacy，即可恢复 v1.17.8 及以前的扁平结构
+- **旧 settings.json**：没有 mode/show_meta 字段时，bootstrap 默认值兜底
+- **所有错误分支统一格式**：包括 key 校验失败、url 校验失败、映射失败等提前返回场景
+
+### 使用示例
+```bash
+# 标准格式（默认）
+curl "http://114.134.184.91:9007/?url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce"
+
+# JSONP 跨域调用不受影响
+curl "http://114.134.184.91:9007/?url=...&callback=handleResponse"
+```
+
+---
+
+## 🖥️ 后台保存体验升级（v1.17.9 同步更新）
+
+### 问题反馈
+用户反馈：**每次改完设置感觉没生效、找不到保存按钮、不知道缓存该怎么清**。
+
+### 根因
+1. 旧版 auto-save 靠"点击表单外 / blur 窗口"触发，浏览器某些场景（快速切 tab / 直接关标签）不会触发
+2. 顶栏没有**显式的"保存"按钮**，用户不知道改了后要等 blur
+3. 旧版 `AdminHelper::clearCache()` 只清了 `cache/*.cache`，没清 opcache、锁文件、cookies 等
+4. 保存后 `mxgj_purge_runtime()` 没清 opcache —— PHP-FPM 场景下字节码缓存是"改了不生效"的最常见原因
+
+### 改动
+
+| 文件 | 改动 |
+|------|------|
+| `lib/bootstrap.php` · `mxgj_purge_runtime()` | 增强：按类型统计清理数量；新增 cookies 目录清理；所有 `*.lock` / `*.pid` 锁文件清理；**PHP opcache_reset()**（PHP-FPM 改了不生效的头号元凶） |
+| `admin.php` · 后端 `clear_cache` action | 改为 AJAX/整页两用：返回清理统计 JSON（items/opcache_reset），前端顶栏按钮 fetch 触发 |
+| `admin.php` · 后端 `save_templates` case | 补上漏掉的 `mxgj_purge_runtime()` |
+| `admin.php` · 顶栏 HTML | 新增状态指示器（绿/黄/蓝/红）+ 💾 保存按钮 + 🧹 清理缓存按钮 |
+| `admin.php` · JS 保存机制 | 完全重写：多表单脏注册表 → 10s 定时自动保存 → Ctrl+S 快捷保存 → beforeunload 离开保护（有脏表单弹窗确认）→ toast 反馈 |
+
+### 新的保存机制（前端）
+
+```
+用户修改 input/change → markDirty → 脏表单入 Set
+                                  ↓
+        10s 定时轮询 ←──────────┘
+        有脏表单 → fetch 顺序 POST 所有脏表单（后端自动清 opcache）
+        → 完成后整页刷新一次 → toast "已保存 N 处设置"
+
+手动触发：顶栏 💾 按钮 或 Ctrl+S
+离开保护：有脏表单时 beforeunload 弹窗确认
+```
+
+### 顶栏按钮一览
+
+| 按钮 | 作用 | 反馈 |
+|------|------|------|
+| 状态指示器 · 绿点 | 已就绪，没有未保存的修改 | 实时随脏/清切换 |
+| 状态指示器 · 黄点 | 有未保存的修改（N 处） | 数字随 dirty.size 更新 |
+| 💾 保存 | 立即保存所有脏表单（Ctrl+S 快捷键） | 蓝点→绿点 + toast |
+| 🧹 清理缓存 | 一键清缓存/锁/日志 + **重置 PHP opcache** | 确认弹窗→toast "已清理 N 个文件" |
+
+### 后端清理动作覆盖范围
+
+```
+✅ 搜索缓存  (*.cache)
+✅ 站点健康  (site_health.json)
+✅ 锁文件   (*.lock / *.pid)
+✅ 日志     (logs/*.json + cron_mapping.log)
+✅ Cookies  (cookies/*)
+✅ PHP Opcache  ⭐ 关键新增（PHP-FPM 改了不生效罪魁祸首）
+```
+
+### 保存后为什么一定生效？
+所有后端保存 action（save_sites / save_mapping / save_settings / save_fallback / save_templates / quick_toggle / clear_cache）都会**先写 JSON → 再调 mxgj_purge_runtime()**，其中包含 `opcache_reset()`。
+PHP-FPM 的 opcache 是"改了文件但代码不刷新"的头号元凶，这次直接在保存时强制清掉，彻底解决"改了没生效"。
+
+---
+
+## ⬆️ 版本检测 + 在线更新修复（v1.17.9 同步更新）
+
+### 问题
+用户访问远程 `http://114.134.184.91:9007/admin.php?tab=update`，发现：
+- 远程 `version.json` = v1.17.8，但 GitHub main 也是 v1.17.8 → Updater 下载下来跟原来一样
+- 之前 Updater 完全没有版本比较逻辑，点"立即更新"也不知道在更什么
+- Updater 替换完代码没清 opcache，即使下载成功 PHP-FPM 也跑旧字节码 → "更新了不生效"
+
+### 改动
+
+| 文件 | 改动 |
+|------|------|
+| `lib/Updater.php` | 新增 `currentVersion()` / `latestVersion()` / `check()` / `fetchRaw()` 四个版本检测方法；`run()` 末尾新增 **清 opcache + mxgj_purge_runtime()** 关键步骤 |
+| `admin.php` · 后端 | 新增 `check_update` action（返回 `{local, latest, has_update, need_update, meta, msg}`） |
+| `admin.php` · 前端 `renderUpdateForm` | 版本对比卡片（🆚 本地 → GitHub + 🆕 有新版本 / ✅ 已是最新 徽章 + 节点）+ 🔄 检查更新按钮 + 页面加载自动检查 + 更新成功后 3 秒自动刷新 |
+
+### `Updater::check()` 返回示例（本地 v1.17.9，GitHub main v1.17.8）
+```json
+{
+  "local": "1.17.9",
+  "latest": "1.17.8",
+  "has_update": false,
+  "need_update": "newer",
+  "meta": { "release": "2026-08-29", "node": "gh-proxy.com", "ok": true },
+  "msg": "🚀 当前 v1.17.9 已是最新（比 GitHub main 更新）"
+}
+```
+
+### 版本比较规则
+| `need_update` | 含义 | 前端表现 |
+|---|---|---|
+| `"older"` | 本地落后于 GitHub，`has_update=true` | 🆕 徽章亮起 + 出现"立即更新"按钮 |
+| `"same"` | 版本号一致 | ✅ 已是最新 |
+| `"newer"` | 本地领先于 GitHub（例如刚在本地做了改动还没推） | 🚀 已是最新（蓝色） |
+
+### Updater.run() 新流程（8.5 步 → 9 步）
+```
+0. 鉴权 → 1. 锁 → 2. 测速 → 3. 下载 zip → 4. 解压 → 5. 定位源码根
+→ 6. 覆盖（保留 config/ data/）→ 7. chmod 777
+→ 7.5 ⭐ 清 opcache + mxgj_purge_runtime()  ← 关键新增
+→ 8. 清理临时文件 → 返回
+```
+
+### 根因修复链
+```
+远程跑旧版（GitHub main 没推新）→ Updater 下载到的版本跟本地一样 → 用户以为更新坏了
+                                        ↓
+Updater.run() 替换完代码没清 opcache → 即使下载了新版 PHP-FPM 也跑旧字节码
+                                        ↓
+现在：先点 🔄 检查更新 → 知道该更不该更 → 更完自动清 opcache → 3s 后页面刷新 → 看到新版
+```
+
+---
+
 ## [v1.17.5] 2026-08-29 · 🔄 资源平替 / 资源站互换（主池失败自动降级）
 
 ### 背景与思路

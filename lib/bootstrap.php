@@ -15,7 +15,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.8');
+define('MXGJ_VERSION', '1.17.11');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -156,8 +156,10 @@ function mxgj_settings(): array
             ],
             // 输出返回设置（自定义返回字段映射）
             'output'         => [
-                'show_source' => false, // 是否在返回中附带原始请求链接（默认隐藏，避免太乱）
-                'fields'      => [      // 返回字段模板：k=输出键名，v=值来源(系统字段名)或常量字符串
+                'mode'        => 'standard', // standard=标准四段式(code/msg/data/meta) | legacy=旧版扁平格式
+                'show_source' => false,      // 是否在返回中附带原始请求链接（默认隐藏）
+                'show_meta'   => true,       // standard 模式是否返回 meta 段（关闭则只输出 data 段）
+                'fields'      => [           // legacy 模式的返回字段模板：k=输出键名，v=值来源(系统字段名)或常量字符串
                     ['k' => 'code', 'v' => 'code'],         // 状态码
                     ['k' => 'msg',  'v' => 'url'],          // msg 默认等于播放链接(便于兼容)
                     ['k' => 'url',  'v' => 'url'],          // 播放链接
@@ -460,18 +462,155 @@ function mxgj_player_url(string $rawUrl): string
 }
 
 /**
+ * 生成标准四段式响应：{ code, msg, data, meta }
+ *
+ * 面向对外 API 调用（网页、APP、小程序等），字段稳定、结构清晰，
+ * 方便前端做统一的 code 分发和错误提示。
+ *
+ * @param array $vars    内部值，可包含：code,msg,url,title,episode,site,source,time,
+ *                       platform,vid,cid,is_special,player_url,raw_url,
+ *                       from_fallback,from_pool,cached,params,parsed,debug
+ * @param bool  $debug   是否附加 debug 详情
+ * @return array
+ */
+function mxgj_build_standard_response(array $vars, bool $debug): array
+{
+    // === code 规范化：200=成功, 4xx=客户端错误, 5xx=服务端错误 ===
+    $code = (int)($vars['code'] ?? 200);
+    $msg  = (string)($vars['msg'] ?? ($code === 200 ? 'success' : mxgj_code_message($code)));
+
+    // === data：成功时放播放信息，失败时 null ===
+    $data = null;
+    if ($code === 200 && !empty($vars['url'])) {
+        $data = [
+            'url'           => $vars['url'] ?? '',
+            'player_url'    => $vars['player_url'] ?? '',
+            'raw_url'       => $vars['raw_url'] ?? '',
+            'title'         => $vars['title'] ?? '',
+            'episode'       => (int)($vars['episode'] ?? 0),
+            'platform'      => $vars['platform'] ?? '',
+            'site'          => $vars['site'] ?? '',
+            'is_special'    => !empty($vars['is_special']),
+            'site_special'  => !empty($vars['is_special']),
+            'from_fallback' => !empty($vars['from_fallback']),
+            'from_pool'     => $vars['from_pool'] ?? 'primary',
+        ];
+    }
+
+    // === meta：元信息（方便调用方判断版本/参数/耗时） ===
+    $cfg      = mxgj_settings()['output'] ?? [];
+    $showMeta = !isset($cfg['show_meta']) || $cfg['show_meta'];
+
+    $out = ['code' => $code, 'msg' => $msg];
+    if ($showMeta) {
+        $out['meta'] = [
+            'api_version' => MXGJ_VERSION,
+            'service'     => MXGJ_NAME,
+            'mode'        => 'standard',
+            'request_id'  => mxgj_request_id(),
+            'elapsed_ms'  => (float)($vars['time'] ?? 0),
+            'timestamp'   => time(),
+            'cached'      => !empty($vars['cached']),
+        ];
+        // 附加原始请求链接（受 show_source 开关控制）
+        if (!empty($cfg['show_source']) && !empty($vars['source'])) {
+            $out['meta']['source'] = $vars['source'];
+        }
+        // 附加解析出的平台 / vid / cid（方便排查）
+        if (!empty($vars['platform'])) {
+            $out['meta']['platform'] = $vars['platform'];
+        }
+        if (!empty($vars['vid']))   { $out['meta']['vid']   = $vars['vid']; }
+        if (!empty($vars['cid']))   { $out['meta']['cid']   = $vars['cid']; }
+        if (!empty($vars['params'])) { $out['meta']['params'] = $vars['params']; }
+    }
+    $out['data'] = $data;
+
+    // debug 信息：追加到 meta.debug 或顶层 debug（取决于 show_meta）
+    if ($debug && !empty($vars['debug'])) {
+        if ($showMeta) {
+            $out['meta']['debug'] = $vars['debug'];
+        } else {
+            $out['debug'] = $vars['debug'];
+        }
+    }
+    return $out;
+}
+
+/**
+ * 把 HTTP 风格错误码翻译为中文描述
+ */
+function mxgj_code_message(int $code): string
+{
+    static $map = [
+        200 => '成功',
+        400 => '请求参数错误',
+        401 => '未授权',
+        403 => '访问被拒绝',
+        404 => '资源未找到',
+        429 => '请求过于频繁',
+        500 => '服务器内部错误',
+        501 => '功能未实现',
+        502 => '无法识别该链接对应的剧名',
+        503 => '所有资源站暂不可用',
+    ];
+    return $map[$code] ?? '未知错误';
+}
+
+/**
+ * 快速构建一个标准格式的错误响应（用于鉴权失败、参数错误等提前返回场景）
+ *
+ * @param int   $code     业务状态码（200/400/403/404/500...）
+ * @param string $msg     错误描述
+ * @param array  $extra   附加 vars（可传 platform/vid/cid 等）
+ * @param int    $httpCode HTTP 响应码（默认与 $code 一致，少数特殊场景可单独指定）
+ */
+function mxgj_early_response(int $code, string $msg, array $extra = [], ?int $httpCode = null): void
+{
+    $vars = array_merge([
+        'code' => $code,
+        'msg'  => $msg,
+        'url'  => '',
+        'time' => round((microtime(true) - ($extra['t0'] ?? (isset($GLOBALS['t0']) ? $GLOBALS['t0'] : microtime(true)))) * 1000, 1),
+    ], $extra);
+    $out = mxgj_build_output($vars, false);
+    mxgj_json_out($out, $httpCode ?? ($code >= 100 && $code < 600 ? $code : 200));
+}
+function mxgj_request_id(): string
+{
+    static $rid = null;
+    if ($rid !== null) return $rid;
+    $rid = substr(bin2hex(random_bytes(8)), 0, 16);
+    return $rid;
+}
+
+/**
  * 依据「输出返回设置」把内部变量映射为对外返回的 JSON 字段
  *
- * @param array $vars 内部值，可包含：code,msg,url,title,episode,site,source,time,debug
+ * - mode=standard（默认）:  返回 { code, msg, data, meta } 四段式，方便外部调用
+ * - mode=legacy:             按 fields 模板输出扁平结构，保持向后兼容
+ *
+ * @param array $vars 内部值，可包含：code,msg,url,title,episode,site,source,time,
+ *                    platform,vid,cid,is_special,player_url,raw_url,
+ *                    from_fallback,from_pool,cached,debug
  * @param bool  $debug 是否附加 debug 详情
- * @return array 对外返回字段（顺序与配置一致）
+ * @return array 对外返回字段
  */
 function mxgj_build_output(array $vars, bool $debug): array
 {
-    $cfg    = mxgj_settings()['output'] ?? [];
+    $cfg  = mxgj_settings()['output'] ?? [];
+    $mode = $cfg['mode'] ?? 'standard';
+
+    // 标准模式：直接返回四段式
+    if ($mode === 'standard') {
+        return mxgj_build_standard_response($vars, $debug);
+    }
+
+    // === legacy 模式：以下为旧版扁平结构 ===
     $fields = is_array($cfg['fields'] ?? null) ? $cfg['fields'] : [];
-    // 系统值来源映射：扩展特殊资源站专用字段
+    // 系统值来源映射：扩展到所有可供 fields 引用的字段
     $fMap   = ['code', 'msg', 'url', 'title', 'episode', 'site', 'source', 'time',
+               'platform', 'vid', 'cid', 'cached', 'params',
                'is_special', 'site_special', 'player_url', 'raw_url',
                'from_fallback', 'from_pool'];
 
@@ -554,28 +693,51 @@ function mxgj_auto_mapping(array $parsed, string $name, int $episode): bool
  */
 function mxgj_purge_runtime(): array
 {
-    $cleaned = [];
+    $cleaned = ['items' => 0];
 
     // 1) 搜索缓存
+    $n = 0;
     foreach (glob(MXGJ_CACHE . '/*.cache') ?: [] as $f) {
-        @unlink($f);
+        if (@unlink($f)) $n++;
     }
-    $cleaned['cache'] = MXGJ_CACHE;
+    $cleaned['cache'] = ['dir' => MXGJ_CACHE, 'count' => $n];
+    $cleaned['items'] += $n;
 
-    // 2) 站点健康状态 + 心跳锁
-    @unlink(MXGJ_DATA . '/site_health.json');
-    @unlink(MXGJ_DATA . '/heartbeat.lock');
+    // 2) 站点健康状态 + 心跳锁 + 所有 *.lock / *.pid 锁
+    foreach (['site_health.json', 'heartbeat.lock'] as $f) {
+        if (is_file(MXGJ_DATA . '/' . $f)) {
+            @unlink(MXGJ_DATA . '/' . $f);
+            $cleaned['items']++;
+        }
+    }
+    foreach (glob(MXGJ_DATA . '/*.lock') ?: [] as $f) { @unlink($f); $cleaned['items']++; }
+    foreach (glob(MXGJ_DATA . '/*.pid') ?: [] as $f)  { @unlink($f); $cleaned['items']++; }
     $cleaned['health'] = 'site_health';
 
     // 3) 日志（含所属系统目录）
+    $n = 0;
     foreach (glob(MXGJ_DATA . '/logs/*.json') ?: [] as $f) {
-        @unlink($f);
+        if (@unlink($f)) $n++;
     }
-    $cleaned['logs'] = MXGJ_DATA . '/logs';
+    $cleaned['logs'] = ['dir' => MXGJ_DATA . '/logs', 'count' => $n];
+    $cleaned['items'] += $n;
 
     // 4) 定时采集运行日志
-    @unlink(MXGJ_DATA . '/cron_mapping.log');
+    if (@unlink(MXGJ_DATA . '/cron_mapping.log')) $cleaned['items']++;
     $cleaned['cron'] = 'cron_mapping.log';
+
+    // 5) cookies 目录（临时 cookie 文件不影响配置，但一并清理彻底）
+    $n = 0;
+    foreach (glob(MXGJ_DATA . '/cookies/*') ?: [] as $f) {
+        if (is_file($f) && @unlink($f)) $n++;
+    }
+    $cleaned['cookies'] = ['count' => $n];
+    $cleaned['items'] += $n;
+
+    // 6) PHP opcache（PHP-FPM 场景下最常见的"改了没生效"原因）
+    if (function_exists('opcache_reset') && ini_get('opcache.enable')) {
+        $cleaned['opcache_reset'] = @opcache_reset();
+    }
 
     return $cleaned;
 }

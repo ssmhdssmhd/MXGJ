@@ -9,7 +9,7 @@
 <br>
 
 [![PHP](https://img.shields.io/badge/PHP-%3E%3D8.1-8892BF?logo=php&logoColor=white&style=for-the-badge)](https://www.php.net)
-[![Version](https://img.shields.io/badge/Version-v1.17.2-4f7cff?style=for-the-badge&labelColor=2d1b69)](https://github.com/ssmhdssmhd/MXGJ/releases)
+[![Version](https://img.shields.io/badge/Version-v1.17.11-4f7cff?style=for-the-badge&labelColor=2d1b69)](https://github.com/ssmhdssmhd/MXGJ/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22a06b?style=for-the-badge)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/ssmhdssmhd/MXGJ?style=for-the-badge&logo=github&color=8b5cf6)](https://github.com/ssmhdssmhd/MXGJ/stargazers)
 [![Forks](https://img.shields.io/github/forks/ssmhdssmhd/MXGJ?style=for-the-badge&logo=github&color=6366f1)](https://github.com/ssmhdssmhd/MXGJ/forks)
@@ -211,13 +211,13 @@
 | 🧩 模板系统 | `%s / %u / %t / %p` 占位符，兼容 **JSON / JSONP / 纯文本 / 苹果CMS 列表** |
 | 🧪 资源站检测 | 粘贴苹果CMS10采集接口即自动探测、生成模板、一键保存 |
 | 🧬 特殊调用方法 | 资源站级可配 `GET/POST`、自定义请求头、POST 请求体、返回解析模式（自动/JSON/纯文本/苹果CMS） |
-| 🖱️ 自动保存 | 后台取消「保存」按钮，修改后**点击页面空白处自动保存**，并自动清理缓存/健康/日志 |
+| 🖱️ 自动保存 | 🆕 顶栏**状态指示器 + 💾 保存按钮 + 🧹 清理缓存**（手动保存 / Ctrl+S / 10s 定时自动 / 离开保护），保存即清缓存+opcache 立即生效 |
 | 📦 缓存 | 搜索结果文件缓存，降低对资源站的重复请求 |
 | 🕰️ 定时采集 | `cron/mapping.php` 自动补全映射 + 盘点资源站库存，省去手动 |
 | 🔍 频率控制 | 搜索节流 + 心跳探测 + 轮训分批，防被资源站屏蔽 |
 | 🔄 在线更新 | GitHub 多加速镜像自动测速选最快节点拉取，更新后权限 777 |
 | 🛠️ 可视化后台 | 资源站 / 映射 / 设置 / 帮助 / 一键测试，全部免改代码 |
-| 🔌 开放接口 | `key` 鉴权 + `callback` JSONP + CORS，方便前端跨域调用 |
+│ 输出返回设置 | 🆕 **standard/legacy 双模式**（标准四段式 `code/msg/data/meta` 或旧版扁平）+ 字段映射，默认输出包含版本号/请求ID/耗时等元信息 |
 | 🎬 App 接口 | 🆕 TVBox / 影视 APP / 小程序 统一调用入口（player/api.php，4 种模式） |
 | 🔑 App Key | 🆕 key 放 URL 最前面 `?key=xxx&url=...`，完整鉴权链路 |
 | 🧬 搜索模板库 | 🆕 预置 8 种苹果CMS10 搜索模板，选框架填 host 自动生成 |
@@ -399,31 +399,54 @@ GET /index.php?key=<密钥>&url=<官方视频链接>[&page=<集数>][&debug=1][&
 /index.php?key=YOUR_KEY&url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce
 ```
 
-**返回**（直接返回资源站的真实 m3u8 地址）：
+**返回**（标准四段式，默认 `mode=standard`，返回 `code=200` 与**可直接播放的 m3u8 地址**）：
 
 ```json
 {
   "code": 200,
-  "url": "https://cdn.example.com/play/2/index.m3u8",
-  "msg": "https://cdn.example.com/play/2/index.m3u8",
-  "time": 1206.6,
-  "KFZ": "沫兮官替系统"
+  "msg": "success",
+  "data": {
+    "url": "https://cdn.example.com/play/2/index.m3u8",
+    "player_url": "http://你的域名/player/?url=https%3A%2F%2Fcdn.example.com%2Fplay%2F2%2Findex.m3u8",
+    "raw_url": "https://cdn.example.com/play/2/index.m3u8",
+    "title": "庆余年",
+    "episode": 2,
+    "platform": "腾讯视频",
+    "site": "A站",
+    "is_special": false,
+    "from_fallback": false,
+    "from_pool": "primary"
+  },
+  "meta": {
+    "api_version": "1.17.11",
+    "service": "沫兮官替系统",
+    "mode": "standard",
+    "request_id": "ed5b98779c979a54",
+    "elapsed_ms": 85.2,
+    "timestamp": 1756000000,
+    "cached": false,
+    "platform": "腾讯视频",
+    "vid": "k4102szvyce",
+    "cid": "mzc00200zx8psx0",
+    "params": { "page": 1, "debug": 0 }
+  }
 }
 ```
 
-> 打开 `url` 即为真实播放地址，浏览器/APP 均可直接播放。
+> 失败时 `data` 为 `null`，`code` 和 `msg` 说明原因（所有错误分支同样走此标准格式）。
+> 如需兼容旧版扁平格式，后台「输出格式」下拉切到 **legacy** 即可恢复 `{code,msg,url,...}` 结构。
 
-**状态码约定**：
+**状态码约定**（所有分支统一）：
 
 | code | 说明 |
 | ---- | ---- |
-| `200` | 成功，`url` 为资源站 m3u8 地址 |
-| `400` | 缺少 `url` 参数或链接非法 |
-| `403` | 访问密钥错误（开启 key 鉴权时） |
-| `404` | 资源站未匹配到该剧对应集数 |
+| `200` | 成功，`data.url` 为资源站 m3u8 地址 |
+| `400` | 请求参数错误（缺少 `url` 或链接非法） |
+| `403` | 访问被拒绝（key 无效 / 鉴权失败） |
+| `404` | 资源未找到 |
 | `501` | 后台未配置任何资源站 |
 | `502` | 无法识别链接对应的剧名（需配置映射） |
-| `503` | 资源站 URL 模板无法生成 |
+| `503` | 所有资源站暂不可用 / 被节流 / 冷却中 |
 
 ---
 
@@ -598,7 +621,7 @@ docker run -d --name mxgj -p 8080:8080 -v $(pwd)/data:/var/www/html/data -v $(pw
 | `cron` | `{...}` | 定时采集配置（`seed_links`、盘点开关等） |
 | `site_control` | `{...}` | 频率控制配置（搜索/心跳/轮训） |
 | `app_api` | `{...}` | 🆕 App 接口配置（enable/require_key/api_key/player_type/proxy_enable/cors/max_size_mb/rate_limit） |
-| `output` | `{...}` | 输出返回设置（字段映射，默认 `code`/`msg`(=url)/`url`/`time`/`KFZ`） |
+| `output` | `{...}` | 输出返回设置：`mode=standard|legacy`（默认 standard）+ `show_meta`（meta 段开关）+ `show_source` + legacy 模式下的 `fields` 字段映射模板 |
 
 `replace_domain` 示例：配置 `https://your-proxy.com/m3u8/` 后，
 返回的 `url` 自动变为 `https://your-proxy.com/m3u8/play/2/index.m3u8`（去掉资源站原域名）。
@@ -700,7 +723,7 @@ php tests/run_test.php
 
 [![PHP](https://img.shields.io/badge/PHP-8892BF?logo=php&logoColor=white)](https://www.php.net)
 [![License](https://img.shields.io/badge/License-MIT-22a06b)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-v1.17.2-4f7cff)](https://github.com/ssmhdssmhd/MXGJ/releases)
+[![Version](https://img.shields.io/badge/Version-v1.17.11-4f7cff)](https://github.com/ssmhdssmhd/MXGJ/releases)
 
 🚀 [快速开始](#-快速开始) · 📖 [README](README.md) · 📋 [CHANGELOG](CHANGELOG.md) · 🤝 [贡献指南](CONTRIBUTING.md) · 🐛 [安全报告](SECURITY.md)
 

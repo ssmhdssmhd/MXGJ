@@ -221,7 +221,9 @@ switch ($ACTION) {
             ];
         }
         $st['output'] = [
+            'mode'        => ($_POST['out_mode'] ?? 'standard') === 'legacy' ? 'legacy' : 'standard',
             'show_source' => !empty($_POST['out_show_source']),
+            'show_meta'   => !empty($_POST['out_show_meta']),
             'fields'      => $fields,
         ];
         if (!mxgj_write_json($settingsFile, $st)) { mxgj_save_fail($settingsFile); }
@@ -268,9 +270,20 @@ switch ($ACTION) {
         exit;
 
     case 'clear_cache':
-        AdminHelper::clearCache();
-        Logger::log('operation', '清空搜索缓存', 'info');
-        header('Location: admin.php?tab=dashboard&cleared=1');
+        $cleaned = mxgj_purge_runtime();
+        $items   = $cleaned['items'] ?? 0;
+        Logger::log('operation', '一键清理运行时数据', 'info', ['items' => $items]);
+        // AJAX 请求返回 JSON（前端顶栏按钮用 fetch 触发），否则走整页刷新
+        $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+        header('Content-Type: application/json; charset=utf-8');
+        mxgj_json_out([
+            'code'      => 200,
+            'ok'        => true,
+            'msg'       => '已清理 ' . $items . ' 个缓存/锁/日志文件',
+            'items'     => $items,
+            'opcache'   => $cleaned['opcache_reset'] ?? null,
+        ]);
+        // 非 AJAX 也会 json_out，header Location 不会生效 —— 已提前 exit
         exit;
 
     case 'test_site':
@@ -382,6 +395,7 @@ switch ($ACTION) {
         $userList = json_decode((string)($_POST['templates'] ?? '[]'), true);
         if (!is_array($userList)) mxgj_json_out(['ok' => false, 'msg' => 'JSON 格式错误']);
         if (!mxgj_write_json(MXGJ_CONFIG . '/search_templates_user.json', $userList)) { mxgj_save_fail(MXGJ_CONFIG . '/search_templates_user.json'); }
+        mxgj_purge_runtime(); // 模板变动也清缓存，确保搜索用最新模板
         mxgj_json_out(['ok' => true, 'msg' => '已保存']);
 
     case 'render_from_template':
@@ -625,6 +639,26 @@ switch ($ACTION) {
         $n = Logger::clear($type);
         Logger::log('operation', '清空日志：' . Logger::TYPES[$type], 'info');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => '已清空「' . Logger::TYPES[$type] . '」共 ' . $n . ' 条', 'cleared' => $n]);
+
+    case 'check_update':
+        // ⬆️ 版本检测：比较本地 vs GitHub main
+        $res = Updater::check();
+        Logger::log('update', '版本检测：' . $res['msg'], 'info', ['local' => $res['local'], 'latest' => $res['latest'], 'has_update' => $res['has_update']]);
+        mxgj_json_out($res);
+
+    case 'check_diff':
+        // 🆕 差异预览：下载远程 zip → 对比本地 vs 远程文件清单
+        // 注意：慢（需下载 zip 并 sha1 所有文件），前端按钮会禁用超时保护
+        $t0 = microtime(true);
+        $res = Updater::diffLocalRemote(300);
+        $res['elapsed_ms'] = round((microtime(true) - $t0) * 1000, 1);
+        Logger::log('update', '差异预览：' . $res['msg'] . '（耗时 ' . $res['elapsed_ms'] . 'ms）', 'info', [
+            'total_diff' => $res['total_diff'] ?? 0,
+            'added'      => count($res['added'] ?? []),
+            'modified'   => count($res['modified'] ?? []),
+            'removed'    => count($res['removed'] ?? []),
+        ]);
+        mxgj_json_out($res);
 
     case 'do_update':
         // 后台触发的在线更新（dry=1 时仅测速）
@@ -971,6 +1005,17 @@ a{color:inherit;text-decoration:none}
 .breadcrumb .current{color:#111827;font-weight:600}
 .topbar-right{display:flex;align-items:center;gap:12px}
 .topbar-right .version-tag{background:#eef2ff;color:#4f7cff;font-size:12px;padding:4px 10px;border-radius:12px;font-weight:500}
+/* 顶栏保存状态 + 操作按钮 */
+.topbar-save{display:flex;align-items:center;gap:10px}
+.save-indicator{display:inline-block;width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,.5);flex-shrink:0;transition:background .15s}
+.save-status-text{font-size:12.5px;color:#6b7280}
+.topbar-action{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;border:0;background:#10b981;color:#fff;transition:all .15s;white-space:nowrap}
+.topbar-action:hover{background:#059669;box-shadow:0 2px 6px rgba(16,185,129,.25)}
+.topbar-action.secondary{background:#f3f4f6;color:#4b5563}
+.topbar-action.secondary:hover{background:#e5e7eb;color:#111827}
+.topbar-action.danger{background:#ef4444}
+.topbar-action.danger:hover{background:#dc2626}
+.topbar-action:disabled{opacity:.5;cursor:not-allowed}
 .user-area{display:flex;align-items:center;gap:10px}
 .user-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#4f7cff,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600}
 .logout-btn{background:none;border:none;color:#6b7280;font-size:12.5px;cursor:pointer;padding:6px 10px;border-radius:6px}
@@ -1115,6 +1160,12 @@ tr.out-row[draggable="true"]{transition:background .12s}
 <div class="breadcrumb"><span>🏠</span><span class="sep">/</span><span><?= $currentCrumb ?></span><span class="sep">/</span><span class="current"><?= $currentLabel ?></span></div>
 <div class="topbar-right">
 <span class="version-tag">v<?= MXGJ_VERSION ?></span>
+<div class="topbar-save">
+    <span id="tb-save-indicator" class="save-indicator"></span>
+    <span id="tb-save-status" class="save-status-text">已就绪</span>
+    <button id="btn-save-all"   class="topbar-action"  title="保存所有未保存的修改（Ctrl+S）">💾 保存</button>
+    <button id="btn-clear-cache" class="topbar-action secondary" title="一键清理缓存 / 锁 / 日志 + PHP Opcache">🧹 清理缓存</button>
+</div>
 <div class="user-area">
 <div class="user-avatar">MX</div>
 <form method="post" style="margin:0"><input type="hidden" name="action" value="logout"><button class="logout-btn" type="submit">退出</button></form>
@@ -1172,40 +1223,197 @@ if (!$env['ok']):
   <a class="<?= $tab==='settings'?'active':'' ?>" href="?tab=settings"><span class="m-icon">⚙️</span><span>设置</span></a>
 </nav>
 <script>
-var __autoDirty=null, __saveTimer=null;
-function __setSaveStatus(text,color){
-    var el=document.getElementById('save-status'),dot=document.getElementById('save-indicator');
-    if(el)el.textContent=text;
-    if(dot){
-        dot.style.background=color||'#4ade80';
-        dot.style.boxShadow='0 0 8px rgba('+(color==='#fbbf24'?'251,191,36':color==='#ef4444'?'239,68,68':'74,222,128')+',0.5)';
+/* ====== 统一保存管理 ======
+ *  - 脏表单注册表（多表单同时追踪）
+ *  - 顶栏状态指示器实时反映（绿=就绪 / 黄=有未保存 / 红=保存中或失败）
+ *  - 💾 顶栏按钮 / Ctrl+S 立即保存所有脏表单
+ *  - 10s 定时自动保存（有脏表单时）
+ *  - beforeunload 离开保护（有脏表单时弹窗确认）
+ *  - 保存后清文件/站点健康/opcache（后端 mxgj_purge_runtime() 已处理）
+ *  - 🧹 清理缓存按钮：走 AJAX fetch，返回清理统计 + toast 反馈
+ */
+(function(){
+    // === 脏表单 registry：Set<HTMLFormElement> ===
+    var dirty = new Set();
+    var savePending = false;      // 正在保存（防并发）
+    var autoTimer = null;
+
+    // === 状态指示器统一入口（顶栏 + 表单内部若有也一起更）===
+    function setStatus(text, color){
+        // 顶栏指示器（优先）
+        var ind = document.getElementById('tb-save-indicator');
+        var lbl = document.getElementById('tb-save-status');
+        if(ind){
+            ind.style.background = color || '#4ade80';
+            var rgb = color==='#fbbf24' ? '251,191,36'
+                    : color==='#ef4444' ? '239,68,68'
+                    : color==='#3b82f6' ? '59,130,246'
+                    : '74,222,128';
+            ind.style.boxShadow = '0 0 6px rgba('+rgb+',0.6)';
+        }
+        if(lbl) lbl.textContent = text;
+        // 旧表单里的 save-indicator/save-status（向后兼容）
+        var dot = document.getElementById('save-indicator');
+        var oldLbl = document.getElementById('save-status');
+        if(dot) dot.style.background = color || '#4ade80';
+        if(oldLbl) oldLbl.textContent = text;
     }
-}
-function __markDirty(e){
-    if(e.target.closest('.quick-toggle'))return;
-    var f=e.target.form||(e.target.closest?e.target.closest('form'):null);
-    if(f&&f.classList&&f.classList.contains('auto-save')){ __autoDirty=f; __setSaveStatus('有未保存的修改','#fbbf24'); }
-}
-function __trySave(){
-    if(__saveTimer)clearTimeout(__saveTimer);
-    __saveTimer=setTimeout(function(){
-        var f=__autoDirty;if(!f)return;
-        __autoDirty=null;__saveTimer=null;
-        try{ __setSaveStatus('保存中...','#fbbf24'); f.submit(); }catch(err){ __setSaveStatus('保存失败','#ef4444'); }
-    },250);
-}
-document.addEventListener('input',__markDirty);
-document.addEventListener('change',__markDirty);
-document.addEventListener('click',function(e){
-    if(e.target.closest('.quick-toggle'))return;
-    var inForm=e.target.closest?e.target.closest('form.auto-save'):null;
-    if(inForm){
-        if(e.target.closest('button[type="button"]')){ __autoDirty=inForm; }
-        return;
+
+    // === 标记脏 / 清脏 ===
+    function markDirty(form){
+        if(!form) return;
+        dirty.add(form);
+        setStatus('有未保存的修改（'+dirty.size+'）','#fbbf24');
+        scheduleAuto();
     }
-    __trySave();
-});
-window.addEventListener('blur',function(){ __trySave(); });
+    function markClean(form){
+        dirty.delete(form);
+        if(dirty.size === 0) setStatus('已就绪','#4ade80');
+        else setStatus('有未保存的修改（'+dirty.size+'）','#fbbf24');
+    }
+
+    // === 事件：input/change → markDirty ===
+    document.addEventListener('input', function(e){
+        if(e.target.closest('.quick-toggle')) return;
+        var f = e.target.closest ? e.target.closest('form.auto-save') : null;
+        if(f) markDirty(f);
+    });
+    document.addEventListener('change', function(e){
+        if(e.target.closest('.quick-toggle')) return;
+        var f = e.target.closest ? e.target.closest('form.auto-save') : null;
+        if(f) markDirty(f);
+    });
+
+    // === 定时自动保存：10s 内如果还有脏表单就存 ===
+    function scheduleAuto(){
+        if(autoTimer) clearTimeout(autoTimer);
+        autoTimer = setTimeout(function(){
+            if(dirty.size > 0 && !savePending) saveAll();
+            scheduleAuto();
+        }, 10000);
+    }
+
+    // === 手动 / 自动保存所有脏表单 ===
+    window.__saveAllForms = function saveAll(){
+        if(savePending) return;
+        if(dirty.size === 0){ toast('没有未保存的修改','warn'); return; }
+
+        // 取第一个脏表单，把所有脏表单的数据合并到它的 action 里提交
+        // 注意：每个脏表单有独立 action，所以逐个提交（但只需要一次 HTTP 请求就能生效？
+        //       实际上每个表单 POST 都是独立 action，所以我们逐个提交；
+        //       若只有 1 个脏表单，直接 submit 即可；多个则顺序 submit）
+        savePending = true;
+        setStatus('保存中...','#3b82f6');
+
+        var forms = Array.from(dirty);
+        var savedCount = 0;
+        var hasError = false;
+
+        // 顺序 submit：最后一个提交用原生 submit（整页 POST → 后端 header 重定向）
+        // 前面的用 AJAX fetch，这样整个页面只在最后一次后重定向一次
+        (function submitNext(i){
+            if(i >= forms.length){
+                // 全部处理完，整页刷新一次（让设置/资源站/映射全部重新从文件读）
+                setStatus('已保存','#4ade80');
+                toast('已保存 '+savedCount+' 处设置','success');
+                // 所有 action 在后端已经调 mxgj_purge_runtime() 了，现在 reload 让页面显示最新状态
+                setTimeout(function(){ location.href = location.pathname + '?tab=' + (new URLSearchParams(location.search).get('tab') || 'settings') + '&saved=1'; }, 400);
+                return;
+            }
+            var form = forms[i];
+            var isLast = (i === forms.length - 1);
+            var data = new FormData(form);
+
+            fetch(form.action || location.pathname, {
+                method: 'POST',
+                body: data,
+                credentials: 'same-origin'
+            }).then(function(res){
+                return res.text().then(function(text){ return { ok: res.ok, html: text }; });
+            }).then(function(res){
+                if(!res.ok){ hasError = true; }
+                markClean(form);
+                savedCount++;
+                submitNext(i+1);
+            }).catch(function(){
+                hasError = true;
+                markClean(form); // 不管怎样移除脏标记，避免死循环
+                savedCount++;
+                submitNext(i+1);
+            });
+        })(0);
+    };
+
+    // === 顶栏 💾 按钮 + Ctrl+S ===
+    document.addEventListener('keydown', function(e){
+        if((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')){
+            e.preventDefault();
+            window.__saveAllForms();
+        }
+    });
+    var btnSave = document.getElementById('btn-save-all');
+    if(btnSave) btnSave.addEventListener('click', function(){ window.__saveAllForms(); });
+
+    // === 顶栏 🧹 清理缓存 ===
+    var btnClear = document.getElementById('btn-clear-cache');
+    if(btnClear){
+        btnClear.addEventListener('click', function(){
+            var btn = this;
+            if(!confirm('确定要一键清理运行时缓存吗？\n（搜索缓存 / 锁文件 / 日志 / Opcache 全部清除）')) return;
+            btn.disabled = true;
+            setStatus('清理中...','#3b82f6');
+            var fd = new FormData();
+            fd.append('action','clear_cache');
+            fetch(location.pathname, {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            }).then(function(r){ return r.json(); })
+              .then(function(data){
+                  btn.disabled = false;
+                  setStatus('已清理','#4ade80');
+                  toast(data.msg || '缓存已清空', 'success');
+              })
+              .catch(function(){
+                  btn.disabled = false;
+                  setStatus('清理失败','#ef4444');
+                  toast('清理失败，请重试','error');
+              });
+        });
+    }
+
+    // === 离开保护：有脏表单时拦截 beforeunload ===
+    window.addEventListener('beforeunload', function(e){
+        if(dirty.size > 0){
+            var msg = '你有 ' + dirty.size + ' 处未保存的修改，确定要离开吗？';
+            e.preventDefault();
+            e.returnValue = msg;
+            return msg;
+        }
+    });
+
+    // === 全局 toast（如果页面已有 toast 函数则复用，否则兜底）===
+    function toast(msg, type){
+        if(typeof window.toast === 'function'){ window.toast(msg, type); return; }
+        var el = document.getElementById('toast');
+        if(!el){
+            el = document.createElement('div');
+            el.id = 'toast';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.style.display = 'block';
+        el.style.background = type==='error' ? '#ef4444'
+                            : type==='warn'  ? '#f59e0b'
+                            : '#10b981';
+        clearTimeout(el._t);
+        el._t = setTimeout(function(){ el.style.display = 'none'; }, 2200);
+    }
+
+    // 初始状态
+    setStatus('已就绪','#4ade80');
+})();
 </script>
 </body></html>
 
@@ -2290,22 +2498,90 @@ function renderUpdateForm()
 {
     $st = mxgj_settings();
     $upKey = isset($st['updater_key']) && $st['updater_key'] !== '' ? $st['updater_key'] : ($st['admin_password'] ?? '');
+    // 页面加载时先同步拉一次版本（阻塞式，很快，超时 5s）
+    $verInfo = null;
+    try {
+        if (function_exists('Updater::check')) {
+            $verInfo = Updater::check();
+        }
+    } catch (\Throwable $e) {
+        $verInfo = ['local' => MXGJ_VERSION, 'latest' => MXGJ_VERSION, 'has_update' => false, 'need_update' => 'same', 'msg' => '⚠️ 版本检测异常：' . $e->getMessage()];
+    }
+    $hasUpdate = !empty($verInfo['has_update']);
+    $needUpd   = $verInfo['need_update'] ?? 'same';
     ?>
     <div class="panel">
         <h2>在线更新</h2>
+
+        <!-- 🆕 版本对比卡片 -->
+        <div id="ver-check-card" style="margin-bottom:18px;padding:16px 18px;border-radius:12px;background:linear-gradient(135deg,#1a2236,#0f1420);border:1px solid rgba(139,92,246,.2);color:#e2e8f0;display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+            <div style="flex:1;min-width:240px">
+                <div style="font-size:11px;color:#94a3b8;letter-spacing:.6px;margin-bottom:4px">版本检测</div>
+                <div style="font-size:16px;font-weight:700;color:<?= $hasUpdate ? '#fbbf24' : '#4ade80' ?>">
+                    🆚 本地 v<?= htmlspecialchars($verInfo['local'] ?? MXGJ_VERSION) ?>
+                    <span style="margin:0 6px;color:#6b7280">→</span>
+                    GitHub v<?= htmlspecialchars($verInfo['latest'] ?? '?') ?>
+                </div>
+                <div style="font-size:12.5px;color:<?= $needUpd==='newer' ? '#60a5fa' : ($hasUpdate ? '#fbbf24' : '#4ade80') ?>;margin-top:6px">
+                    <?= htmlspecialchars($verInfo['msg'] ?? '点击「检查更新」查看') ?>
+                    <?php if (!empty($verInfo['meta']['node'])): ?>
+                    <span style="color:#6b7280;margin-left:4px">· 节点: <?= htmlspecialchars($verInfo['meta']['node']) ?></span>
+                    <?php endif; ?>
+                </div>
+                <?php if (!empty($verInfo['env'])): $env = $verInfo['env']; ?>
+                <div style="font-size:11.5px;color:<?= !empty($env['all_ok']) ? '#94a3b8' : '#ef4444' ?>;margin-top:4px">
+                    <?php if (!empty($env['ziparchive'])): ?>
+                    <span title="PHP ZipArchive 扩展">🗜️ ZipArchive ✅</span>
+                    <?php else: ?>
+                    <span title="PHP ZipArchive 扩展未安装" style="color:#ef4444">🗜️ ZipArchive ❌</span>
+                    <?php endif; ?>
+                    <?php if (!empty($env['shell_unzip'])): ?>
+                    <span style="margin-left:10px" title="系统 unzip 命令">🐚 shell unzip ✅</span>
+                    <?php else: ?>
+                    <span style="margin-left:10px;color:#f59e0b" title="系统无 unzip 命令">🐚 shell unzip ❌</span>
+                    <?php endif; ?>
+                    <?php if (!empty($env['data_writable'])): ?>
+                    <span style="margin-left:10px" title="data/ 目录可写">📁 data 可写 ✅</span>
+                    <?php else: ?>
+                    <span style="margin-left:10px;color:#ef4444" title="data/ 目录不可写">📁 data 不可写 ⚠️</span>
+                    <?php endif; ?>
+                    <span style="margin-left:10px;color:#6b7280">PHP <?= htmlspecialchars($env['php_version'] ?? '') ?></span>
+                </div>
+                <?php endif; ?>
+            </div>
+            <div style="display:flex;gap:10px">
+                <button class="btn" id="btn-check-update" onclick="checkVersion()" style="background:#4f7cff;color:#fff">🔄 检查更新</button>
+                <button class="btn" id="btn-check-diff" onclick="checkDiff()" style="background:#a855f7;color:#fff">📁 差异预览</button>
+                <?php if ($hasUpdate): ?>
+                <button class="btn btn-green" onclick="runUpdater(false)" style="background:#10b981;color:#fff">🚀 立即更新</button>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- 🆕 差异预览面板（初始隐藏） -->
+        <div id="diff-panel" style="display:none;margin-bottom:18px;padding:14px 16px;border-radius:10px;background:#0b1020;border:1px solid rgba(168,85,247,.3);color:#e2e8f0">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                <div style="font-size:14px;font-weight:600">📁 本地 vs GitHub 差异文件</div>
+                <button class="btn small" onclick="document.getElementById('diff-panel').style.display='none'">折叠</button>
+            </div>
+            <div id="diff-summary" style="font-size:12.5px;color:#94a3b8;margin-bottom:10px"></div>
+            <div id="diff-loading" style="padding:20px;text-align:center;color:#94a3b8">⏳ 正在下载远程源码包并对比 sha1（约 10~30 秒，请稍候...）</div>
+            <div id="diff-body" style="display:none"></div>
+        </div>
+
         <div class="note" style="margin-bottom:16px">
             从 GitHub 自动拉取最新代码进行升级。<br>
             · 更新前会删除当前代码文件（保留 <b>config/</b> 配置与 <b>data/</b> 缓存）<br>
             · 面向国内网络，自动检测多个 <b>GitHub 加速镜像</b> 并选择最快节点下载<br>
-            · 升级后文件与子目录权限统一设为 <b>0777</b>
+            · 升级后 <b>自动清缓存 + opcache reset</b>，立即可见新版本（PHP-FPM 场景也生效）
         </div>
         <div class="form-grid">
             <div><label>仓库</label><input type="text" value="<?= htmlspecialchars(($st['repo_owner'] ?? 'ssmhdssmhd')) . '/' . htmlspecialchars($st['repo_name'] ?? 'MXGJ') . '@' . htmlspecialchars($st['repo_branch'] ?? 'main') ?>" readonly></div>
             <div><label>升级密钥（update.php 用）</label><input type="text" value="<?= htmlspecialchars($upKey) ?>" readonly></div>
         </div>
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-green" onclick="doUpdate()">立即更新</button>
-            <button class="btn" onclick="dryUpdate()">仅测速（不执行）</button>
+            <button class="btn btn-green" onclick="runUpdater(false)">立即更新</button>
+            <button class="btn" onclick="runUpdater(true)">仅测速（不执行）</button>
         </div>
         <div id="up-out" style="display:none;margin-top:16px">
             <h2 style="font-size:14px">更新报告</h2>
@@ -2317,11 +2593,129 @@ function renderUpdateForm()
         </div>
     </div>
     <script>
-    function doUpdate(){ runUpdater(false); }
-    function dryUpdate(){ runUpdater(true); }
+    /* ===== 版本检测 ===== */
+    function checkVersion(){
+        var btn=document.getElementById('btn-check-update');
+        btn.disabled=true; btn.textContent='⏳ 检测中...';
+        var fd=new FormData(); fd.append('action','check_update');
+        fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
+            btn.disabled=false; btn.textContent='🔄 检查更新';
+            renderVersionCard(d);
+        }).catch(function(e){
+            btn.disabled=false; btn.textContent='🔄 检查更新';
+            renderVersionCard({local:'<?= MXGJ_VERSION ?>',latest:'?',has_update:false,msg:'请求失败:'+e});
+        });
+    }
+    function renderVersionCard(d){
+        var card=document.getElementById('ver-check-card');
+        var hasUpd=!!d.has_update;
+        var color=hasUpd?'#fbbf24':'#4ade80';
+        var badge=hasUpd?'🆕 有新版本':'✅ 已是最新';
+        var cardHTML='';
+        cardHTML+='<div style="flex:1;min-width:240px">';
+        cardHTML+='<div style="font-size:11px;color:#94a3b8;letter-spacing:.6px;margin-bottom:4px">版本检测</div>';
+        cardHTML+='<div style="font-size:16px;font-weight:700;color:'+color+'">';
+        cardHTML+='🆚 本地 v'+(d.local||'<?= MXGJ_VERSION ?>');
+        cardHTML+='<span style="margin:0 6px;color:#6b7280">→</span>';
+        cardHTML+='GitHub v'+(d.latest||'?');
+        cardHTML+='<span style="margin-left:10px;font-size:12px;padding:2px 8px;border-radius:10px;background:'+(hasUpd?'rgba(251,191,36,.2)':'rgba(74,222,128,.18)')+';color:'+color+'">'+badge+'</span>';
+        cardHTML+='</div>';
+        cardHTML+='<div style="font-size:12.5px;color:'+color+';margin-top:6px">'+(d.msg||'')+'</div>';
+        if(d.env){
+            var env=d.env, envColor=env.all_ok?'#94a3b8':'#ef4444';
+            var envParts=[];
+            envParts.push(env.ziparchive?'🗜️ ZipArchive ✅':'🗜️ ZipArchive ❌');
+            envParts.push(env.shell_unzip?'🐚 shell ✅':'🐚 shell ❌');
+            envParts.push(env.data_writable?'📁 data ✅':'📁 data ⚠️');
+            envParts.push('PHP '+(env.php_version||''));
+            cardHTML+='<div style="font-size:11.5px;color:'+envColor+';margin-top:4px">'+envParts.join(' · ')+'</div>';
+        }
+        cardHTML+='</div>';
+        cardHTML+='<div style="display:flex;gap:10px">';
+        cardHTML+='<button class="btn" onclick="checkVersion()" style="background:#4f7cff;color:#fff">🔄 检查更新</button>';
+        cardHTML+='<button class="btn" onclick="checkDiff()" style="background:#a855f7;color:#fff">📁 差异预览</button>';
+        if(hasUpd) cardHTML+='<button class="btn btn-green" onclick="runUpdater(false)" style="background:#10b981;color:#fff">🚀 立即更新</button>';
+        cardHTML+='</div>';
+        card.innerHTML=cardHTML;
+    }
+    /* ===== 差异预览（下载远程 zip → sha1 对比 → 展示新增/修改/删除）===== */
+    function checkDiff(){
+        var panel=document.getElementById('diff-panel');
+        var loading=document.getElementById('diff-loading');
+        var body=document.getElementById('diff-body');
+        var summary=document.getElementById('diff-summary');
+        panel.style.display='block';
+        loading.style.display='block'; body.style.display='none';
+        summary.textContent='';
+        var btn=document.getElementById('btn-check-diff');
+        if(btn){btn.disabled=true; btn.textContent='⏳ 对比中...';}
+        // 差异预览慢（10~30s），不设 15s 默认超时
+        var fd=new FormData(); fd.append('action','check_diff');
+        fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
+            loading.style.display='none';
+            if(btn){btn.disabled=false; btn.textContent='📁 差异预览';}
+            if(!d.ok){
+                summary.innerHTML='<span style="color:#e74c3c">✘ 对比失败：</span>'+(d.msg||'未知错误');
+                return;
+            }
+            // summary
+            var added=d.added||[], modified=d.modified||[], removed=d.removed||[];
+            var totalDiff=(d.total_diff||(added.length+modified.length+removed.length));
+            summary.innerHTML='✅ 对比完成（耗时 '+(d.elapsed_ms||'?')+'ms）· 本地 '+(d.total_local||'?')+' 文件 vs 远程 '+(d.total_remote||'?')+' 文件 · 差异共 '+totalDiff+' 项'
+                +(d.truncated?' <span style="color:#e2b93b">· 已截断</span>':'')
+                +(d.speed&&Object.keys(d.speed).length?' <span style="color:#6b7280">· 测速: '+Object.keys(d.speed).map(function(k){return k+d.speed[k]+'ms';}).join(' · ')+'</span>':'');
+            body.style.display='block';
+            body.innerHTML=renderDiffSections(added,modified,removed);
+        }).catch(function(e){
+            loading.style.display='none';
+            if(btn){btn.disabled=false; btn.textContent='📁 差异预览';}
+            summary.innerHTML='<span style="color:#e74c3c">✘ 请求失败：</span>'+e;
+        });
+    }
+    function renderDiffSections(added, modified, removed){
+        function table(title, color, badgeColor, rows, cols){
+            if(!rows||rows.length===0) return '';
+            var html='<div style="margin-bottom:14px">';
+            html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">';
+            html+='<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+color+'"></span>';
+            html+='<span style="font-weight:600;font-size:13px">'+title+'</span>';
+            html+='<span style="font-size:11px;padding:1px 8px;border-radius:10px;background:'+badgeColor+';color:'+color+'">'+rows.length+'</span>';
+            html+='</div>';
+            html+='<div style="max-height:320px;overflow:auto;border-radius:6px;border:1px solid rgba(255,255,255,.08)">';
+            html+='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+            html+='<thead style="position:sticky;top:0;background:#111827;z-index:2"><tr>';
+            cols.forEach(function(c){ html+='<th style="padding:6px 10px;text-align:left;font-size:11px;color:#94a3b8;border-bottom:1px solid rgba(255,255,255,.08)">'+c+'</th>'; });
+            html+='</tr></thead><tbody>';
+            rows.forEach(function(r,idx){
+                html+='<tr style="background:'+(idx%2?'#0e1428':'transparent')+'">';
+                if(cols.length===3){
+                    // added / removed: path, size, date
+                    html+='<td style="padding:5px 10px;color:#e2e8f0;font-family:monospace;word-break:break-all">'+(r.path||'')+'</td>';
+                    html+='<td style="padding:5px 10px;color:#94a3b8;white-space:nowrap">'+(r.size||0)+' B</td>';
+                    html+='<td style="padding:5px 10px;color:#94a3b8;white-space:nowrap">'+(r.date||'')+'</td>';
+                } else {
+                    // modified: path, local_size→remote_size, local_date→remote_date
+                    html+='<td style="padding:5px 10px;color:#e2e8f0;font-family:monospace;word-break:break-all">'+(r.path||'')+'</td>';
+                    html+='<td style="padding:5px 10px;color:#94a3b8;white-space:nowrap">'+(r.local_size||0)+' → '+(r.remote_size||0)+' B</td>';
+                    html+='<td style="padding:5px 10px;color:#94a3b8;white-space:nowrap">'+(r.local_date||'')+' → '+(r.remote_date||'')+'</td>';
+                }
+                html+='</tr>';
+            });
+            html+='</tbody></table></div></div>';
+            return html;
+        }
+        var h='';
+        h+=table('🟢 新增（远程有，本地没有）',  '#4ade80', 'rgba(74,222,128,.15)', added,    ['文件', '大小', '修改时间']);
+        h+=table('🟡 修改（远程内容不同）',    '#fbbf24', 'rgba(251,191,36,.15)',  modified, ['文件', '大小 (本地→远程)', '修改时间 (本地→远程)']);
+        h+=table('🔴 删除（本地有，远程没有）', '#ef4444', 'rgba(239,68,68,.15)',   removed,  ['文件', '大小', '修改时间']);
+        if(!h){ h='<div style="color:#4ade80;padding:20px;text-align:center">🎉 本地与远程完全一致，无差异文件！</div>'; }
+        return h;
+    }
+    /* ===== 在线更新 ===== */
     function runUpdater(dry){
         var out=document.getElementById('up-out'), pre=document.getElementById('up-pre');
-        out.style.display='block'; pre.textContent=(dry?'[dry] 仅测速中...':'更新中，请稍候（含测速+下载+解压+替换+设置777），不要关闭页面...');
+        out.style.display='block'; pre.textContent=(dry?'[dry] 仅测速中...':'更新中，请稍候（测速→下载→解压→替换777→清缓存+opcache），不要关闭页面...');
+        pre.style.borderLeft='3px solid #fbbf24';
         var fd=new FormData(); fd.append('action','do_update'); if(dry)fd.append('dry','1');
         fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
             var s='';
@@ -2332,8 +2726,15 @@ function renderUpdateForm()
             s+='\n\n'+(!d.ok?'✘ ':'✔ ')+d.msg;
             pre.textContent=s;
             if(!d.ok){pre.style.borderLeft='3px solid #e74c3c';}else{pre.style.borderLeft='3px solid #2ecc71';}
-        }).catch(function(e){pre.textContent='请求失败:'+e;});
+            // 更新成功 → 3 秒后自动刷新页面（让后台重新读新代码）
+            if(d.ok && !dry){
+                pre.textContent += '\n\n⏳ 3 秒后自动刷新页面以加载新版本...';
+                setTimeout(function(){ location.reload(); }, 3000);
+            }
+        }).catch(function(e){pre.textContent='请求失败:'+e; pre.style.borderLeft='3px solid #e74c3c';});
     }
+    // 页面加载完自动做一次版本检测（静默，500ms 后触发）
+    setTimeout(checkVersion, 500);
     </script>
     <?php
 }
@@ -2728,15 +3129,29 @@ function renderSettingsForm($settings)
             </div>
 
             <div class="full" style="margin-top:8px">
-                <h3 style="margin:0 0 4px;font-size:14px">输出返回设置（自定义返回字段映射）</h3>
+                <h3 style="margin:0 0 4px;font-size:14px">输出返回设置（JSON 响应格式）</h3>
                 <div class="note" style="margin:4px 0 8px">
-                    自定义前台返回的 JSON 字段。<b>键名</b>（k）= 对外输出的字段名；<b>值来源</b>（v）可填系统字段名
-                    （<code>code</code> 状态码 / <code>url</code> 播放链接 / <code>title</code> 影视剧名 / <code>episode</code> 集数 /
-                    <code>time</code> 耗时ms / <code>site</code> 命中站点 / <code>source</code> 请求链接 / <code>msg</code> 提示），
-                    或直接填<b>固定文本</b>（常量，如 <code>沫兮官替系统</code>）作为该字段的值。<br>
-                    例如想返回 <code>JM=庆余年</code> <code>JJ=第2集</code>：键名填 <code>JM</code> 值来源填 <code>title</code>，键名 <code>JJ</code> 值来源填 <code>episode</code>。
+                    选择前台 API 返回的 JSON 结构，方便网页 / APP / 小程序等外部调用。
                 </div>
-                <label style="margin:0"><input type="checkbox" name="out_show_source" value="1" <?= !empty($output['show_source']) ? 'checked' : '' ?>> 在返回中附带原始请求链接（默认隐藏）</label>
+                <div style="display:flex;gap:24px;align-items:center;margin-bottom:10px">
+                    <label style="margin:0">输出格式：
+                        <select name="out_mode" style="padding:4px 8px">
+                            <option value="standard" <?= ($output['mode'] ?? 'standard') === 'standard' ? 'selected' : '' ?>>standard（推荐 · code/msg/data/meta 四段式）</option>
+                            <option value="legacy"   <?= ($output['mode'] ?? 'standard') === 'legacy'   ? 'selected' : '' ?>>legacy（旧版扁平结构，向后兼容）</option>
+                        </select>
+                    </label>
+                    <label style="margin:0"><input type="checkbox" name="out_show_meta" value="1" <?= !empty($output['show_meta']) ? 'checked' : '' ?>> standard 模式返回 meta 元信息段（版本、耗时、请求ID等）</label>
+                    <label style="margin:0"><input type="checkbox" name="out_show_source" value="1" <?= !empty($output['show_source']) ? 'checked' : '' ?>> 附带原始请求链接</label>
+                </div>
+                <div class="note" style="margin:0 0 8px;font-size:12px">
+                    <b>standard 示例：</b>
+                    <code style="background:#1e293b;color:#93c5fd;padding:2px 6px;border-radius:4px">
+                        {"code":200,"msg":"success","data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,...},"meta":{"api_version":"1.17.11","request_id":"abc123","elapsed_ms":85.2,...}}
+                    </code>
+                </div>
+                <div class="note" style="margin:0 0 8px;font-size:12px">
+                    <b>legacy 模式</b>下可自定义字段映射（下方表格）：键名 = 输出字段名；值来源 = 系统字段（code / url / title / episode / site / platform / vid / cid / player_url / raw_url / from_pool / from_fallback / is_special / msg / source / time / cached）或常量文本。
+                </div>
                 <table id="out-tbl" style="margin-top:8px">
                     <tr><th style="width:30px">↕</th><th style="width:140px">键名 k（输出字段）</th><th>值来源/常量 v</th><th style="width:60px">启用</th><th style="width:60px">操作</th></tr>
                     <?php if (!empty($output['fields'])): foreach ($output['fields'] as $i => $f): $on = !array_key_exists('enabled', $f) || !empty($f['enabled']); ?>
@@ -2765,7 +3180,10 @@ function renderSettingsForm($settings)
                 <datalist id="src-list">
                     <option value="code"></option><option value="msg"></option><option value="url"></option>
                     <option value="title"></option><option value="episode"></option><option value="site"></option>
-                    <option value="source"></option><option value="time"></option>
+                    <option value="platform"></option><option value="vid"></option><option value="cid"></option>
+                    <option value="player_url"></option><option value="raw_url"></option>
+                    <option value="from_pool"></option><option value="from_fallback"></option><option value="is_special"></option>
+                    <option value="source"></option><option value="time"></option><option value="cached"></option>
                 </datalist>
                 <button type="button" class="btn" style="margin-top:8px" onclick="addOutRow()">+ 添加返回字段</button>
             </div>
