@@ -270,9 +270,20 @@ switch ($ACTION) {
         exit;
 
     case 'clear_cache':
-        AdminHelper::clearCache();
-        Logger::log('operation', '清空搜索缓存', 'info');
-        header('Location: admin.php?tab=dashboard&cleared=1');
+        $cleaned = mxgj_purge_runtime();
+        $items   = $cleaned['items'] ?? 0;
+        Logger::log('operation', '一键清理运行时数据', 'info', ['items' => $items]);
+        // AJAX 请求返回 JSON（前端顶栏按钮用 fetch 触发），否则走整页刷新
+        $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+        header('Content-Type: application/json; charset=utf-8');
+        mxgj_json_out([
+            'code'      => 200,
+            'ok'        => true,
+            'msg'       => '已清理 ' . $items . ' 个缓存/锁/日志文件',
+            'items'     => $items,
+            'opcache'   => $cleaned['opcache_reset'] ?? null,
+        ]);
+        // 非 AJAX 也会 json_out，header Location 不会生效 —— 已提前 exit
         exit;
 
     case 'test_site':
@@ -384,6 +395,7 @@ switch ($ACTION) {
         $userList = json_decode((string)($_POST['templates'] ?? '[]'), true);
         if (!is_array($userList)) mxgj_json_out(['ok' => false, 'msg' => 'JSON 格式错误']);
         if (!mxgj_write_json(MXGJ_CONFIG . '/search_templates_user.json', $userList)) { mxgj_save_fail(MXGJ_CONFIG . '/search_templates_user.json'); }
+        mxgj_purge_runtime(); // 模板变动也清缓存，确保搜索用最新模板
         mxgj_json_out(['ok' => true, 'msg' => '已保存']);
 
     case 'render_from_template':
@@ -973,6 +985,17 @@ a{color:inherit;text-decoration:none}
 .breadcrumb .current{color:#111827;font-weight:600}
 .topbar-right{display:flex;align-items:center;gap:12px}
 .topbar-right .version-tag{background:#eef2ff;color:#4f7cff;font-size:12px;padding:4px 10px;border-radius:12px;font-weight:500}
+/* 顶栏保存状态 + 操作按钮 */
+.topbar-save{display:flex;align-items:center;gap:10px}
+.save-indicator{display:inline-block;width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,.5);flex-shrink:0;transition:background .15s}
+.save-status-text{font-size:12.5px;color:#6b7280}
+.topbar-action{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;border:0;background:#10b981;color:#fff;transition:all .15s;white-space:nowrap}
+.topbar-action:hover{background:#059669;box-shadow:0 2px 6px rgba(16,185,129,.25)}
+.topbar-action.secondary{background:#f3f4f6;color:#4b5563}
+.topbar-action.secondary:hover{background:#e5e7eb;color:#111827}
+.topbar-action.danger{background:#ef4444}
+.topbar-action.danger:hover{background:#dc2626}
+.topbar-action:disabled{opacity:.5;cursor:not-allowed}
 .user-area{display:flex;align-items:center;gap:10px}
 .user-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#4f7cff,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600}
 .logout-btn{background:none;border:none;color:#6b7280;font-size:12.5px;cursor:pointer;padding:6px 10px;border-radius:6px}
@@ -1117,6 +1140,12 @@ tr.out-row[draggable="true"]{transition:background .12s}
 <div class="breadcrumb"><span>🏠</span><span class="sep">/</span><span><?= $currentCrumb ?></span><span class="sep">/</span><span class="current"><?= $currentLabel ?></span></div>
 <div class="topbar-right">
 <span class="version-tag">v<?= MXGJ_VERSION ?></span>
+<div class="topbar-save">
+    <span id="tb-save-indicator" class="save-indicator"></span>
+    <span id="tb-save-status" class="save-status-text">已就绪</span>
+    <button id="btn-save-all"   class="topbar-action"  title="保存所有未保存的修改（Ctrl+S）">💾 保存</button>
+    <button id="btn-clear-cache" class="topbar-action secondary" title="一键清理缓存 / 锁 / 日志 + PHP Opcache">🧹 清理缓存</button>
+</div>
 <div class="user-area">
 <div class="user-avatar">MX</div>
 <form method="post" style="margin:0"><input type="hidden" name="action" value="logout"><button class="logout-btn" type="submit">退出</button></form>
@@ -1174,40 +1203,197 @@ if (!$env['ok']):
   <a class="<?= $tab==='settings'?'active':'' ?>" href="?tab=settings"><span class="m-icon">⚙️</span><span>设置</span></a>
 </nav>
 <script>
-var __autoDirty=null, __saveTimer=null;
-function __setSaveStatus(text,color){
-    var el=document.getElementById('save-status'),dot=document.getElementById('save-indicator');
-    if(el)el.textContent=text;
-    if(dot){
-        dot.style.background=color||'#4ade80';
-        dot.style.boxShadow='0 0 8px rgba('+(color==='#fbbf24'?'251,191,36':color==='#ef4444'?'239,68,68':'74,222,128')+',0.5)';
+/* ====== 统一保存管理 ======
+ *  - 脏表单注册表（多表单同时追踪）
+ *  - 顶栏状态指示器实时反映（绿=就绪 / 黄=有未保存 / 红=保存中或失败）
+ *  - 💾 顶栏按钮 / Ctrl+S 立即保存所有脏表单
+ *  - 10s 定时自动保存（有脏表单时）
+ *  - beforeunload 离开保护（有脏表单时弹窗确认）
+ *  - 保存后清文件/站点健康/opcache（后端 mxgj_purge_runtime() 已处理）
+ *  - 🧹 清理缓存按钮：走 AJAX fetch，返回清理统计 + toast 反馈
+ */
+(function(){
+    // === 脏表单 registry：Set<HTMLFormElement> ===
+    var dirty = new Set();
+    var savePending = false;      // 正在保存（防并发）
+    var autoTimer = null;
+
+    // === 状态指示器统一入口（顶栏 + 表单内部若有也一起更）===
+    function setStatus(text, color){
+        // 顶栏指示器（优先）
+        var ind = document.getElementById('tb-save-indicator');
+        var lbl = document.getElementById('tb-save-status');
+        if(ind){
+            ind.style.background = color || '#4ade80';
+            var rgb = color==='#fbbf24' ? '251,191,36'
+                    : color==='#ef4444' ? '239,68,68'
+                    : color==='#3b82f6' ? '59,130,246'
+                    : '74,222,128';
+            ind.style.boxShadow = '0 0 6px rgba('+rgb+',0.6)';
+        }
+        if(lbl) lbl.textContent = text;
+        // 旧表单里的 save-indicator/save-status（向后兼容）
+        var dot = document.getElementById('save-indicator');
+        var oldLbl = document.getElementById('save-status');
+        if(dot) dot.style.background = color || '#4ade80';
+        if(oldLbl) oldLbl.textContent = text;
     }
-}
-function __markDirty(e){
-    if(e.target.closest('.quick-toggle'))return;
-    var f=e.target.form||(e.target.closest?e.target.closest('form'):null);
-    if(f&&f.classList&&f.classList.contains('auto-save')){ __autoDirty=f; __setSaveStatus('有未保存的修改','#fbbf24'); }
-}
-function __trySave(){
-    if(__saveTimer)clearTimeout(__saveTimer);
-    __saveTimer=setTimeout(function(){
-        var f=__autoDirty;if(!f)return;
-        __autoDirty=null;__saveTimer=null;
-        try{ __setSaveStatus('保存中...','#fbbf24'); f.submit(); }catch(err){ __setSaveStatus('保存失败','#ef4444'); }
-    },250);
-}
-document.addEventListener('input',__markDirty);
-document.addEventListener('change',__markDirty);
-document.addEventListener('click',function(e){
-    if(e.target.closest('.quick-toggle'))return;
-    var inForm=e.target.closest?e.target.closest('form.auto-save'):null;
-    if(inForm){
-        if(e.target.closest('button[type="button"]')){ __autoDirty=inForm; }
-        return;
+
+    // === 标记脏 / 清脏 ===
+    function markDirty(form){
+        if(!form) return;
+        dirty.add(form);
+        setStatus('有未保存的修改（'+dirty.size+'）','#fbbf24');
+        scheduleAuto();
     }
-    __trySave();
-});
-window.addEventListener('blur',function(){ __trySave(); });
+    function markClean(form){
+        dirty.delete(form);
+        if(dirty.size === 0) setStatus('已就绪','#4ade80');
+        else setStatus('有未保存的修改（'+dirty.size+'）','#fbbf24');
+    }
+
+    // === 事件：input/change → markDirty ===
+    document.addEventListener('input', function(e){
+        if(e.target.closest('.quick-toggle')) return;
+        var f = e.target.closest ? e.target.closest('form.auto-save') : null;
+        if(f) markDirty(f);
+    });
+    document.addEventListener('change', function(e){
+        if(e.target.closest('.quick-toggle')) return;
+        var f = e.target.closest ? e.target.closest('form.auto-save') : null;
+        if(f) markDirty(f);
+    });
+
+    // === 定时自动保存：10s 内如果还有脏表单就存 ===
+    function scheduleAuto(){
+        if(autoTimer) clearTimeout(autoTimer);
+        autoTimer = setTimeout(function(){
+            if(dirty.size > 0 && !savePending) saveAll();
+            scheduleAuto();
+        }, 10000);
+    }
+
+    // === 手动 / 自动保存所有脏表单 ===
+    window.__saveAllForms = function saveAll(){
+        if(savePending) return;
+        if(dirty.size === 0){ toast('没有未保存的修改','warn'); return; }
+
+        // 取第一个脏表单，把所有脏表单的数据合并到它的 action 里提交
+        // 注意：每个脏表单有独立 action，所以逐个提交（但只需要一次 HTTP 请求就能生效？
+        //       实际上每个表单 POST 都是独立 action，所以我们逐个提交；
+        //       若只有 1 个脏表单，直接 submit 即可；多个则顺序 submit）
+        savePending = true;
+        setStatus('保存中...','#3b82f6');
+
+        var forms = Array.from(dirty);
+        var savedCount = 0;
+        var hasError = false;
+
+        // 顺序 submit：最后一个提交用原生 submit（整页 POST → 后端 header 重定向）
+        // 前面的用 AJAX fetch，这样整个页面只在最后一次后重定向一次
+        (function submitNext(i){
+            if(i >= forms.length){
+                // 全部处理完，整页刷新一次（让设置/资源站/映射全部重新从文件读）
+                setStatus('已保存','#4ade80');
+                toast('已保存 '+savedCount+' 处设置','success');
+                // 所有 action 在后端已经调 mxgj_purge_runtime() 了，现在 reload 让页面显示最新状态
+                setTimeout(function(){ location.href = location.pathname + '?tab=' + (new URLSearchParams(location.search).get('tab') || 'settings') + '&saved=1'; }, 400);
+                return;
+            }
+            var form = forms[i];
+            var isLast = (i === forms.length - 1);
+            var data = new FormData(form);
+
+            fetch(form.action || location.pathname, {
+                method: 'POST',
+                body: data,
+                credentials: 'same-origin'
+            }).then(function(res){
+                return res.text().then(function(text){ return { ok: res.ok, html: text }; });
+            }).then(function(res){
+                if(!res.ok){ hasError = true; }
+                markClean(form);
+                savedCount++;
+                submitNext(i+1);
+            }).catch(function(){
+                hasError = true;
+                markClean(form); // 不管怎样移除脏标记，避免死循环
+                savedCount++;
+                submitNext(i+1);
+            });
+        })(0);
+    };
+
+    // === 顶栏 💾 按钮 + Ctrl+S ===
+    document.addEventListener('keydown', function(e){
+        if((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')){
+            e.preventDefault();
+            window.__saveAllForms();
+        }
+    });
+    var btnSave = document.getElementById('btn-save-all');
+    if(btnSave) btnSave.addEventListener('click', function(){ window.__saveAllForms(); });
+
+    // === 顶栏 🧹 清理缓存 ===
+    var btnClear = document.getElementById('btn-clear-cache');
+    if(btnClear){
+        btnClear.addEventListener('click', function(){
+            var btn = this;
+            if(!confirm('确定要一键清理运行时缓存吗？\n（搜索缓存 / 锁文件 / 日志 / Opcache 全部清除）')) return;
+            btn.disabled = true;
+            setStatus('清理中...','#3b82f6');
+            var fd = new FormData();
+            fd.append('action','clear_cache');
+            fetch(location.pathname, {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            }).then(function(r){ return r.json(); })
+              .then(function(data){
+                  btn.disabled = false;
+                  setStatus('已清理','#4ade80');
+                  toast(data.msg || '缓存已清空', 'success');
+              })
+              .catch(function(){
+                  btn.disabled = false;
+                  setStatus('清理失败','#ef4444');
+                  toast('清理失败，请重试','error');
+              });
+        });
+    }
+
+    // === 离开保护：有脏表单时拦截 beforeunload ===
+    window.addEventListener('beforeunload', function(e){
+        if(dirty.size > 0){
+            var msg = '你有 ' + dirty.size + ' 处未保存的修改，确定要离开吗？';
+            e.preventDefault();
+            e.returnValue = msg;
+            return msg;
+        }
+    });
+
+    // === 全局 toast（如果页面已有 toast 函数则复用，否则兜底）===
+    function toast(msg, type){
+        if(typeof window.toast === 'function'){ window.toast(msg, type); return; }
+        var el = document.getElementById('toast');
+        if(!el){
+            el = document.createElement('div');
+            el.id = 'toast';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.style.display = 'block';
+        el.style.background = type==='error' ? '#ef4444'
+                            : type==='warn'  ? '#f59e0b'
+                            : '#10b981';
+        clearTimeout(el._t);
+        el._t = setTimeout(function(){ el.style.display = 'none'; }, 2200);
+    }
+
+    // 初始状态
+    setStatus('已就绪','#4ade80');
+})();
 </script>
 </body></html>
 

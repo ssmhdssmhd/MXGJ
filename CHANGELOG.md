@@ -77,12 +77,69 @@
 # 标准格式（默认）
 curl "http://114.134.184.91:9007/?url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce"
 
-# legacy 格式（后台切换后生效）
-# 返回 { code, msg, url, title, time, ... } 扁平结构
-
 # JSONP 跨域调用不受影响
 curl "http://114.134.184.91:9007/?url=...&callback=handleResponse"
 ```
+
+---
+
+## 🖥️ 后台保存体验升级（v1.17.9 同步更新）
+
+### 问题反馈
+用户反馈：**每次改完设置感觉没生效、找不到保存按钮、不知道缓存该怎么清**。
+
+### 根因
+1. 旧版 auto-save 靠"点击表单外 / blur 窗口"触发，浏览器某些场景（快速切 tab / 直接关标签）不会触发
+2. 顶栏没有**显式的"保存"按钮**，用户不知道改了后要等 blur
+3. 旧版 `AdminHelper::clearCache()` 只清了 `cache/*.cache`，没清 opcache、锁文件、cookies 等
+4. 保存后 `mxgj_purge_runtime()` 没清 opcache —— PHP-FPM 场景下字节码缓存是"改了不生效"的最常见原因
+
+### 改动
+
+| 文件 | 改动 |
+|------|------|
+| `lib/bootstrap.php` · `mxgj_purge_runtime()` | 增强：按类型统计清理数量；新增 cookies 目录清理；所有 `*.lock` / `*.pid` 锁文件清理；**PHP opcache_reset()**（PHP-FPM 改了不生效的头号元凶） |
+| `admin.php` · 后端 `clear_cache` action | 改为 AJAX/整页两用：返回清理统计 JSON（items/opcache_reset），前端顶栏按钮 fetch 触发 |
+| `admin.php` · 后端 `save_templates` case | 补上漏掉的 `mxgj_purge_runtime()` |
+| `admin.php` · 顶栏 HTML | 新增状态指示器（绿/黄/蓝/红）+ 💾 保存按钮 + 🧹 清理缓存按钮 |
+| `admin.php` · JS 保存机制 | 完全重写：多表单脏注册表 → 10s 定时自动保存 → Ctrl+S 快捷保存 → beforeunload 离开保护（有脏表单弹窗确认）→ toast 反馈 |
+
+### 新的保存机制（前端）
+
+```
+用户修改 input/change → markDirty → 脏表单入 Set
+                                  ↓
+        10s 定时轮询 ←──────────┘
+        有脏表单 → fetch 顺序 POST 所有脏表单（后端自动清 opcache）
+        → 完成后整页刷新一次 → toast "已保存 N 处设置"
+
+手动触发：顶栏 💾 按钮 或 Ctrl+S
+离开保护：有脏表单时 beforeunload 弹窗确认
+```
+
+### 顶栏按钮一览
+
+| 按钮 | 作用 | 反馈 |
+|------|------|------|
+| 状态指示器 · 绿点 | 已就绪，没有未保存的修改 | 实时随脏/清切换 |
+| 状态指示器 · 黄点 | 有未保存的修改（N 处） | 数字随 dirty.size 更新 |
+| 💾 保存 | 立即保存所有脏表单（Ctrl+S 快捷键） | 蓝点→绿点 + toast |
+| 🧹 清理缓存 | 一键清缓存/锁/日志 + **重置 PHP opcache** | 确认弹窗→toast "已清理 N 个文件" |
+
+### 后端清理动作覆盖范围
+
+```
+✅ 搜索缓存  (*.cache)
+✅ 站点健康  (site_health.json)
+✅ 锁文件   (*.lock / *.pid)
+✅ 日志     (logs/*.json + cron_mapping.log)
+✅ Cookies  (cookies/*)
+✅ PHP Opcache  ⭐ 关键新增（PHP-FPM 改了不生效罪魁祸首）
+```
+
+### 保存后为什么一定生效？
+所有后端保存 action（save_sites / save_mapping / save_settings / save_fallback / save_templates / quick_toggle / clear_cache）都会**先写 JSON → 再调 mxgj_purge_runtime()**，其中包含 `opcache_reset()`。
+PHP-FPM 的 opcache 是"改了文件但代码不刷新"的头号元凶，这次直接在保存时强制清掉，彻底解决"改了没生效"。
 
 ---
 

@@ -693,28 +693,51 @@ function mxgj_auto_mapping(array $parsed, string $name, int $episode): bool
  */
 function mxgj_purge_runtime(): array
 {
-    $cleaned = [];
+    $cleaned = ['items' => 0];
 
     // 1) 搜索缓存
+    $n = 0;
     foreach (glob(MXGJ_CACHE . '/*.cache') ?: [] as $f) {
-        @unlink($f);
+        if (@unlink($f)) $n++;
     }
-    $cleaned['cache'] = MXGJ_CACHE;
+    $cleaned['cache'] = ['dir' => MXGJ_CACHE, 'count' => $n];
+    $cleaned['items'] += $n;
 
-    // 2) 站点健康状态 + 心跳锁
-    @unlink(MXGJ_DATA . '/site_health.json');
-    @unlink(MXGJ_DATA . '/heartbeat.lock');
+    // 2) 站点健康状态 + 心跳锁 + 所有 *.lock / *.pid 锁
+    foreach (['site_health.json', 'heartbeat.lock'] as $f) {
+        if (is_file(MXGJ_DATA . '/' . $f)) {
+            @unlink(MXGJ_DATA . '/' . $f);
+            $cleaned['items']++;
+        }
+    }
+    foreach (glob(MXGJ_DATA . '/*.lock') ?: [] as $f) { @unlink($f); $cleaned['items']++; }
+    foreach (glob(MXGJ_DATA . '/*.pid') ?: [] as $f)  { @unlink($f); $cleaned['items']++; }
     $cleaned['health'] = 'site_health';
 
     // 3) 日志（含所属系统目录）
+    $n = 0;
     foreach (glob(MXGJ_DATA . '/logs/*.json') ?: [] as $f) {
-        @unlink($f);
+        if (@unlink($f)) $n++;
     }
-    $cleaned['logs'] = MXGJ_DATA . '/logs';
+    $cleaned['logs'] = ['dir' => MXGJ_DATA . '/logs', 'count' => $n];
+    $cleaned['items'] += $n;
 
     // 4) 定时采集运行日志
-    @unlink(MXGJ_DATA . '/cron_mapping.log');
+    if (@unlink(MXGJ_DATA . '/cron_mapping.log')) $cleaned['items']++;
     $cleaned['cron'] = 'cron_mapping.log';
+
+    // 5) cookies 目录（临时 cookie 文件不影响配置，但一并清理彻底）
+    $n = 0;
+    foreach (glob(MXGJ_DATA . '/cookies/*') ?: [] as $f) {
+        if (is_file($f) && @unlink($f)) $n++;
+    }
+    $cleaned['cookies'] = ['count' => $n];
+    $cleaned['items'] += $n;
+
+    // 6) PHP opcache（PHP-FPM 场景下最常见的"改了没生效"原因）
+    if (function_exists('opcache_reset') && ini_get('opcache.enable')) {
+        $cleaned['opcache_reset'] = @opcache_reset();
+    }
 
     return $cleaned;
 }
