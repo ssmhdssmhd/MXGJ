@@ -15,7 +15,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.13');
+define('MXGJ_VERSION', '1.17.14');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -166,25 +166,37 @@ function mxgj_env_enc(mixed $v): string
  */
 function mxgj_env_read(): array
 {
-    static $cache = null;
-    static $last_mtime = 0;
+    // 用 GLOBALS 传递 invalidate 标记（跨函数共享）
+    // write() 成功后设 $GLOBALS['mxgj_env_reload'] = true
+    if (!isset($GLOBALS['mxgj_env_cache'])) {
+        $GLOBALS['mxgj_env_cache'] = null;
+        $GLOBALS['mxgj_env_mtime'] = 0;
+    }
 
     $envFile = MXGJ_ENV;
 
     // 自动迁移：如果 .env.ini 不存在但 settings.json 存在 → 自动生成
+    // 注意：migrate 之后 PHP stat 缓存可能还记着"文件不存在"，所以 migrate 后必须 clearstatcache
     if (!is_file($envFile)) {
         mxgj_env_migrate();
+        @clearstatcache(true, $envFile);
     }
 
     if (!is_file($envFile)) {
-        // 兜底：连 .env.ini 都没生成出来 → 返回空 section
         return ['sections' => [], 'env_file' => $envFile, 'migrated' => false];
+    }
+
+    // 强制重读标记（write() 成功后设置）
+    if (!empty($GLOBALS['mxgj_env_reload'])) {
+        $GLOBALS['mxgj_env_reload'] = false;
+        $GLOBALS['mxgj_env_cache'] = null;
+        $GLOBALS['mxgj_env_mtime'] = 0;
     }
 
     // filemtime 微缓存（1 次 stat 系统调用，几乎零开销）
     $mt = @filemtime($envFile);
-    if ($cache !== null && $mt === $last_mtime) {
-        return ['sections' => $cache, 'env_file' => $envFile, 'migrated' => false];
+    if ($GLOBALS['mxgj_env_cache'] !== null && $mt === $GLOBALS['mxgj_env_mtime']) {
+        return ['sections' => $GLOBALS['mxgj_env_cache'], 'env_file' => $envFile, 'migrated' => false];
     }
 
     $raw = @file_get_contents($envFile);
@@ -198,15 +210,15 @@ function mxgj_env_read(): array
     }
 
     // 类型转换
-    $cache = [];
+    $GLOBALS['mxgj_env_cache'] = [];
     foreach ($parsed as $section => $pairs) {
         foreach ($pairs as $k => $v) {
-            $cache[$section][$k] = is_string($v) ? mxgj_env_convert($v) : $v;
+            $GLOBALS['mxgj_env_cache'][$section][$k] = is_string($v) ? mxgj_env_convert($v) : $v;
         }
     }
-    $last_mtime = $mt ?: time();
+    $GLOBALS['mxgj_env_mtime'] = $mt ?: time();
 
-    return ['sections' => $cache, 'env_file' => $envFile, 'migrated' => false];
+    return ['sections' => $GLOBALS['mxgj_env_cache'], 'env_file' => $envFile, 'migrated' => false];
 }
 
 /**
@@ -264,6 +276,12 @@ function mxgj_env_write(array $sections): bool
         return false;
     }
     @chmod($envFile, 0664);
+
+    // 🔴 关键修复：写完后必须清 PHP stat 缓存 + 标记下次 read 强制重读
+    // 否则同一请求内再调 mxgj_env_read() 可能命中旧的 static/mtime 缓存
+    @clearstatcache(true, $envFile);
+    $GLOBALS['mxgj_env_reload'] = true;
+
     return true;
 }
 

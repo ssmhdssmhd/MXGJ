@@ -1,5 +1,81 @@
 # 更新日志 (CHANGELOG)
 
+
+## [v1.17.14] 2026-08-31 · 🔧 .env.ini 写→读同请求立即生效 + 缓存 TTL 变更感知
+
+### 🐛 修复
+
+#### 1. mxgj_env_write 后同请求内 mxgj_env_read 读到旧值（关键 bug）
+
+**根因**：PHP 的 stat 缓存（per-request）+ `mxgj_env_read()` 用 `static $cache/$last_mtime`
+在同一个请求内，admin.php 调 `mxgj_env_write()` 写 .env.ini（rename 覆盖），
+紧接着 `mxgj_settings()` 内部调 `mxgj_env_read()` 时：
+- `@filemtime(MXGJ_ENV)` 可能因为 PHP stat 缓存返回旧 mtime
+- static `$last_mtime` 也是旧值
+- `$mt === $last_mtime` → 命中缓存 → 返回旧值
+
+**修复**：
+```
+mxgj_env_read()  → static 变量改用 $GLOBALS['mxgj_env_cache/mtime']（跨函数可重置）
+                 → 检测 $GLOBALS['mxgj_env_reload'] 强制重读
+
+mxgj_env_write() → rename 成功后 clearstatcache(true, MXGJ_ENV)
+                 → $GLOBALS['mxgj_env_reload'] = true
+
+mxgj_env_migrate() → 写完文件后 clearstatcache()
+                  → 再检查 is_file() 就能正确返回 true
+```
+
+#### 2. Cache::get 不感知 cache_ttl 设置变更
+
+**根因**：缓存文件存 `expire = time() + ttl`（写入时的 ttl），
+如果用户后台把 cache_ttl 从 600 改成 30，已有的缓存文件 expire = time_written + 600，
+还远远没过期 → Cache::get 继续返回旧缓存。
+
+**修复**：
+```
+Cache::set() 现在存：expire + ttl + time + value
+Cache::get() 额外检查：
+  if (当前 cache_ttl < 写入时的 ttl) {
+      新 expire = 写入时间 + 当前 cache_ttl
+      if (新 expire < 当前时间) → 旧缓存立即失效
+  }
+```
+
+### 改动文件
+
+| 文件 | 变更 |
+|------|------|
+| lib/bootstrap.php | mxgj_env_read/write/migrate 修复：GLOBALS 共享缓存 + clearstatcache + reload 标记 |
+| lib/Cache.php | Cache::set 新增 ttl/time 字段；Cache::get 新增 cache_ttl 变更感知；新增 clearAll() |
+| version.json / README.md | 版本号 v1.17.14 |
+
+### 验证结果
+
+```
+✅ 同一请求内 env_write → mxgj_settings() 立即读到新值
+✅ 同一请求内 env_upsert sites → mxgj_sites() 立即读到新值
+✅ migrate 后同一请求内 mxgj_env_read() 正确返回新生成的 .env.ini
+✅ Cache cache_ttl 变更感知：改小 ttl → 旧缓存按新 ttl 重新算过期
+✅ 全部 PHP 语法检查通过
+```
+
+### 测试代码片段
+
+```php
+// 修复前：write 后 read 返回旧值 600
+$st = mxgj_settings();
+$st['cache_ttl'] = 77;
+mxgj_env_write(mxgj_build_env_sections($st));
+$st2 = mxgj_settings();
+echo $st2['cache_ttl']; // 600 ❌（期望 77）
+
+// 修复后：write 后 read 立即返回新值 77
+echo $st2['cache_ttl']; // 77 ✅
+```
+
+---
+
 ## [v1.17.13] 2026-08-31 · 🔐 统一 .env.ini 配置 — 实时读写彻底解决「后台修改不生效」
 
 ### 根因（反复出现的"保存不生效"问题）
