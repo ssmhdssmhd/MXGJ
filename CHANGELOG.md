@@ -1,5 +1,77 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.11] 2026-08-31 · 🔧 修复在线更新「解压失败」+ mirror 返回 HTML 错误页
+
+### 根因
+用户在远程服务器点「立即更新」返回 `解压失败`。探测发现有两个问题：
+1. **某些 mirror（gh-proxy.net）会返回 HTML 错误页**（404/反爬验证），而之前只检查文件大小 > 1000 字节 — 195 字节的 HTML 刚好没过，其他 mirror 也可能返回更大的 HTML
+2. **原代码直接 `new ZipArchive()->open()` 没检查 PHP 扩展是否存在** — 远程服务器没装 `php-zip` 会直接 fatal error，或返回模糊的"解压失败"四个字，完全不知道是什么原因
+
+### 实测 mirror 状态
+```
+gh-proxy.com    → HTTP 200 · 187KB · ✅ zip (PK\x03\x04)
+ghfast.top      → HTTP 200 · 187KB · ✅ zip
+mirror.ghproxy  → HTTP 000 · 187KB · ✅ zip
+gh-proxy.net    → HTTP 200 · 195B  · ❌ 非zip(<!DOCTYPE → HTML 错误页)
+直连 github.com → 待测速
+```
+
+### 核心改动
+
+| 文件 | 改动 |
+|------|------|
+| `lib/Updater.php` | 新增 `isValidZip()` — 检查前 4 字节是不是 `PK\x03\x04` 魔术头；新增 `extractZip()` — **魔术头验证 → ZipArchive（带错误码映射）→ shell unzip 回退** 三重策略；新增 `shellUnzip()` / `findUnzipBinary()` — shell unzip 回退；新增 `zipErrorName()` — ZipArchive 错误码转可读名称（`ER_NOZIP` → `NOZIP`）；新增 `diagnoseEnv()` — 诊断 ZipArchive / shell unzip / data 可写 / PHP 版本，供前端展示；`run()` 和 `diffLocalRemote()` 下载完先验魔术头，非 zip 自动跳过该 mirror 继续下一个；`mirrors()` 去掉坏节点 |
+| `admin.php` | 版本卡片（首屏 + 动态渲染）新增 PHP 环境诊断行：🗜️ ZipArchive ✅/❌ · 🐚 shell ✅/❌ · 📁 data ✅/⚠️ · PHP 版本号；`renderVersionCard()` JS 函数同步输出 env 行 |
+
+### 解压策略链（extractZip）
+```
+0) 魔术头 PK\x03\x04 验证
+   └─ 失败 → 返回「zip 文件头无效」，附 HTML 错误页 title（如果能抓到）
+1) ZipArchive（如果 PHP 扩展可用）
+   ├─ open(zipFile) → 对照 ER_* 常量输出错误名（如 NOZIP / CRC / READ）
+   └─ extractTo(目录)
+      ├─ 成功 → 返回 "ZipArchive 解压成功（N files）"
+      └─ 失败 → 回退 shell unzip ↓
+2) shell unzip（如果系统有 unzip 命令）
+   └─ exec("unzip -oq zip -d toDir")
+3) 全部失败 → 返回详细诊断 + 安装 php-zip 建议
+```
+
+### 实测（坏 mirror 被正确跳过）
+```
+下载阶段：
+  gh-proxy.net 返回 195B HTML → 魔术头校验失败 → 跳过
+  gh-proxy.com 返回 187KB zip → 魔术头通过 → 用它
+解压阶段：
+  isZip PK\x03\x04 = YES ✅
+  ZipArchive::open = OK (67 files)
+  → "ZipArchive 解压成功（67 files）" ✅
+```
+
+### 返回示例（check_diff + env）
+```json
+{
+  "local": "1.17.11",
+  "latest": "1.17.8",
+  "has_update": false,
+  "env": {
+    "ziparchive": true,
+    "shell_unzip": true,
+    "data_writable": true,
+    "php_version": "8.2.x",
+    "all_ok": true,
+    "notes": "✅ ZipArchive + shell unzip 都可用（双保险）"
+  },
+  "msg": "🚀 当前 v1.17.11 已是最新（比 GitHub main 更新）"
+}
+```
+
+### 版本号
+- `lib/bootstrap.php` MXGJ_VERSION: `1.17.10` → `1.17.11`
+- `version.json`: `1.17.10` → `1.17.11`
+
+---
+
 ## [v1.17.10] 2026-08-31 · 🆕 在线更新页面升级：版本对比 + 差异文件预览
 
 ### 背景

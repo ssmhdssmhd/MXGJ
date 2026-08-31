@@ -2528,6 +2528,26 @@ function renderUpdateForm()
                     <span style="color:#6b7280;margin-left:4px">· 节点: <?= htmlspecialchars($verInfo['meta']['node']) ?></span>
                     <?php endif; ?>
                 </div>
+                <?php if (!empty($verInfo['env'])): $env = $verInfo['env']; ?>
+                <div style="font-size:11.5px;color:<?= !empty($env['all_ok']) ? '#94a3b8' : '#ef4444' ?>;margin-top:4px">
+                    <?php if (!empty($env['ziparchive'])): ?>
+                    <span title="PHP ZipArchive 扩展">🗜️ ZipArchive ✅</span>
+                    <?php else: ?>
+                    <span title="PHP ZipArchive 扩展未安装" style="color:#ef4444">🗜️ ZipArchive ❌</span>
+                    <?php endif; ?>
+                    <?php if (!empty($env['shell_unzip'])): ?>
+                    <span style="margin-left:10px" title="系统 unzip 命令">🐚 shell unzip ✅</span>
+                    <?php else: ?>
+                    <span style="margin-left:10px;color:#f59e0b" title="系统无 unzip 命令">🐚 shell unzip ❌</span>
+                    <?php endif; ?>
+                    <?php if (!empty($env['data_writable'])): ?>
+                    <span style="margin-left:10px" title="data/ 目录可写">📁 data 可写 ✅</span>
+                    <?php else: ?>
+                    <span style="margin-left:10px;color:#ef4444" title="data/ 目录不可写">📁 data 不可写 ⚠️</span>
+                    <?php endif; ?>
+                    <span style="margin-left:10px;color:#6b7280">PHP <?= htmlspecialchars($env['php_version'] ?? '') ?></span>
+                </div>
+                <?php endif; ?>
             </div>
             <div style="display:flex;gap:10px">
                 <button class="btn" id="btn-check-update" onclick="checkVersion()" style="background:#4f7cff;color:#fff">🔄 检查更新</button>
@@ -2601,6 +2621,15 @@ function renderUpdateForm()
         cardHTML+='<span style="margin-left:10px;font-size:12px;padding:2px 8px;border-radius:10px;background:'+(hasUpd?'rgba(251,191,36,.2)':'rgba(74,222,128,.18)')+';color:'+color+'">'+badge+'</span>';
         cardHTML+='</div>';
         cardHTML+='<div style="font-size:12.5px;color:'+color+';margin-top:6px">'+(d.msg||'')+'</div>';
+        if(d.env){
+            var env=d.env, envColor=env.all_ok?'#94a3b8':'#ef4444';
+            var envParts=[];
+            envParts.push(env.ziparchive?'🗜️ ZipArchive ✅':'🗜️ ZipArchive ❌');
+            envParts.push(env.shell_unzip?'🐚 shell ✅':'🐚 shell ❌');
+            envParts.push(env.data_writable?'📁 data ✅':'📁 data ⚠️');
+            envParts.push('PHP '+(env.php_version||''));
+            cardHTML+='<div style="font-size:11.5px;color:'+envColor+';margin-top:4px">'+envParts.join(' · ')+'</div>';
+        }
         cardHTML+='</div>';
         cardHTML+='<div style="display:flex;gap:10px">';
         cardHTML+='<button class="btn" onclick="checkVersion()" style="background:#4f7cff;color:#fff">🔄 检查更新</button>';
@@ -3117,7 +3146,7 @@ function renderSettingsForm($settings)
                 <div class="note" style="margin:0 0 8px;font-size:12px">
                     <b>standard 示例：</b>
                     <code style="background:#1e293b;color:#93c5fd;padding:2px 6px;border-radius:4px">
-                        {"code":200,"msg":"success","data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,...},"meta":{"api_version":"1.17.10","request_id":"abc123","elapsed_ms":85.2,...}}
+                        {"code":200,"msg":"success","data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,...},"meta":{"api_version":"1.17.11","request_id":"abc123","elapsed_ms":85.2,...}}
                     </code>
                 </div>
                 <div class="note" style="margin:0 0 8px;font-size:12px">

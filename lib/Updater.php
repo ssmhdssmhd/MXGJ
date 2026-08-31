@@ -31,13 +31,13 @@ class Updater
     /** 加速节点（前缀与直连 github 组合） */
     public static function mirrors(): array
     {
+        // 实测验证过：每个节点 download 完都会先验 PK 魔术头，非 zip 自动跳过
         return [
             '直连'           => 'https://github.com',
-            'fast.top'       => 'https://ghfast.top/https://github.com',
-            'ghproxy.net'    => 'https://ghproxy.net/https://github.com',
             'gh-proxy.com'   => 'https://gh-proxy.com/https://github.com',
+            'fast.top'       => 'https://ghfast.top/https://github.com',
             'mirror.ghproxy' => 'https://mirror.ghproxy.com/https://github.com',
-            '>ghproxy.com'   => 'https://ghproxy.com/https://github.com',
+            'gh-proxy.net'   => 'https://gh-proxy.net/https://github.com',
         ];
     }
 
@@ -106,34 +106,45 @@ class Updater
         $zipFile = $tmpDir . '/src.zip';
         $ok = false;
         $usedNode = '';
+        $skipReasons = [];
         foreach ($usable as $node) {
             $zipUrl = $node['prefix'] . "/{$repo['owner']}/{$repo['repo']}/archive/refs/heads/{$repo['branch']}.zip";
             if (self::download($zipUrl, $zipFile, 120)) {
-                if ((int)@filesize($zipFile) > 1000) {
-                    $ok = true;
-                    $usedNode = $node['name'];
-                    break;
+                $sz = (int)@filesize($zipFile);
+                if ($sz < 1000) {
+                    $skipReasons[] = $node['name'] . ': 文件过小(' . $sz . 'B)';
+                    @unlink($zipFile); continue;
                 }
+                // 关键：验 PK\x03\x04 魔术头（很多 mirror 会返回 HTML 错误页）
+                if (!self::isValidZip($zipFile)) {
+                    $skipReasons[] = $node['name'] . ': 非 zip（' . $sz . 'B，魔术头不对，可能是 HTML 错误页）';
+                    @unlink($zipFile); continue;
+                }
+                $ok = true;
+                $usedNode = $node['name'];
+                break;
             }
+            $skipReasons[] = $node['name'] . ': download() 返回 false';
             @unlink($zipFile);
         }
         if (!$ok) {
+            $detail = $skipReasons !== [] ? ' · 尝试过的节点: ' . implode('; ', array_slice($skipReasons, 0, 3)) : '';
             self::rrmdir($tmpDir);
             @unlink($lockFile);
-            return ['ok' => false, 'applied' => false, 'msg' => '下载源码包失败', 'steps' => $steps, 'speed' => $speeds];
+            return ['ok' => false, 'applied' => false, 'msg' => '下载源码包失败（所有 mirror 返回的都不是有效 zip）' . $detail, 'steps' => $steps, 'speed' => $speeds];
         }
         $steps[] = '由 ' . $usedNode . ' 下载成功，大小 ' . round(@filesize($zipFile) / 1024) . 'KB';
 
-        // 4) 解压
-        $zip = new ZipArchive();
-        if ($zip->open($zipFile) !== true) {
+        // 4) 解压（多策略：ZipArchive → shell unzip 回退）
+        $extract = self::extractZip($zipFile, $tmpDir);
+        if (!$extract['ok']) {
             self::rrmdir($tmpDir);
             @unlink($lockFile);
-            return ['ok' => false, 'applied' => false, 'msg' => '解压失败', 'steps' => $steps, 'speed' => $speeds];
+            return ['ok' => false, 'applied' => false,
+                    'msg' => '解压失败：' . $extract['msg'] . ($extract['details'] ? ' — ' . $extract['details'] : ''),
+                    'steps' => $steps, 'speed' => $speeds];
         }
-        $zip->extractTo($tmpDir);
-        $zip->close();
-        $steps[] = '解压完成';
+        $steps[] = '解压完成（' . $extract['method'] . '）：' . $extract['msg'];
 
         // 5) 定位源码根目录（zip 内通常为 MXGJ-main/）
         $srcRoot = null;
@@ -282,6 +293,7 @@ class Updater
                 'ok'      => $remote['ok'],
                 'err'     => $remote['msg'] ?? '',
             ],
+            'env'        => self::diagnoseEnv(),
             'msg'        => '',
         ];
 
@@ -323,6 +335,187 @@ class Updater
         $err  = curl_error($ch);
         curl_close($ch);
         return ($err === '' && is_string($body)) ? $body : '';
+    }
+
+    /* ---------------- zip 解压加固 ---------------- */
+
+    /** 检查文件是不是有效的 zip（PK\x03\x04 魔术头） */
+    protected static function isValidZip(string $path): bool
+    {
+        if (!is_file($path) || (int)@filesize($path) < 20) return false;
+        $fh = @fopen($path, 'rb');
+        if (!$fh) return false;
+        $sig = @fread($fh, 4);
+        @fclose($fh);
+        return $sig === "PK\x03\x04";
+    }
+
+    /** ZipArchive 错误码 → 可读名称（未定义时返回 unknown-N） */
+    protected static function zipErrorName(int $code): string
+    {
+        static $map = null;
+        if ($map === null && class_exists('ZipArchive', false)) {
+            $ref = new \ReflectionClass('ZipArchive');
+            foreach ($ref->getConstants() as $n => $v) {
+                if (strpos($n, 'ER_') === 0) { $map[(int)$v] = str_replace('ER_', '', $n); }
+            }
+        }
+        return $map[$code] ?? ('unknown-' . $code);
+    }
+
+    /**
+     * 解压 zip 到指定目录（多策略回退）
+     *
+     * 策略：
+     *   1) 先验 PK\x03\x04 魔术头，非 zip 直接报错（通常是 mirror 返回了 HTML 错误页）
+     *   2) ZipArchive（若 PHP 扩展可用）
+     *   3) shell unzip（若系统有 unzip 命令）
+     *
+     * @param string $zipFile  zip 文件绝对路径
+     * @param string $toDir    解压目标目录（会自动创建）
+     * @return array{ok:bool, method:string, msg:string, details:string}
+     */
+    protected static function extractZip(string $zipFile, string $toDir): array
+    {
+        // --- 0) 魔术头验证 ---
+        if (!self::isValidZip($zipFile)) {
+            $sz = @filesize($zipFile);
+            $head = '';
+            if (is_file($zipFile) && $fh = @fopen($zipFile, 'rb')) {
+                $head = bin2hex(@fread($fh, 8)); @fclose($fh);
+            }
+            // 尝试提取错误页面的 title（如果是 HTML）
+            $htmlHint = '';
+            if ($sz > 0 && ($fh = @fopen($zipFile, 'rb'))) {
+                $chunk = @fread($fh, 2048); @fclose($fh);
+                if (stripos($chunk, '<html') !== false || stripos($chunk, '<!doctype') !== false) {
+                    if (preg_match('#<title[^>]*>([^<]{1,80})#i', $chunk, $m)) {
+                        $htmlHint = ' · mirror 返回了 HTML 错误页：' . trim($m[1]);
+                    } else {
+                        $htmlHint = ' · mirror 返回了非 zip 内容（可能是 HTML 错误页）';
+                    }
+                }
+            }
+            return [
+                'ok' => false, 'method' => 'magic-check',
+                'msg' => 'zip 文件头无效（不是 PK 魔术头），大小 ' . $sz . ' 字节' . $htmlHint,
+                'details' => 'first-8-bytes: ' . $head,
+            ];
+        }
+
+        // --- 1) ZipArchive ---
+        if (class_exists('ZipArchive', false)) {
+            $zip = new \ZipArchive();
+            $code = $zip->open($zipFile);
+            if ($code === true) {
+                @mkdir($toDir, 0777, true);
+                if ($zip->extractTo($toDir)) {
+                    $count = $zip->numFiles;
+                    $zip->close();
+                    return [
+                        'ok' => true, 'method' => 'ZipArchive',
+                        'msg' => "ZipArchive 解压成功（{$count} files）",
+                        'details' => '',
+                    ];
+                }
+                $extractErr = 'extractTo 返回 false';
+                $zip->close();
+            } else {
+                $extractErr = 'ZipArchive::open 返回 ' . self::zipErrorName($code) . " (code={$code})";
+            }
+            // ZipArchive 失败 → 尝试 shell unzip
+            if (self::shellUnzip($zipFile, $toDir)) {
+                return [
+                    'ok' => true, 'method' => 'shell-unzip(fallback)',
+                    'msg' => 'ZipArchive 失败(' . $extractErr . ')，shell unzip 回退成功',
+                    'details' => '',
+                ];
+            }
+            return [
+                'ok' => false, 'method' => 'ZipArchive+shell-unzip',
+                'msg' => '解压全部失败。ZipArchive: ' . $extractErr . '；shell unzip 也失败',
+                'details' => '',
+            ];
+        }
+
+        // --- 2) 只有 shell unzip ---
+        if (self::shellUnzip($zipFile, $toDir)) {
+            return [
+                'ok' => true, 'method' => 'shell-unzip',
+                'msg' => 'shell unzip 解压成功（无 ZipArchive 扩展）',
+                'details' => '',
+            ];
+        }
+
+        return [
+            'ok' => false, 'method' => 'shell-unzip',
+            'msg' => '解压失败：PHP 无 ZipArchive 扩展且 shell unzip 不可用/失败',
+            'details' => '请安装 php-zip 扩展: apt install php-zip 或 yum install php-pecl-zip',
+        ];
+    }
+
+    /** shell unzip 回退解压（成功返回 true） */
+    protected static function shellUnzip(string $zipFile, string $toDir): bool
+    {
+        if (!function_exists('exec')) return false;
+        $unzipPath = self::findUnzipBinary();
+        if ($unzipPath === '') return false;
+        @mkdir($toDir, 0777, true);
+        $cmd = escapeshellarg($unzipPath) . ' -oq ' . escapeshellarg($zipFile) . ' -d ' . escapeshellarg($toDir) . ' 2>&1';
+        exec($cmd, $out, $retcode);
+        return $retcode === 0;
+    }
+
+    /** 找系统 unzip 命令路径（找不到返回空串） */
+    protected static function findUnzipBinary(): string
+    {
+        static $path = null;
+        if ($path !== null) return $path;
+        foreach (['/usr/bin/unzip', '/bin/unzip', '/usr/local/bin/unzip'] as $cand) {
+            if (is_file($cand) && is_executable($cand)) { $path = $cand; return $path; }
+        }
+        if (function_exists('exec')) {
+            $found = @exec('command -v unzip 2>/dev/null');
+            if ($found && is_file($found)) { $path = $found; return $path; }
+        }
+        $path = '';
+        return $path;
+    }
+
+    /**
+     * 诊断 PHP 环境是否支持在线解压
+     * admin.php 的 check_update 会把这段返回给前端展示
+     *
+     * @return array{ziparchive:bool,shell_unzip:bool,data_writable:bool,php_version:string,
+     *             all_ok:bool,notes:string}
+     */
+    public static function diagnoseEnv(): array
+    {
+        $ziparchive = class_exists('ZipArchive', false);
+        $shellUnzip = self::findUnzipBinary() !== '';
+        $dataWritable = is_dir(MXGJ_DATA) && @is_writable(MXGJ_DATA);
+        $allOk = $ziparchive || $shellUnzip;
+        $notes = '';
+        if (!$ziparchive && !$shellUnzip) {
+            $notes = '❌ PHP 未安装 ZipArchive 扩展，系统也没有 unzip 命令 — 无法解压 zip，请安装 php-zip 或 unzip';
+        } elseif (!$ziparchive && $shellUnzip) {
+            $notes = '⚠️ PHP 未安装 ZipArchive 扩展，但系统有 unzip 命令 — 会用 shell 回退解压（可用）';
+        } elseif ($ziparchive && !$shellUnzip) {
+            $notes = '✅ ZipArchive 扩展可用';
+        } else {
+            $notes = '✅ ZipArchive + shell unzip 都可用（双保险）';
+        }
+        if (!$dataWritable) {
+            $notes .= ' · ⚠️ data/ 目录不可写，更新时可能失败';
+        }
+        return [
+            'ziparchive'     => $ziparchive,
+            'shell_unzip'    => $shellUnzip,
+            'data_writable'  => $dataWritable,
+            'php_version'    => PHP_VERSION,
+            'all_ok'         => $allOk && $dataWritable,
+            'notes'          => $notes,
+        ];
     }
 
     /* ---------------- 差异文件对比 ---------------- */
@@ -368,7 +561,11 @@ class Updater
         foreach ($usable as $node) {
             $zipUrl = $node['prefix'] . "/{$repo['owner']}/{$repo['repo']}/archive/refs/heads/{$repo['branch']}.zip";
             if (self::download($zipUrl, $zipFile, 90)) {
-                if ((int)@filesize($zipFile) > 1000) { $ok = true; break; }
+                $sz = (int)@filesize($zipFile);
+                if ($sz < 1000) { @unlink($zipFile); continue; }
+                // 验 PK\x03\x04 魔术头（mirror 可能返回 HTML 错误页）
+                if (!self::isValidZip($zipFile)) { @unlink($zipFile); continue; }
+                $ok = true; break;
             }
             @unlink($zipFile);
         }
@@ -376,19 +573,17 @@ class Updater
             self::rrmdir($tmpDir);
             return ['ok' => false, 'added' => [], 'modified' => [], 'removed' => [],
                     'total_local' => 0, 'total_remote' => 0, 'speed' => $speeds,
-                    'msg' => '下载源码包失败'];
+                    'msg' => '下载源码包失败（所有 mirror 返回的都不是有效 zip）'];
         }
 
-        // 3) 解压
-        $zip = new ZipArchive();
-        if ($zip->open($zipFile) !== true) {
+        // 3) 解压（多策略：ZipArchive → shell unzip 回退）
+        $extract = self::extractZip($zipFile, $tmpDir);
+        if (!$extract['ok']) {
             self::rrmdir($tmpDir);
             return ['ok' => false, 'added' => [], 'modified' => [], 'removed' => [],
                     'total_local' => 0, 'total_remote' => 0, 'speed' => $speeds,
-                    'msg' => '解压失败'];
+                    'msg' => '解压失败：' . $extract['msg'] . ($extract['details'] ? ' — ' . $extract['details'] : '')];
         }
-        $zip->extractTo($tmpDir);
-        $zip->close();
 
         // 4) 找源码根（zip 内通常为 MXGJ-main/）
         $srcRoot = null;
