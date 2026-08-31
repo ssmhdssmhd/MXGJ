@@ -179,6 +179,18 @@ class Updater
         self::chmodAll(MXGJ_ROOT);
         $steps[] = '已将文件与子目录权限设为 0777';
 
+        // 7.5) ⭐ 关键：清 opcache + 运行时数据
+        // PHP-FPM 的 opcache 是"更新了代码但不生效"的头号元凶
+        // 文件替换完立刻清，让下一次 PHP 请求加载新代码
+        if (function_exists('mxgj_purge_runtime')) {
+            $purged = mxgj_purge_runtime();
+            $steps[] = '已清理缓存 + opcache reset（items=' . ($purged['items'] ?? 0) . ')';
+        }
+        if (function_exists('opcache_reset') && ini_get('opcache.enable')) {
+            @opcache_reset();
+            $steps[] = 'PHP opcache 已重置';
+        }
+
         // 8) 清理
         @unlink($zipFile);
         self::rrmdir($tmpDir);
@@ -189,6 +201,128 @@ class Updater
             'msg' => '更新成功，已替换为新版本',
             'steps' => $steps, 'speed' => $speeds,
         ];
+    }
+
+    /* ---------------- 版本检测 ---------------- */
+
+    /**
+     * 获取本地当前版本
+     * 优先读 version.json，fallback 到 MXGJ_VERSION 常量
+     */
+    public static function currentVersion(): string
+    {
+        $vfile = MXGJ_ROOT . '/version.json';
+        if (is_file($vfile)) {
+            $data = json_decode(@file_get_contents($vfile), true);
+            if (is_array($data) && !empty($data['version'])) {
+                return (string)$data['version'];
+            }
+        }
+        return defined('MXGJ_VERSION') ? MXGJ_VERSION : '0.0.0';
+    }
+
+    /**
+     * 从 GitHub 拉取最新版本号（依次尝试多个加速节点）
+     *
+     * @return array{ok:bool,version:string,release?:string,msg?:string,node?:string}
+     */
+    public static function latestVersion(): array
+    {
+        $repo   = self::repo();
+        $mirrors = self::mirrors();
+        $probe  = "/{$repo['owner']}/{$repo['repo']}/raw/{$repo['branch']}/version.json";
+
+        // 直连优先（测速用的是 mirror，但 version.json 体积很小直连也快，
+        // 避免 mirror 挂了就完全没法检查更新）
+        $order = ['直连' => $mirrors['直连']];
+        foreach ($mirrors as $k => $v) { if ($k !== '直连') $order[$k] = $v; }
+
+        foreach ($order as $name => $prefix) {
+            $url  = $prefix . $probe;
+            $body = self::fetchRaw($url, 5);
+            if ($body === '' || $body === null) continue;
+            $json = json_decode($body, true);
+            if (!is_array($json)) continue;
+            $v = trim((string)($json['version'] ?? ''));
+            if ($v === '') continue;
+            return [
+                'ok'      => true,
+                'version' => $v,
+                'release' => trim((string)($json['release'] ?? '')),
+                'node'    => $name,
+                'data'    => $json,
+            ];
+        }
+
+        return [
+            'ok'      => false,
+            'version' => '',
+            'msg'     => '所有加速节点均不可达，无法获取最新版本',
+        ];
+    }
+
+    /**
+     * 比较本地与 GitHub 版本，判断是否需要更新
+     *
+     * @return array{local:string,latest:string,has_update:bool,need_update:bool|'same'|'older'|'newer',meta:array,msg:string}
+     */
+    public static function check(): array
+    {
+        $local  = self::currentVersion();
+        $remote = self::latestVersion();
+
+        $result = [
+            'local'      => $local,
+            'latest'     => $remote['ok'] ? $remote['version'] : $local,
+            'has_update' => false,
+            'need_update' => 'same',
+            'meta'       => [
+                'release' => $remote['release'] ?? '',
+                'node'    => $remote['node'] ?? '',
+                'ok'      => $remote['ok'],
+                'err'     => $remote['msg'] ?? '',
+            ],
+            'msg'        => '',
+        ];
+
+        if (!$remote['ok']) {
+            $result['msg'] = '⚠️ 无法连接 GitHub（' . ($remote['msg'] ?? '未知错误') . '），当前 v' . $local;
+            return $result;
+        }
+
+        // 版本比较：把 v1.17.9 转为 1.17.9 再 version_compare
+        $l = ltrim($local, 'vV');
+        $r = ltrim($remote['version'], 'vV');
+        $cmp = version_compare($l, $r);
+        if ($cmp === -1) {
+            $result['has_update'] = true;
+            $result['need_update'] = 'older';
+            $result['msg'] = '🎉 有新版本！当前 v' . $local . ' → 最新 v' . $remote['version'];
+        } elseif ($cmp === 1) {
+            $result['need_update'] = 'newer';
+            $result['msg'] = '🚀 当前 v' . $local . ' 已是最新（比 GitHub main 更新）';
+        } else {
+            $result['msg'] = '✅ 当前已是最新版本 v' . $local;
+        }
+        return $result;
+    }
+
+    /** 直接 fetch 一个 URL 返回 body（失败返回空串） */
+    protected static function fetchRaw(string $url, int $timeout = 5): string
+    {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => $timeout,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_USERAGENT      => 'MXGJ-Updater/' . self::currentVersion(),
+        ]);
+        $body = curl_exec($ch);
+        $err  = curl_error($ch);
+        curl_close($ch);
+        return ($err === '' && is_string($body)) ? $body : '';
     }
 
     /* ---------------- 工具方法 ---------------- */

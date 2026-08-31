@@ -143,6 +143,60 @@ PHP-FPM 的 opcache 是"改了文件但代码不刷新"的头号元凶，这次�
 
 ---
 
+## ⬆️ 版本检测 + 在线更新修复（v1.17.9 同步更新）
+
+### 问题
+用户访问远程 `http://114.134.184.91:9007/admin.php?tab=update`，发现：
+- 远程 `version.json` = v1.17.8，但 GitHub main 也是 v1.17.8 → Updater 下载下来跟原来一样
+- 之前 Updater 完全没有版本比较逻辑，点"立即更新"也不知道在更什么
+- Updater 替换完代码没清 opcache，即使下载成功 PHP-FPM 也跑旧字节码 → "更新了不生效"
+
+### 改动
+
+| 文件 | 改动 |
+|------|------|
+| `lib/Updater.php` | 新增 `currentVersion()` / `latestVersion()` / `check()` / `fetchRaw()` 四个版本检测方法；`run()` 末尾新增 **清 opcache + mxgj_purge_runtime()** 关键步骤 |
+| `admin.php` · 后端 | 新增 `check_update` action（返回 `{local, latest, has_update, need_update, meta, msg}`） |
+| `admin.php` · 前端 `renderUpdateForm` | 版本对比卡片（🆚 本地 → GitHub + 🆕 有新版本 / ✅ 已是最新 徽章 + 节点）+ 🔄 检查更新按钮 + 页面加载自动检查 + 更新成功后 3 秒自动刷新 |
+
+### `Updater::check()` 返回示例（本地 v1.17.9，GitHub main v1.17.8）
+```json
+{
+  "local": "1.17.9",
+  "latest": "1.17.8",
+  "has_update": false,
+  "need_update": "newer",
+  "meta": { "release": "2026-08-29", "node": "gh-proxy.com", "ok": true },
+  "msg": "🚀 当前 v1.17.9 已是最新（比 GitHub main 更新）"
+}
+```
+
+### 版本比较规则
+| `need_update` | 含义 | 前端表现 |
+|---|---|---|
+| `"older"` | 本地落后于 GitHub，`has_update=true` | 🆕 徽章亮起 + 出现"立即更新"按钮 |
+| `"same"` | 版本号一致 | ✅ 已是最新 |
+| `"newer"` | 本地领先于 GitHub（例如刚在本地做了改动还没推） | 🚀 已是最新（蓝色） |
+
+### Updater.run() 新流程（8.5 步 → 9 步）
+```
+0. 鉴权 → 1. 锁 → 2. 测速 → 3. 下载 zip → 4. 解压 → 5. 定位源码根
+→ 6. 覆盖（保留 config/ data/）→ 7. chmod 777
+→ 7.5 ⭐ 清 opcache + mxgj_purge_runtime()  ← 关键新增
+→ 8. 清理临时文件 → 返回
+```
+
+### 根因修复链
+```
+远程跑旧版（GitHub main 没推新）→ Updater 下载到的版本跟本地一样 → 用户以为更新坏了
+                                        ↓
+Updater.run() 替换完代码没清 opcache → 即使下载了新版 PHP-FPM 也跑旧字节码
+                                        ↓
+现在：先点 🔄 检查更新 → 知道该更不该更 → 更完自动清 opcache → 3s 后页面刷新 → 看到新版
+```
+
+---
+
 ## [v1.17.5] 2026-08-29 · 🔄 资源平替 / 资源站互换（主池失败自动降级）
 
 ### 背景与思路

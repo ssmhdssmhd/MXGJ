@@ -640,6 +640,12 @@ switch ($ACTION) {
         Logger::log('operation', '清空日志：' . Logger::TYPES[$type], 'info');
         mxgj_json_out(['code' => 200, 'ok' => true, 'msg' => '已清空「' . Logger::TYPES[$type] . '」共 ' . $n . ' 条', 'cleared' => $n]);
 
+    case 'check_update':
+        // ⬆️ 版本检测：比较本地 vs GitHub main
+        $res = Updater::check();
+        Logger::log('update', '版本检测：' . $res['msg'], 'info', ['local' => $res['local'], 'latest' => $res['latest'], 'has_update' => $res['has_update']]);
+        mxgj_json_out($res);
+
     case 'do_update':
         // 后台触发的在线更新（dry=1 时仅测速）
         $st  = mxgj_settings();
@@ -2478,22 +2484,58 @@ function renderUpdateForm()
 {
     $st = mxgj_settings();
     $upKey = isset($st['updater_key']) && $st['updater_key'] !== '' ? $st['updater_key'] : ($st['admin_password'] ?? '');
+    // 页面加载时先同步拉一次版本（阻塞式，很快，超时 5s）
+    $verInfo = null;
+    try {
+        if (function_exists('Updater::check')) {
+            $verInfo = Updater::check();
+        }
+    } catch (\Throwable $e) {
+        $verInfo = ['local' => MXGJ_VERSION, 'latest' => MXGJ_VERSION, 'has_update' => false, 'need_update' => 'same', 'msg' => '⚠️ 版本检测异常：' . $e->getMessage()];
+    }
+    $hasUpdate = !empty($verInfo['has_update']);
+    $needUpd   = $verInfo['need_update'] ?? 'same';
     ?>
     <div class="panel">
         <h2>在线更新</h2>
+
+        <!-- 🆕 版本对比卡片 -->
+        <div id="ver-check-card" style="margin-bottom:18px;padding:16px 18px;border-radius:12px;background:linear-gradient(135deg,#1a2236,#0f1420);border:1px solid rgba(139,92,246,.2);color:#e2e8f0;display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+            <div style="flex:1;min-width:240px">
+                <div style="font-size:11px;color:#94a3b8;letter-spacing:.6px;margin-bottom:4px">版本检测</div>
+                <div style="font-size:16px;font-weight:700;color:<?= $hasUpdate ? '#fbbf24' : '#4ade80' ?>">
+                    🆚 本地 v<?= htmlspecialchars($verInfo['local'] ?? MXGJ_VERSION) ?>
+                    <span style="margin:0 6px;color:#6b7280">→</span>
+                    GitHub v<?= htmlspecialchars($verInfo['latest'] ?? '?') ?>
+                </div>
+                <div style="font-size:12.5px;color:<?= $needUpd==='newer' ? '#60a5fa' : ($hasUpdate ? '#fbbf24' : '#4ade80') ?>;margin-top:6px">
+                    <?= htmlspecialchars($verInfo['msg'] ?? '点击「检查更新」查看') ?>
+                    <?php if (!empty($verInfo['meta']['node'])): ?>
+                    <span style="color:#6b7280;margin-left:4px">· 节点: <?= htmlspecialchars($verInfo['meta']['node']) ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div style="display:flex;gap:10px">
+                <button class="btn" id="btn-check-update" onclick="checkVersion()" style="background:#4f7cff;color:#fff">🔄 检查更新</button>
+                <?php if ($hasUpdate): ?>
+                <button class="btn btn-green" onclick="runUpdater(false)" style="background:#10b981;color:#fff">🚀 立即更新</button>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <div class="note" style="margin-bottom:16px">
             从 GitHub 自动拉取最新代码进行升级。<br>
             · 更新前会删除当前代码文件（保留 <b>config/</b> 配置与 <b>data/</b> 缓存）<br>
             · 面向国内网络，自动检测多个 <b>GitHub 加速镜像</b> 并选择最快节点下载<br>
-            · 升级后文件与子目录权限统一设为 <b>0777</b>
+            · 升级后 <b>自动清缓存 + opcache reset</b>，立即可见新版本（PHP-FPM 场景也生效）
         </div>
         <div class="form-grid">
             <div><label>仓库</label><input type="text" value="<?= htmlspecialchars(($st['repo_owner'] ?? 'ssmhdssmhd')) . '/' . htmlspecialchars($st['repo_name'] ?? 'MXGJ') . '@' . htmlspecialchars($st['repo_branch'] ?? 'main') ?>" readonly></div>
             <div><label>升级密钥（update.php 用）</label><input type="text" value="<?= htmlspecialchars($upKey) ?>" readonly></div>
         </div>
         <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-green" onclick="doUpdate()">立即更新</button>
-            <button class="btn" onclick="dryUpdate()">仅测速（不执行）</button>
+            <button class="btn btn-green" onclick="runUpdater(false)">立即更新</button>
+            <button class="btn" onclick="runUpdater(true)">仅测速（不执行）</button>
         </div>
         <div id="up-out" style="display:none;margin-top:16px">
             <h2 style="font-size:14px">更新报告</h2>
@@ -2505,11 +2547,46 @@ function renderUpdateForm()
         </div>
     </div>
     <script>
-    function doUpdate(){ runUpdater(false); }
-    function dryUpdate(){ runUpdater(true); }
+    /* ===== 版本检测 ===== */
+    function checkVersion(){
+        var btn=document.getElementById('btn-check-update');
+        btn.disabled=true; btn.textContent='⏳ 检测中...';
+        var fd=new FormData(); fd.append('action','check_update');
+        fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
+            btn.disabled=false; btn.textContent='🔄 检查更新';
+            renderVersionCard(d);
+        }).catch(function(e){
+            btn.disabled=false; btn.textContent='🔄 检查更新';
+            renderVersionCard({local:'<?= MXGJ_VERSION ?>',latest:'?',has_update:false,msg:'请求失败:'+e});
+        });
+    }
+    function renderVersionCard(d){
+        var card=document.getElementById('ver-check-card');
+        var hasUpd=!!d.has_update;
+        var color=hasUpd?'#fbbf24':'#4ade80';
+        var badge=hasUpd?'🆕 有新版本':'✅ 已是最新';
+        var cardHTML='';
+        cardHTML+='<div style="flex:1;min-width:240px">';
+        cardHTML+='<div style="font-size:11px;color:#94a3b8;letter-spacing:.6px;margin-bottom:4px">版本检测</div>';
+        cardHTML+='<div style="font-size:16px;font-weight:700;color:'+color+'">';
+        cardHTML+='🆚 本地 v'+(d.local||'<?= MXGJ_VERSION ?>');
+        cardHTML+='<span style="margin:0 6px;color:#6b7280">→</span>';
+        cardHTML+='GitHub v'+(d.latest||'?');
+        cardHTML+='<span style="margin-left:10px;font-size:12px;padding:2px 8px;border-radius:10px;background:'+(hasUpd?'rgba(251,191,36,.2)':'rgba(74,222,128,.18)')+';color:'+color+'">'+badge+'</span>';
+        cardHTML+='</div>';
+        cardHTML+='<div style="font-size:12.5px;color:'+color+';margin-top:6px">'+(d.msg||'')+'</div>';
+        cardHTML+='</div>';
+        cardHTML+='<div style="display:flex;gap:10px">';
+        cardHTML+='<button class="btn" onclick="checkVersion()" style="background:#4f7cff;color:#fff">🔄 检查更新</button>';
+        if(hasUpd) cardHTML+='<button class="btn btn-green" onclick="runUpdater(false)" style="background:#10b981;color:#fff">🚀 立即更新</button>';
+        cardHTML+='</div>';
+        card.innerHTML=cardHTML;
+    }
+    /* ===== 在线更新 ===== */
     function runUpdater(dry){
         var out=document.getElementById('up-out'), pre=document.getElementById('up-pre');
-        out.style.display='block'; pre.textContent=(dry?'[dry] 仅测速中...':'更新中，请稍候（含测速+下载+解压+替换+设置777），不要关闭页面...');
+        out.style.display='block'; pre.textContent=(dry?'[dry] 仅测速中...':'更新中，请稍候（测速→下载→解压→替换777→清缓存+opcache），不要关闭页面...');
+        pre.style.borderLeft='3px solid #fbbf24';
         var fd=new FormData(); fd.append('action','do_update'); if(dry)fd.append('dry','1');
         fetch('admin.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
             var s='';
@@ -2520,8 +2597,15 @@ function renderUpdateForm()
             s+='\n\n'+(!d.ok?'✘ ':'✔ ')+d.msg;
             pre.textContent=s;
             if(!d.ok){pre.style.borderLeft='3px solid #e74c3c';}else{pre.style.borderLeft='3px solid #2ecc71';}
-        }).catch(function(e){pre.textContent='请求失败:'+e;});
+            // 更新成功 → 3 秒后自动刷新页面（让后台重新读新代码）
+            if(d.ok && !dry){
+                pre.textContent += '\n\n⏳ 3 秒后自动刷新页面以加载新版本...';
+                setTimeout(function(){ location.reload(); }, 3000);
+            }
+        }).catch(function(e){pre.textContent='请求失败:'+e; pre.style.borderLeft='3px solid #e74c3c';});
     }
+    // 页面加载完自动做一次版本检测（静默，500ms 后触发）
+    setTimeout(checkVersion, 500);
     </script>
     <?php
 }
