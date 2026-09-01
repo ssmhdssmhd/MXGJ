@@ -21,10 +21,33 @@ class LinkParser
         // 腾讯视频
         if (self::host($url, ['v.qq.com', 'qq.com'])) {
             $query = self::query($url);
+            $vid   = $query['vid'] ?? '';
+            $cid   = $query['cid'] ?? '';
+
+            // path 提取优先级高于 query（query 里可能为空）
+            // /x/cover/{cid}.html        → cid
+            // /x/cover/{cid}/{vid}.html  → cid + vid
+            // /x/page/{vid}.html         → vid
+            // /x/page/{vid}/{ep}.html    → vid + episode
+            if ($cid === '') {
+                if (preg_match('~/x/cover/([A-Za-z0-9]+)(?:\.html|/|$)~i', $url, $m)) {
+                    $cid = $m[1];
+                }
+            }
+            if ($vid === '') {
+                if (preg_match('~/x/cover/[A-Za-z0-9]+/([A-Za-z0-9]+)\.html~i', $url, $m)) {
+                    $vid = $m[1];
+                } elseif (preg_match('~/x/page/([A-Za-z0-9]+)(?:\.html|/|$)~i', $url, $m)) {
+                    $vid = $m[1];
+                }
+            }
+            $ep = (int)(self::regex($url, '~/x/page/[A-Za-z0-9]+/(\d+)\.html~i') ?? 0);
+
             return array_merge($base, [
                 'platform' => '腾讯视频',
-                'vid' => $query['vid'] ?? '',
-                'cid' => $query['cid'] ?? '',
+                'vid'      => $vid,
+                'cid'      => $cid,
+                'episode'  => $ep,
             ]);
         }
 
