@@ -215,17 +215,18 @@ class Updater
             // 9) ⭐ 版本强制同步：Db migrateFromFiles 只从 config/.env.ini 读值，
             //    但 update.php 保留 config/ 目录（避免覆盖用户配置），所以 .env.ini 还是旧值。
             //    这里用 bootstrap.php 里定义的 MXGJ_SEED_LINKS_DEFAULT 强制同步关键字段：
-            //    - output.mode=standard（确保返回带 meta.api_version）
+            //    - output.mode=standard + show_meta=true（确保返回带 meta.api_version）
             //    - cron.interval_mins=180（3 小时自动采集）
             //    - cron.seed_links=32 条最新种子链接
             try {
                 Db::configSet('output', 'mode', 'standard');
+                Db::configSet('output', 'show_meta', true);
                 Db::configSet('cron', 'interval_mins', 180);
                 if (defined('MXGJ_SEED_LINKS_DEFAULT')) {
                     $seeds = @unserialize(MXGJ_SEED_LINKS_DEFAULT) ?: [];
                     Db::configSet('cron', 'seed_links', $seeds);
                 }
-                $steps[] = '已强制同步关键配置（output.mode→standard, cron.interval_mins→180, seed_links→' . count($seeds ?? []) . '）';
+                $steps[] = '已强制同步关键配置（output.mode→standard+show_meta, cron.interval_mins→180, seed_links→' . count($seeds ?? []) . '）';
             } catch (Throwable $e) {
                 $steps[] = '关键配置强制同步跳过：' . $e->getMessage();
             }
