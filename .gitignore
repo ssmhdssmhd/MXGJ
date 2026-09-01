@@ -36,3 +36,7 @@ tests/_sandbox/
 data/mxgj.db
 data/mxgj.db-shm
 data/mxgj.db-wal
+
+# auto-cron runtime locks
+data/cron_auto.lock
+data/cron_auto_last.json

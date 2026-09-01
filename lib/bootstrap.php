@@ -17,6 +17,40 @@ ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
 define('MXGJ_VERSION', '1.17.24');
+define('MXGJ_SEED_LINKS_DEFAULT', serialize([
+    'https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce',
+    'https://www.iqiyi.com/v_19hly1wd1gg.html',
+    'https://m.youku.com/alipay_video/id_fcad042e84ef43ce8309.html',
+    'https://m.youku.com/alipay_video/id_cbff0b0703e54d659628.html',
+    'https://m.mgtv.com/b/731684/24269945.html',
+    'https://m.mgtv.com/b/857348/24330424.html',
+    'https://www.bilibili.com/bangumi/play/ep431046',
+    'https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0',
+    'https://m.v.qq.com/x/m/play?cid=mzc00200zxw69r0',
+    'https://m.v.qq.com/x/m/play?cid=mzc00200zxgq9g0',
+    'https://m.v.qq.com/x/m/play?cid=mzc00200zx56i78',
+    'https://m.v.qq.com/x/m/play?cid=mzc00200zx8k4s0',
+    'https://www.iqiyi.com/v_19rqxo32dg.html',
+    'https://www.iqiyi.com/v_19rqt3k08w.html',
+    'https://www.iqiyi.com/v_19rqf4v6cw.html',
+    'https://www.iqiyi.com/v_19rrdkv8qg.html',
+    'https://v.youku.com/v_show/id_XNTg3NjMxMDg4MA==.html',
+    'https://v.youku.com/v_show/id_XNTk3ODg1NjA2OA==.html',
+    'https://www.mgtv.com/b/477307/18507233.html',
+    'https://www.bilibili.com/bangumi/play/ep253557',
+    'https://www.iqiyi.com/v_o9400y1y48.html',
+    'https://www.iqiyi.com/v_2epw32dh310.html',
+    'https://www.iqiyi.com/v_cix2gal5d8.html',
+    'https://www.iqiyi.com/v_23wm96kvzp8.html',
+    'https://www.iqiyi.com/v_2c3zr1t103w.html',
+    'https://v.youku.com/v_show/id_XNjUxMzU5NjI3Mg==.html',
+    'https://v.youku.com/v_show/id_XNjQ5MTU4NzI4.html',
+    'https://v.youku.com/v_show/id_XNjQ0MTY3MDg5Mg==.html',
+    'https://www.mgtv.com/b/770083/23200030.html',
+    'https://www.mgtv.com/b/763701/23373053.html',
+    'https://www.mgtv.com/b/755976/23118095.html',
+    'https://www.bilibili.com/bangumi/play/ep680290',
+]));
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
