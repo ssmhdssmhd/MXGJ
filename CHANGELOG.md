@@ -1,3 +1,38 @@
+## [v1.17.28] 2026-09-01 · 🎯 根目录 api.php 强制 JSON 入口（解决浏览器自动跳播放器问题）
+
+### 🎯 问题背景
+
+用户访问 `?url=xxx` 时，index.php 的 v1.17.17 智能重定向逻辑会检测 Accept 头，
+浏览器偏好 `text/html` 就自动跳转到播放器 HTML。对于需要返回纯 JSON 的场景（
+跨域 API 调用、App 集成）很不方便。同时第三方播放器（如觅知）可能有硬编码
+URL 和跨域问题。
+
+### ✨ 核心改动
+
+- **新增根目录 `api.php`**：极简 JSON API 入口
+  - 强制返回 JSON（设置 `$_GET['raw']=1` + `$_GET['redirect']=0` 绕过自动重定向）
+  - 完全动态读取 `$_GET['url']`，无任何硬编码
+  - CORS 全局生效（bootstrap.php 顶部 `Access-Control-Allow-Origin: *`）
+  - 复用 index.php 完整解析流程（LinkParser → 映射 → 多资源站搜索）
+  - 调用方式：`/api.php?url=<官方链接>&key=<密钥>`
+
+### 📋 与其他入口对比
+
+| 入口 | 自动跳播放器 | 返回格式 | 适用场景 |
+|:---|:---|:---|:---|
+| `index.php` | ✅ 浏览器自动跳 | HTML / JSON 自适应 | 浏览器直接访问 |
+| **`api.php`** | ❌ 强制 JSON | 纯 JSON | **API 调用 / 跨域 / App** |
+| `player/api.php` | ❌ 不跳 | JSON / m3u8 代理 | TVBox / 播放器集成 |
+
+### 🔧 文件变更
+
+| 文件 | 操作 |
+|:---|:---|
+| `api.php` | **新增**（根目录极简 JSON API 入口） |
+| `lib/bootstrap.php` | 版本号 1.17.27 → 1.17.28 |
+| `version.json` | 同步版本号 |
+| `README.md` | badge 版本号更新 |
+
 # 更新日志 (CHANGELOG)
 
 ## [v1.17.22] 2026-09-01 · 资源站 + 映射表 + Db schema 自动升级
