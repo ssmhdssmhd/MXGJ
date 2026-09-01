@@ -202,7 +202,18 @@ class Updater
             $steps[] = 'PHP opcache 已重置';
         }
 
-        // 8) 清理
+        // 8) ⭐ 自动 Db migrate（确保 mapping/sites/config 从文件同步进数据库）
+        //    防止"更新后 DB 里 mapping 只剩 1 条"导致 502 错误
+        if (class_exists('Db') && Db::enabled()) {
+            try {
+                $migrateRes = Db::migrateFromFiles();
+                $steps[] = '已自动同步 DB（config/sites/mapping）：' . implode('; ', $migrateRes['steps'] ?? []);
+            } catch (Throwable $e) {
+                $steps[] = 'DB 自动同步跳过：' . $e->getMessage();
+            }
+        }
+
+        // 9) 清理
         @unlink($zipFile);
         self::rrmdir($tmpDir);
         @unlink($lockFile);

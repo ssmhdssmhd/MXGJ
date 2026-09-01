@@ -11,7 +11,7 @@ if ($code !== '') {
     $player = mxgj_default_player();
     if (!$player) { http_response_code(500); exit('无默认播放器'); }
 }
-$playerCode = $player['player_code_content'] ?? '';
+$playerCode = mxgj_render_player_code($player['player_code_content'] ?? '');
 ?>
 <!DOCTYPE html><html><head><meta charset="utf-8"><title>DEBUG</title>
 <style>body{background:#111;color:#fff;font-family:monospace;padding:15px;font-size:12px}pre{background:#000;border:1px solid #333;padding:8px;border-radius:6px;max-height:300px;overflow:auto}

@@ -1,5 +1,46 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.21] 2026-09-01 · 🐛 修复 502 错误（update 覆盖 DB + 硬编码 URL + CORS）
+
+### 🐛 根因
+
+| 问题 | 根因 | 影响 |
+|------|------|------|
+| **更新后 502** | `Updater::run()` 执行后，若 data/mxgj.db 被 Git track 则更新 zip 中包含初始空 DB → 覆盖运行中 DB → mapping 表只剩 1 条 → 腾讯庆余年等无法命中映射 → 502 | 用户每次 update 都需要手动执行 migrate |
+| **硬编码 URL** | `player/data/players.json` 和 `player/play.php` 写死了 `http://114.134.184.91:9008` 觅知播放器地址 | 换服务器/端口/域名立刻失效 |
+| **跨域（CORS）** | 虽有全局 CORS，但 player_code_content 硬编码 URL 同样跨域问题 + 换端口时 iframe 跨域 | 播放器无法正常加载 |
+
+### 🔧 修复清单
+
+| 文件 | 改动 |
+|------|------|
+| `lib/bootstrap.php` | **新增 `mxgj_render_player_code()`** 占位符渲染函数（{SCHEME}/{HOST}/{HOST_NO_PORT}/{FULL}）；**新增 `mxgj_current_host_port()`** 多端口同机动态 URL |
+| `player/data/players.json` | 觅知播放器的 `player_code_content` 全部改为占位符格式（`{SCHEME}://{HOST_NO_PORT}:9008`），不再硬编码 IP |
+| `player/play.php` | fallback iframe URL 改为 `mxgj_current_host_port(9008)` 动态生成；player_code_content 渲染走 `mxgj_render_player_code()` |
+| `player/play_debug.php` | 同步改为 `mxgj_render_player_code()` |
+| `lib/Updater.php` | **update 成功后自动执行 `Db::migrateFromFiles()`**（step 8），确保 mapping/sites/config 从文件同步进 DB |
+
+### ✨ 新增占位符渲染系统
+
+```php
+// players.json / player_code_content 里可以写：
+{ "player_code_content": "MacPlayer.Html = '<iframe src=\"{SCHEME}://{HOST_NO_PORT}:9008/?url='+...';" }
+
+// 运行时自动渲染（假设 HTTP_HOST = mxgj.example.com:9007）：
+// → MacPlayer.Html = '<iframe src="http://mxgj.example.com:9008/?url='+...
+```
+
+### 🧪 验证
+
+| 验证项 | 结果 |
+|--------|------|
+| 腾讯庆余年 cover URL → title | ✅ `庆余年`，name_from=mapping/解析 |
+| CORS 三头 + OPTIONS 预检 | ✅ 全部通过 |
+| 播放器代码占位符替换 | ✅ 动态渲染为 `http://{current_host}:9008` |
+| 无硬编码残留 | ✅ 114.134.184.91 仅在注释中 |
+
+---
+
 ## [v1.17.20] 2026-09-01 · 🐛 修复"不同资源解析出来都是一样的"（cid 映射结构冲突）
 
 ### 🐛 根因

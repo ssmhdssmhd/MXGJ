@@ -31,7 +31,11 @@ if ($code !== '') {
 
 $playerShow   = $player['player_name'] ?? '播放器';
 $playerFrom   = $player['player_from'] ?? '';
-$playerCode   = $player['player_code_content'] ?? '';
+$playerCode   = mxgj_render_player_code($player['player_code_content'] ?? '');
+
+// 动态觅知播放器入口 URL（根据当前服务器 host）
+// 觅知播放器固定 9008 端口，与主服务同机部署
+$mizhiPlayer  = mxgj_current_host_port(9008) . '/?url=';
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -79,7 +83,7 @@ $playerCode   = $player['player_code_content'] ?? '';
     <?php if ($playerCode): ?>
     <script><?= $playerCode ?></script>
     <?php else: ?>
-    <script>MacPlayer.Html = '<iframe width="100%" height="100%" src="http://114.134.184.91:9008/?url='+MacPlayer.PlayUrl+'" frameborder="0" scrolling="no" allowfullscreen></iframe>';try{MacPlayer.Show()}catch(e){}</script>
+    <script>MacPlayer.Html = '<iframe width="100%" height="100%" src="<?= htmlspecialchars($mizhiPlayer) ?>"'+MacPlayer.PlayUrl+'" frameborder="0" scrolling="no" allowfullscreen></iframe>';try{MacPlayer.Show()}catch(e){}</script>
     <?php endif; ?>
     <script>
     (function () {

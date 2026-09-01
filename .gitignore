@@ -29,3 +29,8 @@ node_modules/
 
 # 测试数据
 tests/_sandbox/
+
+# SQLite runtime files（防止 update 覆盖运行中 DB）
+data/mxgj.db
+data/mxgj.db-shm
+data/mxgj.db-wal

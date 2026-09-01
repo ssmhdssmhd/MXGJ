@@ -16,7 +16,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.20');
+define('MXGJ_VERSION', '1.17.21');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -840,6 +840,57 @@ function mxgj_player_url(string $rawUrl): string
 {
     $host = mxgj_current_host();
     return $host . '/player/?url=' . rawurlencode($rawUrl);
+}
+
+/**
+ * 生成指定端口的当前服务器完整 URL（协议://host:port）
+ *
+ * 用于同机多端口服务（如觅知播放器 9008、主服务 9007）。
+ * 会从 HTTP_HOST 中取出 host 部分（去掉端口），再拼上目标端口。
+ */
+function mxgj_current_host_port(int $port): string
+{
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+        $scheme = (string)$_SERVER['HTTP_X_FORWARDED_PROTO'];
+    }
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host === '') {
+        // CLI 回退
+        return "$scheme://localhost:$port";
+    }
+    // 去掉 HTTP_HOST 中的端口部分（如果有）
+    $hostOnly = preg_replace('/:\d+$/', '', $host);
+    return "$scheme://$hostOnly:$port";
+}
+
+/**
+ * 动态渲染播放器代码 —— 将 {HOST} / {SCHEME} / {SITE_HOST} 占位符替换为当前服务器实际值
+ *
+ * 解决硬编码 IP 问题：player_code_content 可以存占位符如
+ *   src="http://{HOST}:9008/?url=..."
+ * 运行时自动替换为当前服务器的 HTTP_HOST。
+ */
+function mxgj_render_player_code(string $code): string
+{
+    if ($code === '') return '';
+
+    $full = mxgj_current_host();
+    // full 形如 http://host:port
+    $scheme = (str_starts_with($full, 'https')) ? 'https' : 'http';
+    $host = substr($full, strlen($scheme) + 3); // 去掉 http:// 或 https://
+
+    // {SCHEME} 协议（http / https）
+    $code = str_replace('{SCHEME}', $scheme, $code);
+    // {HOST} 当前服务器完整 host:port（HTTP_HOST）
+    $code = str_replace('{HOST}', $host, $code);
+    // {HOST_NO_PORT} 不带端口的 host
+    $hostNoPort = preg_replace('/:\d+$/', '', $host);
+    $code = str_replace('{HOST_NO_PORT}', $hostNoPort, $code);
+    // {FULL} 完整协议+host
+    $code = str_replace('{FULL}', $full, $code);
+
+    return $code;
 }
 
 /**
