@@ -16,7 +16,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.26');
+define('MXGJ_VERSION', '1.17.27');
 define('MXGJ_SEED_LINKS_DEFAULT', serialize([
     'https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce',
     'https://www.iqiyi.com/v_19hly1wd1gg.html',

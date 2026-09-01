@@ -994,6 +994,8 @@ function renderDashboard()
         'app_api'     => ['label' => 'App接口',      'icon' => '🎬', 'crumb' => '资源配置'],
         'mapping'     => ['label' => '映射表',       'icon' => '🗂️', 'crumb' => '资源配置'],
         'fallback'    => ['label' => '资源平替',     'icon' => '🔄', 'crumb' => '资源配置'],
+        'json_format' => ['label' => 'JSON返回格式',  'icon' => '📦', 'crumb' => '接口配置'],
+        'api_map'     => ['label' => '接口映射',     'icon' => '🔗', 'crumb' => '接口配置'],
         'update'      => ['label' => '在线更新',     'icon' => '⬆️', 'crumb' => '系统更新'],
         'logs'        => ['label' => '日志',         'icon' => '📋', 'crumb' => '日志中心'],
         'help'        => ['label' => '帮助',         'icon' => '❓', 'crumb' => '使用帮助'],
@@ -1194,6 +1196,11 @@ tr.out-row[draggable="true"]{transition:background .12s}
       <a class="nav-item <?= $tab==='fallback'?'active':'' ?>" href="?tab=fallback"><span class="icon">🔄</span><span>资源平替</span></a>
     </div>
     <div class="nav-group">
+      <div class="nav-group-title">接口配置</div>
+      <a class="nav-item <?= $tab==='json_format'?'active':'' ?>" href="?tab=json_format"><span class="icon">📦</span><span>JSON返回格式</span></a>
+      <a class="nav-item <?= $tab==='api_map'?'active':'' ?>" href="?tab=api_map"><span class="icon">🔗</span><span>接口映射</span></a>
+    </div>
+    <div class="nav-group">
       <div class="nav-group-title">系统</div>
       <a class="nav-item <?= $tab==='update'?'active':'' ?>" href="?tab=update"><span class="icon">⬆️</span><span>在线更新</span></a>
       <a class="nav-item <?= $tab==='logs'?'active':'' ?>" href="?tab=logs"><span class="icon">📋</span><span>日志中心</span></a>
@@ -1257,6 +1264,10 @@ if (!$env['ok']):
 <?php renderLogs(); ?>
 <?php elseif ($tab === 'help'): ?>
 <?php renderHelp(); ?>
+<?php elseif ($tab === 'json_format'): ?>
+<?php renderJsonFormatForm($settings); ?>
+<?php elseif ($tab === 'api_map'): ?>
+<?php renderApiMapForm($settings); ?>
 <?php elseif ($tab === 'settings'): ?>
 <?php renderSettingsForm($settings); ?>
 <?php endif; ?>
@@ -1269,6 +1280,8 @@ if (!$env['ok']):
   <a class="<?= $tab==='sites'?'active':'' ?>" href="?tab=sites"><span class="m-icon">🌐</span><span>配置</span></a>
   <a class="<?= $tab==='sites_view'?'active':'' ?>" href="?tab=sites_view"><span class="m-icon">🔍</span><span>查看</span></a>
   <a class="<?= $tab==='mapping'?'active':'' ?>" href="?tab=mapping"><span class="m-icon">🗂️</span><span>映射</span></a>
+  <a class="<?= $tab==='json_format'?'active':'' ?>" href="?tab=json_format"><span class="m-icon">📦</span><span>JSON</span></a>
+  <a class="<?= $tab==='api_map'?'active':'' ?>" href="?tab=api_map"><span class="m-icon">🔗</span><span>接口</span></a>
   <a class="<?= $tab==='logs'?'active':'' ?>" href="?tab=logs"><span class="m-icon">📋</span><span>日志</span></a>
   <a class="<?= $tab==='settings'?'active':'' ?>" href="?tab=settings"><span class="m-icon">⚙️</span><span>设置</span></a>
 </nav>
@@ -3213,66 +3226,6 @@ function renderSettingsForm($settings)
                 </div>
             </div>
 
-            <div class="full" style="margin-top:8px">
-                <h3 style="margin:0 0 4px;font-size:14px">输出返回设置（JSON 响应格式）</h3>
-                <div class="note" style="margin:4px 0 8px">
-                    选择前台 API 返回的 JSON 结构，方便网页 / APP / 小程序等外部调用。
-                </div>
-                <div style="display:flex;gap:24px;align-items:center;margin-bottom:10px">
-                    <label style="margin:0">输出格式：
-                        <select name="out_mode" style="padding:4px 8px">
-                            <option value="standard" <?= ($output['mode'] ?? 'standard') === 'standard' ? 'selected' : '' ?>>standard（推荐 · code/msg/data/meta 四段式）</option>
-                            <option value="legacy"   <?= ($output['mode'] ?? 'standard') === 'legacy'   ? 'selected' : '' ?>>legacy（旧版扁平结构，向后兼容）</option>
-                        </select>
-                    </label>
-                    <label style="margin:0"><input type="checkbox" name="out_show_meta" value="1" <?= !empty($output['show_meta']) ? 'checked' : '' ?>> standard 模式返回 meta 元信息段（版本、耗时、请求ID等）</label>
-                    <label style="margin:0"><input type="checkbox" name="out_show_source" value="1" <?= !empty($output['show_source']) ? 'checked' : '' ?>> 附带原始请求链接</label>
-                </div>
-                <div class="note" style="margin:0 0 8px;font-size:12px">
-                    <b>standard 示例：</b>
-                    <code style="background:#1e293b;color:#93c5fd;padding:2px 6px;border-radius:4px">
-                        {"code":200,"msg":"success","data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,...},"meta":{"api_version":"1.17.13","request_id":"abc123","elapsed_ms":85.2,...}}
-                    </code>
-                </div>
-                <div class="note" style="margin:0 0 8px;font-size:12px">
-                    <b>legacy 模式</b>下可自定义字段映射（下方表格）：键名 = 输出字段名；值来源 = 系统字段（code / url / title / episode / site / platform / vid / cid / player_url / raw_url / from_pool / from_fallback / is_special / msg / source / time / cached）或常量文本。
-                </div>
-                <table id="out-tbl" style="margin-top:8px">
-                    <tr><th style="width:30px">↕</th><th style="width:140px">键名 k（输出字段）</th><th>值来源/常量 v</th><th style="width:60px">启用</th><th style="width:60px">操作</th></tr>
-                    <?php if (!empty($output['fields'])): foreach ($output['fields'] as $i => $f): $on = !array_key_exists('enabled', $f) || !empty($f['enabled']); ?>
-                        <tr draggable="true" class="<?= $on ? 'out-row' : 'row-disabled out-row' ?>">
-                            <td class="drag-handle" title="拖动排序">⋮⋮</td>
-                            <td><input type="text" name="out_k[]" value="<?= htmlspecialchars($f['k']) ?>" placeholder="如 url / JM / JJ"></td>
-                            <td><input type="text" name="out_v[]" value="<?= htmlspecialchars($f['v']) ?>" placeholder="如 code / url / title / episode / 常量文本" list="src-list"></td>
-                            <td class="center">
-                                <label class="toggle">
-                                    <input type="checkbox" class="quick-toggle" data-action="output" data-idx="<?= $i ?>" <?= $on ? 'checked' : '' ?>>
-                                    <span class="slider"></span>
-                                </label>
-                            </td>
-                            <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
-                        </tr>
-                    <?php endforeach; else: ?>
-                        <tr draggable="true" class="out-row">
-                            <td class="drag-handle">⋮⋮</td>
-                            <td><input type="text" name="out_k[]" placeholder="url"></td>
-                            <td><input type="text" name="out_v[]" value="url" list="src-list"></td>
-                            <td class="center"><input type="checkbox" checked disabled title="新字段默认启用"></td>
-                            <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
-                        </tr>
-                    <?php endif; ?>
-                </table>
-                <datalist id="src-list">
-                    <option value="code"></option><option value="msg"></option><option value="url"></option>
-                    <option value="title"></option><option value="episode"></option><option value="site"></option>
-                    <option value="platform"></option><option value="vid"></option><option value="cid"></option>
-                    <option value="player_url"></option><option value="raw_url"></option>
-                    <option value="from_pool"></option><option value="from_fallback"></option><option value="is_special"></option>
-                    <option value="source"></option><option value="time"></option><option value="cached"></option>
-                </datalist>
-                <button type="button" class="btn" style="margin-top:8px" onclick="addOutRow()">+ 添加返回字段</button>
-            </div>
-
         </form>
     </div>
 
@@ -3320,8 +3273,134 @@ function renderSettingsForm($settings)
         默认密码：<code>moxi123</code>。请立即修改！<br>
         数据文件位于 <code>config/settings.json</code>、<code>config/sites.json</code>、<code>config/mapping.json</code>，可手动编辑。
     </div>
+    
+    <?php
+}
+
+/**
+ * renderJsonFormatForm — JSON 返回格式配置
+ * 从 renderSettingsForm 中提取 output 独立出来的专属面板
+ */
+function renderJsonFormatForm($settings)
+{
+    $output = is_array($settings['output'] ?? null) ? $settings['output'] : [];
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off') ? 'https' : 'http';
+    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $site   = $scheme.'://'.$host;
+    $apiUrl = $site . '/index.php?key=<你的密钥>&url=<官方视频链接>';
+    ?>
+    <div class="panel">
+        <h2>📦 JSON 返回格式配置</h2>
+        <div class="note" style="margin:0 0 16px;padding:8px 12px;font-size:12px;color:#7fc1ff">
+            配置前台 API 返回的 JSON 结构。选择适合你的调用方式：<br>
+            <b>standard（推荐）</b> 四段式 — code/msg/data/meta，清晰易解析，带版本和耗时信息<br>
+            <b>legacy</b> 旧版扁平结构 — 自定义字段名，兼容老 APP/小程序
+        </div>
+
+        <form method="post" class="auto-save" id="form-json-format">
+            <input type="hidden" name="action" value="save_settings">
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+                <!-- 左：standard -->
+                <div style="border:2px solid <?= ($output['mode'] ?? 'standard') === 'standard' ? '#6366f1' : '#e2e8f0' ?>;border-radius:12px;padding:16px;background:<?= ($output['mode'] ?? 'standard') === 'standard' ? '#faf5ff' : '#fff' ?>">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                        <div style="font-weight:700;font-size:15px;color:#4c1d95">✅ standard 四段式（推荐）</div>
+                        <label class="toggle"><input type="radio" name="out_mode" value="standard" <?= ($output['mode'] ?? 'standard') === 'standard' ? 'checked' : '' ?> onchange="this.form.submit()"><span class="slider"></span></label>
+                    </div>
+                    <div style="font-size:12px;color:#64748b;line-height:1.7;margin-bottom:10px">
+                        返回固定的 <code style="background:#f1f5f9;padding:1px 5px;border-radius:3px">{ code, msg, data, meta }</code> 四段式结构
+                    </div>
+                    <div style="background:#0f172a;color:#e2e8f0;border-radius:8px;padding:12px;font-family:'Courier New',monospace;font-size:11.5px;white-space:pre-wrap;line-height:1.5">
+{"code":200,"msg":"success",
+ "data":{"url":"https://.../xxx.m3u8","title":"庆余年","episode":2,"site":"资源站A",...},
+ "meta":{"api_version":"<?= MXGJ_VERSION ?>","request_id":"abc123","elapsed_ms":85.2,"mode":"standard",...}}
+                    </div>
+                    <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap">
+                        <label style="font-size:12.5px;display:flex;align-items:center;gap:4px">
+                            <input type="checkbox" name="out_show_meta" value="1" <?= !empty($output['show_meta']) ? 'checked' : '' ?>> 返回 meta 元信息段
+                        </label>
+                        <label style="font-size:12.5px;display:flex;align-items:center;gap:4px">
+                            <input type="checkbox" name="out_show_source" value="1" <?= !empty($output['show_source']) ? 'checked' : '' ?>> 附带原始请求链接
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 右：legacy -->
+                <div style="border:2px solid <?= ($output['mode'] ?? 'standard') === 'legacy' ? '#6366f1' : '#e2e8f0' ?>;border-radius:12px;padding:16px;background:<?= ($output['mode'] ?? 'standard') === 'legacy' ? '#faf5ff' : '#fff' ?>">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                        <div style="font-weight:700;font-size:15px;color:#4c1d95">🔧 legacy 旧版扁平结构</div>
+                        <label class="toggle"><input type="radio" name="out_mode" value="legacy" <?= ($output['mode'] ?? 'standard') === 'legacy' ? 'checked' : '' ?> onchange="this.form.submit()"><span class="slider"></span></label>
+                    </div>
+                    <div style="font-size:12px;color:#64748b;line-height:1.7;margin-bottom:10px">
+                        自定义字段名映射。旧 APP/小程序 可能用此模式，保持向后兼容
+                    </div>
+                    <div style="background:#0f172a;color:#e2e8f0;border-radius:8px;padding:12px;font-family:'Courier New',monospace;font-size:11.5px;white-space:pre-wrap;line-height:1.5">
+{"code":200,"url":"https://.../xxx.m3u8",
+ "title":"庆余年","episode":2,"msg":"","time":85.2}
+                    </div>
+                </div>
+            </div>
+
+            <h3 style="margin:16px 0 8px;font-size:14px">legacy 模式字段映射表</h3>
+            <div class="note" style="margin:0 0 10px;font-size:12px">
+                键名 = 输出字段名；值来源 = 系统字段或常量文本。系统字段：
+                <code style="background:#f1f5f9;padding:1px 4px;border-radius:3px">code msg url title episode site platform vid cid player_url raw_url from_pool from_fallback is_special source time cached</code>
+            </div>
+            <table id="out-tbl">
+                <tr><th style="width:30px">↕</th><th style="width:160px">键名 k（输出字段）</th><th>值来源/常量 v</th><th style="width:60px">启用</th><th style="width:60px">操作</th></tr>
+                <?php if (!empty($output['fields'])): foreach ($output['fields'] as $i => $f): $on = !array_key_exists('enabled', $f) || !empty($f['enabled']); ?>
+                    <tr draggable="true" class="<?= $on ? 'out-row' : 'row-disabled out-row' ?>">
+                        <td class="drag-handle" title="拖动排序">⋮⋮</td>
+                        <td><input type="text" name="out_k[]" value="<?= htmlspecialchars($f['k']) ?>" placeholder="如 url / JM / JJ"></td>
+                        <td><input type="text" name="out_v[]" value="<?= htmlspecialchars($f['v']) ?>" placeholder="如 code / url / title / episode / 常量文本" list="src-list"></td>
+                        <td class="center">
+                            <label class="toggle">
+                                <input type="checkbox" class="quick-toggle" data-action="output" data-idx="<?= $i ?>" <?= $on ? 'checked' : '' ?>>
+                                <span class="slider"></span>
+                            </label>
+                        </td>
+                        <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
+                    </tr>
+                <?php endforeach; else: ?>
+                    <tr draggable="true" class="out-row">
+                        <td class="drag-handle">⋮⋮</td>
+                        <td><input type="text" name="out_k[]" placeholder="url"></td>
+                        <td><input type="text" name="out_v[]" value="url" list="src-list"></td>
+                        <td class="center"><input type="checkbox" checked disabled title="新字段默认启用"></td>
+                        <td><button type="button" class="btn btn-danger" onclick="this.closest('tr').remove()">删除</button></td>
+                    </tr>
+                <?php endif; ?>
+            </table>
+            <datalist id="src-list">
+                <option value="code"></option><option value="msg"></option><option value="url"></option>
+                <option value="title"></option><option value="episode"></option><option value="site"></option>
+                <option value="platform"></option><option value="vid"></option><option value="cid"></option>
+                <option value="player_url"></option><option value="raw_url"></option>
+                <option value="from_pool"></option><option value="from_fallback"></option><option value="is_special"></option>
+                <option value="source"></option><option value="time"></option><option value="cached"></option>
+            </datalist>
+            <button type="button" class="btn" style="margin-top:8px" onclick="addOutRow()">+ 添加返回字段</button>
+        </form>
+    </div>
+
+    <div class="panel">
+        <h2>🔗 实时预览</h2>
+        <div class="note" style="margin:0 0 12px;font-size:12px">
+            用你的官方视频链接 <b>POST / GET</b> 到以下地址，立即看到返回的 JSON 格式效果。
+        </div>
+        <div style="background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px;margin-bottom:10px;word-break:break-all;font-family:'Courier New',monospace;font-size:12px;color:#4c1d95">
+            <div style="color:#a5b4fc;margin-bottom:4px">📡 主解析接口：</div>
+            <div><b><?= htmlspecialchars($apiUrl) ?></b></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:10px">
+            <input type="text" id="test-url" placeholder="填入官方视频链接（腾讯/爱奇艺等）" style="flex:1;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px">
+            <button onclick="testJsonFormat()" class="btn" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none">🔍 测试返回</button>
+        </div>
+        <div id="test-result" style="display:none;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:14px;font-family:'Courier New',monospace;font-size:12px;max-height:400px;overflow-y:auto;white-space:pre-wrap"></div>
+    </div>
+
     <script>
-    // ===== 输出字段拖拽排序（原生 HTML5 Drag & Drop）=====
+    // ===== 输出字段拖拽排序 =====
     (function(){
         var tbl=document.getElementById('out-tbl');
         if(!tbl) return;
@@ -3358,7 +3437,6 @@ function renderSettingsForm($settings)
         tbl.addEventListener('drop',function(e){e.preventDefault();});
     })();
 
-    var outRow=<?= count($output['fields'] ?? []) ?>;
     function addOutRow(){
         var t=document.getElementById('out-tbl');
         var tr=document.createElement('tr');
@@ -3370,7 +3448,182 @@ function renderSettingsForm($settings)
             '<td><button type="button" class="btn btn-danger" onclick="this.closest(\'tr\').remove()">删除</button></td>';
         t.appendChild(tr);
     }
+
+    async function testJsonFormat(){
+        var url=document.getElementById('test-url').value.trim();
+        if(!url){alert('请填入官方视频链接');return;}
+        var resultBox=document.getElementById('test-result');
+        resultBox.style.display='block';
+        resultBox.textContent='⏳ 请求中...';
+        try{
+            var r=await fetch('<?= htmlspecialchars($site) ?>/index.php?key=<?= htmlspecialchars($settings["admin_password"] ?? "moxi123") ?>&url='+encodeURIComponent(url));
+            var d=await r.json();
+            resultBox.textContent=JSON.stringify(d,null,2);
+        }catch(e){
+            resultBox.textContent='❌ 请求失败：'+e.message;
+        }
+    }
     </script>
+    <?php
+}
+
+/**
+ * renderApiMapForm — 接口映射总览
+ * 展示系统对外暴露的所有 API 端点 + 支持的第三方平台解析 + 资源站列表
+ */
+function renderApiMapForm($settings)
+{
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off') ? 'https' : 'http';
+    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $site   = $scheme.'://'.$host;
+    $key    = $settings['admin_password'] ?? 'moxi123';
+    $sites  = mxgj_sites();
+    ?>
+    <div class="panel">
+        <h2>🔗 系统接口映射总览</h2>
+        <div class="note" style="margin:0 0 14px;font-size:12px;color:#7fc1ff">
+            这里汇总了系统对外暴露的全部 API 端点、支持的官方视频平台、以及接入的第三方资源站。
+            方便 APP / 网页 / 小程序 开发者集成，也能快速排查"为什么某剧找不到"的问题。
+        </div>
+
+        <!-- 接口端点列表 -->
+        <h3 style="font-size:14px;margin:8px 0 10px;color:#1e293b">📡 对外 API 端点</h3>
+        <table>
+            <tr><th style="width:140px">端点</th><th>URL</th><th style="width:80px">方法</th><th style="width:200px">说明</th></tr>
+            <tr>
+                <td><b>主解析</b></td>
+                <td style="font-family:Courier New,monospace;font-size:12px;color:#4c1d95;word-break:break-all"><?= htmlspecialchars($site) ?>/index.php?key=<?= htmlspecialchars($key) ?>&url=&lt;官方链接&gt;</td>
+                <td>GET</td>
+                <td>输入官方视频链接 → 返回 m3u8 播放地址</td>
+            </tr>
+            <tr>
+                <td><b>播放器</b></td>
+                <td style="font-family:Courier New,monospace;font-size:12px;color:#4c1d95;word-break:break-all"><?= htmlspecialchars($site) ?>/player/?url=&lt;m3u8|官方链接&gt;</td>
+                <td>GET</td>
+                <td>内置播放器页面（TVBox/APP 直链）</td>
+            </tr>
+            <tr>
+                <td><b>App API</b></td>
+                <td style="font-family:Courier New,monospace;font-size:12px;color:#4c1d95;word-break:break-all"><?= htmlspecialchars($site) ?>/player/api.php?url=&lt;m3u8|官方链接&gt;</td>
+                <td>GET</td>
+                <td>TVBox 媒体代理 + 官方链接解析</td>
+            </tr>
+            <tr>
+                <td><b>自动采集</b></td>
+                <td style="font-family:Courier New,monospace;font-size:12px;color:#4c1d95;word-break:break-all"><?= htmlspecialchars($site) ?>/cron/mapping.php?key=<?= htmlspecialchars($key) ?>&dry=0</td>
+                <td>GET</td>
+                <td>手动触发映射采集（dry=1 只测不写）</td>
+            </tr>
+            <tr>
+                <td><b>版本查询</b></td>
+                <td style="font-family:Courier New,monospace;font-size:12px;color:#4c1d95"><?= htmlspecialchars($site) ?>/version.json</td>
+                <td>GET</td>
+                <td>返回当前版本号、commit、tag</td>
+            </tr>
+            <tr>
+                <td><b>在线更新</b></td>
+                <td style="font-family:Courier New,monospace;font-size:12px;color:#4c1d95"><?= htmlspecialchars($site) ?>/update.php?key=<?= htmlspecialchars($key) ?></td>
+                <td>GET</td>
+                <td>一键拉取 GitHub 最新版本并替换</td>
+            </tr>
+        </table>
+
+        <!-- 支持的官方平台 -->
+        <h3 style="font-size:14px;margin:20px 0 10px;color:#1e293b">🎬 支持解析的官方视频平台</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+            <?php
+            $platforms = [
+                ['name' => '腾讯视频',   'icon' => '🐧', 'hosts' => ['v.qq.com', 'm.v.qq.com'], 'fields' => ['vid', 'cid']],
+                ['name' => '爱奇艺',     'icon' => '🟢', 'hosts' => ['iqiyi.com', 'www.iqiyi.com'], 'fields' => ['aid/vid']],
+                ['name' => '优酷',       'icon' => '🔶', 'hosts' => ['youku.com', 'v.youku.com', 'm.youku.com'], 'fields' => ['id']],
+                ['name' => '芒果TV',     'icon' => '🥭', 'hosts' => ['mgtv.com', 'www.mgtv.com', 'm.mgtv.com'], 'fields' => ['b/v/h + cid/vid']],
+                ['name' => 'B站',       'icon' => '📺', 'hosts' => ['bilibili.com', 'www.bilibili.com'], 'fields' => ['av/BV/ep']],
+                ['name' => 'PPTV',      'icon' => '🟣', 'hosts' => ['pptv.com', 'v.pptv.com'], 'fields' => ['vid']],
+                ['name' => '搜狐视频',   'icon' => '🔵', 'hosts' => ['tv.sohu.com', 'v.sohu.com'], 'fields' => ['vid']],
+            ];
+            foreach ($platforms as $p):
+            ?>
+            <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;background:#fff;transition:all .15s"
+                 onmouseover="this.style.borderColor='#8b5cf6';this.style.boxShadow='0 2px 8px rgba(139,92,246,.15)'"
+                 onmouseout="this.style.borderColor='#e2e8f0';this.style.boxShadow='none'">
+                <div style="font-weight:600;font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+                    <span style="font-size:18px"><?= $p['icon'] ?></span>
+                    <span><?= htmlspecialchars($p['name']) ?></span>
+                </div>
+                <div style="font-size:11.5px;color:#94a3b8;line-height:1.6">
+                    <?php foreach ($p['hosts'] as $h): ?><code style="background:#f1f5f9;padding:0 4px;border-radius:3px;margin-right:3px"><?= htmlspecialchars($h) ?></code><?php endforeach; ?>
+                </div>
+                <div style="font-size:11px;color:#6366f1;margin-top:4px">
+                    解析字段: <?= htmlspecialchars(implode(' / ', $p['fields'])) ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+
+        <!-- 接入的资源站 -->
+        <h3 style="font-size:14px;margin:20px 0 10px;color:#1e293b">🌐 接入的第三方资源站（搜索源）</h3>
+        <?php if (empty($sites)): ?>
+            <div class="note">尚未配置资源站，请到「资源站配置」页添加。</div>
+        <?php else: ?>
+            <table>
+                <tr><th style="width:50px">#</th><th>资源站名</th><th>角色</th><th>模板</th><th>URL/主机</th><th style="width:60px">启用</th></tr>
+                <?php foreach ($sites as $i => $s): $role = $s['role'] ?? 'primary'; $enabled = !empty($s['enabled']); ?>
+                <tr>
+                    <td><?= $i + 1 ?></td>
+                    <td style="font-weight:600"><?= htmlspecialchars($s['name'] ?? '未命名') ?></td>
+                    <td>
+                        <?php if ($role === 'primary'): ?>
+                            <span style="background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">主搜索</span>
+                        <?php else: ?>
+                            <span style="background:#fef3c7;color:#d97706;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">平替</span>
+                        <?php endif; ?>
+                    </td>
+                    <td style="font-family:Courier New,monospace;font-size:12px;color:#64748b"><?= htmlspecialchars($s['template'] ?? '—') ?></td>
+                    <td style="font-size:12px;color:#475569;word-break:break-all">
+                        <?php
+                        $url = $s['url'] ?? '';
+                        $host = parse_url($url, PHP_URL_HOST);
+                        echo $host ? htmlspecialchars($host) : htmlspecialchars(mb_substr($url, 0, 60));
+                        ?>
+                    </td>
+                    <td class="center">
+                        <?php if ($enabled): ?>
+                            <span style="color:#2ecc71">✓</span>
+                        <?php else: ?>
+                            <span style="color:#e74c3c">✗</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </table>
+        <?php endif; ?>
+
+        <!-- 自动采集机制 -->
+        <h3 style="font-size:14px;margin:20px 0 10px;color:#1e293b">⚙️ 自动映射采集机制</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="border-left:3px solid #6366f1;background:#f5f3ff;padding:14px;border-radius:0 8px 8px 0">
+                <div style="font-weight:600;margin-bottom:6px;color:#4c1d95">① Self-Trigger（自主触发）</div>
+                <div style="font-size:12px;color:#475569;line-height:1.7">
+                    每次用户访问 <code>index.php</code>，PHP <code>register_shutdown_function</code> 在响应返回后检查 lock 文件。
+                    超过 <?= (int)($settings['cron']['interval_mins'] ?? 180) ?> 分钟则自动执行 <code>CronMapping::run()</code>。
+                    <br><b>lock 文件</b>：<code>data/cron_auto.lock</code>
+                </div>
+            </div>
+            <div style="border-left:3px solid #8b5cf6;background:#f5f3ff;padding:14px;border-radius:0 8px 8px 0">
+                <div style="font-weight:600;margin-bottom:6px;color:#4c1d95">② GitHub Actions（双保险）</div>
+                <div style="font-size:12px;color:#475569;line-height:1.7">
+                    GitHub Actions <code>.github/workflows/cron-mapping.yml</code> 每 3 小时 UTC 直接 <code>curl</code> 远程 <code>cron/mapping.php</code>。
+                    即使没人访问 index.php 也能保证周期执行，100% 可靠性。
+                </div>
+            </div>
+        </div>
+
+        <div class="note" style="margin-top:16px">
+            💡 <b>为什么映射表重要？</b><br>
+            官方链接解析出的 <code>cid/vid</code> → 本地映射表 → 精确匹配到「剧名 + 集数」<br>
+            没有映射表时只能靠关键词搜索，命中率低；有映射表后精确匹配，几乎 100% 命中。
+        </div>
+    </div>
     <?php
 }
 
