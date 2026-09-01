@@ -147,8 +147,8 @@ $now        = time();
 
 $cachedResult = Cache::get($primaryKey);
 $cachedHit    = false; // 是否命中缓存（给 debug / 日志用）
-if ($cachedResult && isset($cachedResult['code'], $cachedResult['url'])
-    && ($cachedResult['time'] ?? 0) + (int)$settings['cache_ttl'] > $now) {
+// Cache::get 已经负责过期判断（含 cache_ttl 变更感知），这里只检查值是否有效
+if ($cachedResult && isset($cachedResult['code'], $cachedResult['url'])) {
     // 主缓存命中：如果是之前平替命中的且 step2_retry_main=true，这次再去主池试试
     if (!empty($cachedResult['from_fallback']) && $retryMainOnFb && $fallbackEnable) {
         Logger::log('search', '缓存为平替命中，重新尝试主池：' . $name . ' 第' . $episode . '集', 'info');

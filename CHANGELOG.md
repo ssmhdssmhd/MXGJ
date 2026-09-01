@@ -1,6 +1,81 @@
 # 更新日志 (CHANGELOG)
 
 
+
+## [v1.17.15] 2026-09-01 · 🔧 Cache 类旧格式缓存兼容 + 移除 index.php 重复 ttl 检查
+
+### 🐛 修复
+
+#### 1. Cache::get 对 v1.17.13 旧格式缓存跳过 ttl 变更感知
+
+**根因**：v1.17.13 及之前的 Cache::set 只存 expire + value，没有顶层 ttl 字段。
+v1.17.14 新增的 !empty($data[ttl]) 检查对旧格式返回 false → ttl 变更感知被跳过。
+
+**修复**：Cache::get 增加旧格式反推逻辑
+
+
+#### 2. index.php line 151 重复做 ttl 检查与 Cache::get 不一致
+
+**根因**：index.php 在 Cache::get 之后又用  重新算过期。
+如果用户刚改 cache_ttl（比如从 600→30），旧缓存写入时间差 < 30 秒 → 这层检查也认为没过期 → 继续用旧缓存。
+
+**修复**：删掉 index.php line 151 的重复检查，完全信任 Cache::get 的过期判断（含 ttl 变更感知）。
+
+### 改动文件
+
+| 文件 | 变更 |
+|------|------|
+| lib/Cache.php | 旧格式缓存 ttl 反推兼容 |
+| index.php | 移除 line 151 重复 ttl 检查 |
+
+### 验证结果
+
+
+
+---
+## [v1.17.15] 2026-09-01 · 🔧 Cache 旧格式缓存兼容 + 移除 index.php 重复 ttl 检查
+
+### 🐛 修复
+
+#### 1. Cache::get 对 v1.17.13 旧格式缓存跳过 ttl 变更感知
+
+**根因**：v1.17.13 及之前的 Cache::set 只存 expire + value，没有顶层 ttl 字段。
+v1.17.14 新增的 `!empty($data['ttl'])` 检查对旧格式返回 false → ttl 变更感知被跳过。
+
+**修复**：Cache::get 增加旧格式反推逻辑
+```php
+// 如果 data['ttl'] 为空但 data['value']['time'] 存在（index.php 写缓存时会加 time 字段）
+// 则可以从 expire - value['time'] 反推原始 ttl
+if (!empty($data['value']['time']) && $data['expire'] > $data['value']['time']) {
+    $original_ttl = $data['expire'] - $data['value']['time'];
+}
+```
+
+#### 2. index.php line 151 重复做 ttl 检查与 Cache::get 不一致
+
+**根因**：index.php 在 Cache::get 之后又用 `value[time] + cache_ttl > now` 重新算过期。
+如果用户刚改 cache_ttl（比如从 600→30），旧缓存写入时间差 < 30 秒 → 这层检查也认为没过期 → 继续用旧缓存。
+
+**修复**：删掉 index.php 的重复检查，完全信任 Cache::get 的过期判断（含 ttl 变更感知）。
+
+### 改动文件
+
+| 文件 | 变更 |
+|------|------|
+| lib/Cache.php | 旧格式缓存 ttl 反推兼容 |
+| index.php | 移除重复 ttl 检查，信任 Cache::get |
+
+### 验证结果
+
+```
+✅ 旧格式缓存 + cache_ttl 改小 → 正确过期失效
+✅ 新格式缓存 + cache_ttl 改小 → 正确过期失效
+✅ 同请求内 env 写→读 立即生效
+✅ 全部 PHP 语法检查通过
+```
+
+---
+
 ## [v1.17.14] 2026-08-31 · 🔧 .env.ini 写→读同请求立即生效 + 缓存 TTL 变更感知
 
 ### 🐛 修复
