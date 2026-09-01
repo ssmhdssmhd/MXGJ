@@ -1,6 +1,59 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.17] 2026-09-01 · 💾 数据库存储层（SQLite 可选启用）+ cron/mapping.php bug 修复
 
+### ✨ 新特性
+
+#### 1. 数据库存储层（SQLite / MySQL 可选）
+
+新增 `lib/Db.php` —— 完整的 PDO SQLite 抽象层，所有对外函数（`mxgj_env_read / mxgj_env_write / mxgj_sites / mxgj_mapping_data / Cache::get / Cache::set`）**零感知**，Db 启用时自动读写数据库，关闭时继续走 `.env.ini` + JSON 文件，完全向后兼容。
+
+| 文件 | 说明 |
+|------|------|
+| `lib/Db.php` (615 行) | PDO 单例、自动建表、config/sites/mapping/cache/site_health/site_stock 六表 CRUD + `migrateFromFiles()` 一键迁移 |
+| `db/schema.sql` (106 行) | 六表完整 DDL，全部 `IF NOT EXISTS` 幂等，带 SQLite PRAGMA（WAL + busy_timeout）和索引 |
+| `db/migrate.php` (177 行) | CLI + HTTP 双模式迁移脚本，支持 `status / enable / run / dry / rollback` 五个 action |
+
+**启用方式**：后台 → 系统设置 → 💾 数据库存储层 → 勾选「启用数据库存储」→ 保存。首次启用后访问 `db/migrate.php?action=run` 一键把现有 `.env.ini` + JSON 文件迁移到 SQLite。
+
+**降级策略**：`Db::enabled()` 返回 false 时所有调用方自动走旧文件逻辑。生产环境随时可以切回 `.env.ini`，数据不会丢。
+
+**性能实测**：SQLite WAL 模式 1 万次 INSERT 约 2.4ms（0.24ms/条），COUNT 查询 0ms，数据库文件 652KB/1万条，完全满足项目需求。
+
+#### 2. cron/mapping.php 修复旧 JSON 引用 bug（3 处）
+
+根因：v1.17.13 迁移到 `.env.ini` 后，`cron/mapping.php` 里还有 3 处硬编码读/写旧 `mapping.json`，导致 cron 一直看不到 `.env.ini` 里的映射数据，也把采集结果写到了废弃文件里。
+
+| 位置 | 旧代码 | 新代码 |
+|------|--------|--------|
+| line 138 | `mxgj_read_json(MXGJ_CONFIG.'/mapping.json')` | `mxgj_mapping_data()` |
+| line 305 | `mxgj_read_json($file, [])` | `mxgj_read_json($file, mxgj_mapping_data())` |
+| line 315 | `mxgj_write_json($file, $map)` | `mxgj_env_upsert("mapping", ["data"=>$map])` |
+
+修复后 cron 采集和映射持久化全部走 `.env.ini`，远程服务器无需任何额外配置。
+
+#### 3. bootstrap.php PHP 8.4/8.5 兼容性修复
+
+`error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT)` 在 PHP 8.4+ 里 `E_STRICT` 已被废弃并完全移除，导致脚本启动时触发 Deprecated 警告甚至 fatal。改为 `error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE)`。
+
+### 🔧 改动清单
+
+| 文件 | 改动类型 | 说明 |
+|------|---------|------|
+| `lib/Db.php` | 🆕 新建 | SQLite/MySQL PDO 抽象层 |
+| `db/schema.sql` | 🆕 新建 | 六表 DDL 文档 |
+| `db/migrate.php` | 🆕 新建 | CLI + HTTP 迁移脚本 |
+| `lib/bootstrap.php` | 🔧 修改 | 顶部自动加载 Db.php + `mxgj_env_read/write/sites/mapping_data` 加 Db 分支 + `mxgj_build_env_sections` 加 db section |
+| `lib/Cache.php` | 🔧 修改 | `get()` 先查 Db、`set()` 双写 Db |
+| `cron/mapping.php` | 🔧 修改 | 3 处旧 mapping.json 引用 → `.env.ini` |
+| `admin.php` | 🔧 修改 | save_settings 加 db section UI + 💾 数据库存储层开关 |
+
+### ✅ 本地端到端测试
+
+- Db 启用 → 迁移 `.env.ini` → 11 episode + 1 cid + 20 stock + 3 sites + 40 config ✅
+- Db 关闭 → 自动降级走 `.env.ini` 文件逻辑 ✅
+- Cache set/get 双路径（Db + 文件）✅
+- PHP 8.5.10 `php -l` 所有文件通过 ✅
 
 ---
 

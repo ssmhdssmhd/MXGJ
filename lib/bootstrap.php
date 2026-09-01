@@ -11,11 +11,12 @@ define("MXGJ_BOOTSTRAP_LOADED", true);
 // === PHP 兼容性：抑制 Deprecated/Notice 污染 JSON 输出 ===
 // 生产环境 error_reporting 关闭 E_DEPRECATED & E_NOTICE，避免 trim(null) 等 8.1+ 警告 echo 到 JSON 前面
 // 调试时可在 admin 设置里打开 debug 模式
-error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_STRICT);
+// PHP 8.4+ 移除了 E_STRICT，直接用 E_ALL 减去需要抑制的级别
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.16');
+define('MXGJ_VERSION', '1.17.17');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -466,7 +467,7 @@ function mxgj_build_env_sections(array $st): array
         }
     }
     // 嵌套 section 直接赋值（如果存在）
-    foreach (['site_control', 'output', 'app_api', 'fallback', 'cron'] as $sec) {
+    foreach (['site_control', 'output', 'app_api', 'fallback', 'cron', 'db'] as $sec) {
         if (isset($st[$sec]) && is_array($st[$sec])) {
             $sections[$sec] = $st[$sec];
         }
@@ -558,9 +559,14 @@ function mxgj_settings(): array
  */
 function mxgj_sites(): array
 {
-    // 实时读取 — 不再 static 缓存
-    $r = mxgj_env_section('sites');
-    $raw = isset($r['data']) && is_array($r['data']) ? $r['data'] : [];
+    // v1.17.17: Db 启用时优先从数据库读
+    if (_mxgj_db_enabled()) {
+        $raw = Db::sites();
+    } else {
+        // 实时读取 — 不再 static 缓存
+        $r = mxgj_env_section('sites');
+        $raw = isset($r['data']) && is_array($r['data']) ? $r['data'] : [];
+    }
     foreach ($raw as $i => $s) {
         if (!isset($s['role']) || !in_array($s['role'], ['primary', 'fallback'], true)) {
             $raw[$i]['role'] = 'primary';
@@ -574,6 +580,10 @@ function mxgj_sites(): array
  */
 function mxgj_mapping_data(): array
 {
+    // v1.17.17: Db 启用时优先从数据库读
+    if (_mxgj_db_enabled()) {
+        return Db::mapping();
+    }
     $r = mxgj_env_section('mapping');
     return isset($r['data']) && is_array($r['data']) ? $r['data'] : [];
 }

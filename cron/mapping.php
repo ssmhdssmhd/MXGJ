@@ -301,8 +301,7 @@ class CronMapping
      */
     protected static function mergeStock(array $aggregate): void
     {
-        $file = MXGJ_CONFIG . '/mapping.json';
-        $map  = mxgj_read_json($file, []);
+        $map = mxgj_mapping_data();
         if (!isset($map['stock']) || !is_array($map['stock'])) { $map['stock'] = []; }
         foreach ($aggregate as $name => $info) {
             $map['stock'][$name] = [

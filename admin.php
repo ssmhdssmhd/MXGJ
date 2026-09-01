@@ -260,6 +260,14 @@ switch ($ACTION) {
         $cronCfg['seed_links']    = $seeds;
         $st['cron'] = $cronCfg;
 
+        // v1.17.17: 数据库存储层开关
+        $dbEnabled = !empty($_POST['db_enable']);
+        $dbDriver  = ($_POST['db_driver'] ?? 'sqlite') === 'mysql' ? 'mysql' : 'sqlite';
+        $st['db'] = [
+            'enabled' => $dbEnabled,
+            'driver'  => $dbDriver,
+        ];
+
         $st['output'] = [
             'mode'        => ($_POST['out_mode'] ?? 'standard') === 'legacy' ? 'legacy' : 'standard',
             'show_source' => !empty($_POST['out_show_source']),
@@ -3146,6 +3154,8 @@ function renderSettingsForm($settings)
 {
     $sc   = is_array($settings['site_control'] ?? null) ? $settings['site_control'] : [];
     $output = is_array($settings['output'] ?? null) ? $settings['output'] : [];
+    $dbCfg  = is_array($settings['db'] ?? null) ? $settings['db'] : [];
+    $cronCfg = is_array($settings['cron'] ?? null) ? $settings['cron'] : [];
     $siteHealth = SiteHealth::healthTable();
     $hbResult = $_SESSION['heartbeat_result'] ?? null;
     unset($_SESSION['heartbeat_result']);
@@ -3175,6 +3185,32 @@ function renderSettingsForm($settings)
             <div class="full"><label style="margin-bottom:6px">开关（点击即时生效，无需保存）</label>
                 <label style="margin-right:18px" class="toggle-label"><input type="checkbox" name="sc_heartbeat_enable" value="1" class="quick-toggle" data-action="setting" data-name="heartbeat_enable" <?= !empty($sc['heartbeat_enable']) ? 'checked' : '' ?>> 启用心跳检测</label>
                 <label class="toggle-label"><input type="checkbox" name="sc_rotation_enable" value="1" class="quick-toggle" data-action="setting" data-name="rotation_enable" <?= !empty($sc['rotation_enable']) ? 'checked' : '' ?>> 启用资源站轮训</label>
+            </div>
+
+            <!-- v1.17.17: 数据库存储层开关 -->
+            <div class="full" style="margin-top:8px">
+                <h3 style="margin:0 0 4px;font-size:14px">💾 数据库存储层（可选，默认走 .env.ini）</h3>
+                <div class="note" style="margin:4px 0 8px">
+                    启用后配置/缓存/映射/资源站健康状态自动读写 SQLite（或 MySQL），性能更高、支持多进程并发写入。<br>
+                    关闭则继续使用 <code>.env.ini</code> + <code>config/*.json</code> 文件存储，完全向后兼容。
+                </div>
+                <div style="display:flex;gap:24px;align-items:center;margin-bottom:10px">
+                    <label class="toggle-label">
+                        <input type="checkbox" name="db_enable" value="1" <?= !empty($dbCfg['enabled']) ? 'checked' : '' ?>>
+                        <b>启用数据库存储</b>
+                    </label>
+                    <label style="margin:0">
+                        数据库驱动：
+                        <select name="db_driver" style="padding:4px 8px">
+                            <option value="sqlite" <?= ($dbCfg['driver'] ?? 'sqlite') === 'sqlite' ? 'selected' : '' ?>>SQLite（零依赖，内置 PDO）</option>
+                            <option value="mysql"  <?= ($dbCfg['driver'] ?? 'sqlite') === 'mysql'  ? 'selected' : '' ?>>MySQL（需 pdo_mysql 扩展）</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="note" style="margin:0;font-size:12px;color:#8892ab">
+                    首次启用后，打开 <a href="db/migrate.php" target="_blank">db/migrate.php</a> 把现有 <code>.env.ini</code> 配置一键迁移到数据库。
+                    SQLite 数据库文件位于 <code>data/mxgj.db</code>。
+                </div>
             </div>
 
             <div class="full" style="margin-top:8px">

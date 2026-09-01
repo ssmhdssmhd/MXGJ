@@ -25,6 +25,12 @@ class Cache
      */
     public static function get(string $key, $default = null)
     {
+        // v1.17.17: Db 启用时优先从数据库读缓存
+        if (_mxgj_db_enabled()) {
+            $hit = Db::cacheGet($key);
+            if ($hit !== null) return $hit;
+        }
+
         $file = self::file($key);
         if (!is_file($file)) {
             return $default;
@@ -99,7 +105,14 @@ class Cache
             'time'   => $now,          // 写入时间
             'value'  => $value,
         ];
-        return @file_put_contents(self::file($key), serialize($data), LOCK_EX) !== false;
+        $fileOk = @file_put_contents(self::file($key), serialize($data), LOCK_EX) !== false;
+
+        // v1.17.17: Db 启用时双写数据库缓存
+        if (_mxgj_db_enabled()) {
+            Db::cacheSet($key, is_array($value) ? $value : ['value' => $value], $ttl, $now);
+        }
+
+        return $fileOk;
     }
 
     /**
