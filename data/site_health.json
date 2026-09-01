@@ -1,14 +1,4 @@
 {
     "last_heartbeat": 0,
-    "sites": {
-        "66ccb499bd49d27970d31bd0dca319bd": {
-            "enabled": true,
-            "fail": 2,
-            "disabled_at": 0,
-            "last_ok": 0,
-            "last_fail": 1788094693,
-            "last_active": 1788094693,
-            "ms": 0
-        }
-    }
+    "sites": []
 }
