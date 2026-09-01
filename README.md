@@ -9,7 +9,7 @@
 <br>
 
 [![PHP](https://img.shields.io/badge/PHP-%3E%3D8.1-8892BF?logo=php&logoColor=white&style=for-the-badge)](https://www.php.net)
-[![Version](https://img.shields.io/badge/Version-v1.17.21-4f7cff?style=for-the-badge&labelColor=2d1b69)](https://github.com/ssmhdssmhd/MXGJ/releases)
+[![Version](https://img.shields.io/badge/Version-v1.17.22-4f7cff?style=for-the-badge&labelColor=2d1b69)](https://github.com/ssmhdssmhd/MXGJ/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22a06b?style=for-the-badge)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/ssmhdssmhd/MXGJ?style=for-the-badge&logo=github&color=8b5cf6)](https://github.com/ssmhdssmhd/MXGJ/stargazers)
 [![Forks](https://img.shields.io/github/forks/ssmhdssmhd/MXGJ?style=for-the-badge&logo=github&color=6366f1)](https://github.com/ssmhdssmhd/MXGJ/forks)
@@ -723,7 +723,7 @@ php tests/run_test.php
 
 [![PHP](https://img.shields.io/badge/PHP-8892BF?logo=php&logoColor=white)](https://www.php.net)
 [![License](https://img.shields.io/badge/License-MIT-22a06b)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-v1.17.21-4f7cff)](https://github.com/ssmhdssmhd/MXGJ/releases)
+[![Version](https://img.shields.io/badge/Version-v1.17.22-4f7cff)](https://github.com/ssmhdssmhd/MXGJ/releases)
 
 🚀 [快速开始](#-快速开始) · 📖 [README](README.md) · 📋 [CHANGELOG](CHANGELOG.md) · 🤝 [贡献指南](CONTRIBUTING.md) · 🐛 [安全报告](SECURITY.md)
 

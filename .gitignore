@@ -5,6 +5,8 @@ data/cookies/*
 data/cron_mapping.log
 !data/cache/.gitkeep
 !data/cookies/.gitkeep
+data/site_health.json
+data/php_errors.log
 
 # 本地临时文件
 *.bak

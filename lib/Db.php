@@ -174,22 +174,48 @@ class Db
     private static function autoMigrate(PDO $pdo): void
     {
         // 检查 config 表是否存在
+        $schemaExists = false;
         try {
             $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='config'")->fetchColumn();
-            if ($tables !== false && $tables !== null) return;
+            if ($tables !== false && $tables !== null) $schemaExists = true;
         } catch (Throwable) { /* MySQL/PG 不同写法，用通用方式 */ }
 
-        // 直接执行 schema.sql（幂等，所有语句都带 IF NOT EXISTS）
-        $schema = __DIR__ . '/../db/schema.sql';
-        if (!is_file($schema)) return;
-
-        $sql = @file_get_contents($schema);
-        if ($sql === false) return;
-
-        // SQLite 下多语句执行
-        foreach (array_filter(array_map('trim', preg_split('/;\s*\n/', $sql))) as $stmt) {
-            try { $pdo->exec($stmt); } catch (Throwable) { /* 忽略 PRAGMA 等重复执行警告 */ }
+        if (!$schemaExists) {
+            // 直接执行 schema.sql（幂等，所有语句都带 IF NOT EXISTS）
+            $schema = __DIR__ . '/../db/schema.sql';
+            if (is_file($schema)) {
+                $sql = @file_get_contents($schema);
+                if ($sql !== false) {
+                    foreach (array_filter(array_map('trim', preg_split('/;\s*\n/', $sql))) as $stmt) {
+                        try { $pdo->exec($stmt); } catch (Throwable) { /* 忽略 PRAGMA 等重复执行警告 */ }
+                    }
+                }
+            }
         }
+
+        // 🔧 后处理：给已存在的旧表补新列（幂等安全）
+        self::ensureColumn($pdo, 'sites', 'is_special', 'INTEGER DEFAULT 0');
+        self::ensureColumn($pdo, 'sites', 'proxy', 'VARCHAR(256) DEFAULT ""');
+    }
+
+    /**
+     * 幂等安全地给表加列（列已存在时静默跳过）
+     */
+    private static function ensureColumn(PDO $pdo, string $table, string $column, string $def): void
+    {
+        try {
+            // SQLite: PRAGMA table_info 检测列是否已存在
+            $colExists = false;
+            try {
+                $rows = $pdo->query("PRAGMA table_info($table)")->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($rows as $c) {
+                    if (($c['name'] ?? '') === $column) { $colExists = true; break; }
+                }
+            } catch (Throwable) { /* MySQL/PG 不同写法，用通用方式 */ }
+            if (!$colExists) {
+                $pdo->exec("ALTER TABLE $table ADD COLUMN $column $def");
+            }
+        } catch (Throwable) { /* 忽略（列已存在 / 不支持 ALTER TABLE 等） */ }
     }
 
     // -----------------------------------------------------------------
@@ -288,8 +314,11 @@ class Db
         try {
             $pdo->beginTransaction();
             $pdo->exec('DELETE FROM sites');
-            $ins = $pdo->prepare('INSERT INTO sites(id,name,template,enabled,role,method,headers,post_body,parser,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
+            // 🔧 INSERT 加 is_special / proxy 字段
+            $ins = $pdo->prepare('INSERT INTO sites(id,name,template,enabled,role,method,headers,post_body,parser,sort_order,created_at,updated_at,is_special,proxy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             foreach ($sites as $i => $s) {
+                // 字段兼容：.env.ini/admin.php 写的是 `post`，Db schema 是 `post_body`
+                $postBody = $s['post_body'] ?? $s['post'] ?? [];
                 $ins->execute([
                     $s['id'] ?? null,
                     $s['name'] ?? '',
@@ -298,10 +327,12 @@ class Db
                     $s['role'] ?? 'primary',
                     $s['method'] ?? 'GET',
                     json_encode($s['headers'] ?? [], JSON_UNESCAPED_UNICODE),
-                    json_encode($s['post_body'] ?? [], JSON_UNESCAPED_UNICODE),
-                    $s['parser'] ?? 'cMaccms',
+                    json_encode($postBody, JSON_UNESCAPED_UNICODE),
+                    $s['parser'] ?? $s['parse'] ?? 'cMaccms',  // `parse` 兼容 admin.php 字段名
                     (int)($s['sort_order'] ?? $i),
                     time(), time(),
+                    !empty($s['is_special']) ? 1 : 0,
+                    $s['proxy'] ?? '',
                 ]);
             }
             $pdo->commit();

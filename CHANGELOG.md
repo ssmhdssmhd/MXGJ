@@ -1,5 +1,29 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.22] 2026-09-01 · 资源站 + 映射表 + Db schema 自动升级
+
+### 🎯 核心变化
+
+- **Db schema 自动升级**：autoMigrate 新增 ensureColumn() 幂等函数，老 Db 自动补 is_special / proxy 列
+- **资源站模板扩展**：saveSites() 兼容 admin.php 字段名（parse→parser, post→post_body），INSERT 新增 is_special / proxy 字段
+- **苹果CMS 主站**：接入 XGZYAPI (api.xgzyapi.com) 公共资源站，支持 ac=list&wd=关键词 搜索
+- **觅知弹幕播放器**：is_special=true 特殊资源站，模板 {SCHEME}://{HOST_NO_PORT}:9008/?url=%u 动态 host
+- **蓝光/云播解析**：vv00.xyz + m3u8.tv 两个兜底解析器，均标记 is_special=true
+- **映射表扩充**：CID 映射从 1 条扩展到 24 条（腾讯/爱奇艺/优酷/芒果/B站），episode 映射到 20 条
+
+### 🔧 技术实现
+
+| 文件 | 改动 |
+|------|------|
+| lib/Db.php | autoMigrate 重构为每次连接都执行 ensureColumn；saveSites() INSERT 新增 is_special/proxy；字段名兼容层（parse→parser, post→post_body） |
+| db/schema.sql | sites 表 CREATE TABLE 新增 is_special INTEGER DEFAULT 0 和 proxy VARCHAR(256) DEFAULT "" 列定义 |
+| config/.env.ini | [sites] section 从占位 A站/B站 替换为 4 个真实资源站 |
+| config/sites.json | 同步更新为 4 个真实资源站完整配置 |
+| config/mapping.json | CID 映射 1→24，episode 映射 11→20 |
+| .gitignore | 补 data/mxgj.db*, php_errors.log, site_health.json |
+
+---
+
 ## [v1.17.21] 2026-09-01 · 🐛 修复 502 错误（update 覆盖 DB + 硬编码 URL + CORS）
 
 ### 🐛 根因

@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS sites (
     post_body   TEXT,                          -- JSON: POST 模板（支持 %u）
     parser      VARCHAR(32)  DEFAULT 'cMaccms', -- cMaccms / json / regex / xml
     sort_order  INTEGER      DEFAULT 0,
+    is_special  INTEGER      DEFAULT 0,     -- 1=特殊资源站（直接套 url，跳过苹果CMS 解析）
+    proxy       VARCHAR(256) DEFAULT '',    -- 中转代理前缀（可选）
     created_at  INTEGER,
     updated_at  INTEGER
 );
