@@ -1,5 +1,42 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.18] 2026-09-01 · 🎬 index.php 智能自动重定向（浏览器直接跳转播放器）
+
+### ✨ 新特性
+
+浏览器直接访问 `/?url=xxx` 时，自动识别浏览器请求（Accept 头 + User-Agent），**302 重定向到本地播放器 `/player/play.php`**，直接看到播放画面而不是 JSON 文本。
+
+#### 触发条件（同时满足）
+1. `code = 200`（解析成功）
+2. `player_url` 非空（有播放器地址）
+3. 不是 JSONP callback（`callback=xxx` 仍返回 JSON）
+4. 不是 `raw=1`（raw 强制 JSON）
+5. Accept 头偏好 `text/html`，且 User-Agent 不是 curl/Python/axios/Postman 等 API 客户端
+
+#### 显式参数（覆盖自动判断）
+- `?redirect=1` → 强制跳播放器（即使 curl UA）
+- `?redirect=0` → 强制返回 JSON
+- `?raw=1` → 强制返回 JSON
+
+### 🔒 向后兼容
+- **API 客户端完全不受影响**：curl/Python/axios/Postman/OkHttp 等 UA 自动判断为 API 请求，正常返回 JSON
+- **原有 JSON 格式不变**：所有字段（player_url / url / title / episode ...）保持 v1.17.17 格式
+- **多套显式参数**：redirect=0 / raw=1 / callback=xxx 三种方式强制返回 JSON
+
+### 📝 改动清单
+| 文件 | 说明 |
+|------|------|
+| `index.php` (+55 行) | 输出 JSON 前增加智能重定向判断块 |
+| `version.json` | storage 字段更新为「.env.ini + SQLite 可选」 |
+
+### ✅ 远程实测（6 场景全通过）
+- 浏览器 UA + Accept text/html → `HTTP 302 Location: /player/?url=...m3u8` ✅
+- curl UA → `HTTP 200 Content-Type: application/json` ✅
+- `redirect=1` 强制跳 ✅ / `redirect=0` 强制 JSON ✅ / `raw=1` 强制 JSON ✅
+- 最终播放器页面渲染成功 `HTTP 200 play.php` ✅
+
+---
+
 ## [v1.17.17] 2026-09-01 · 💾 数据库存储层（SQLite 可选启用）+ cron/mapping.php bug 修复
 
 ### ✨ 新特性

@@ -1,15 +1,15 @@
 {
   "name": "沫兮官替系统",
   "name_en": "MXGJ",
-  "version": "1.17.17",
+  "version": "1.17.18",
   "release": "2026-09-01",
   "php": ">=7.4",
   "extensions": [
     "curl",
     "json"
   ],
-  "storage": "无数据库（JSON 文件存储）",
-  "description": "官方视频链接 → 多线程资源站搜索 → 标准 JSON 输出（code/msg/data/meta 四段式）",
+  "storage": ".env.ini + JSON 文件（默认）/ SQLite 可选启用",
+  "description": "官方视频链接 → 多线程资源站搜索 → 标准 JSON 输出（支持 SQLite 存储 + 浏览器自动跳播放器）",
   "features": [
     "多线程资源站并发搜索 (curl_multi)",
     "主流视频平台官方链接解析",
