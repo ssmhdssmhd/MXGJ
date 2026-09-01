@@ -79,7 +79,7 @@ $playerCode   = $player['player_code_content'] ?? '';
     <?php if ($playerCode): ?>
     <script><?= $playerCode ?></script>
     <?php else: ?>
-    <script>MacPlayer.Html = '<iframe width="100%" height="100%" src="https://vv00.xyz?url='+MacPlayer.PlayUrl+'" frameborder="0" scrolling="no" allowfullscreen></iframe>';try{MacPlayer.Show()}catch(e){}</script>
+    <script>MacPlayer.Html = '<iframe width="100%" height="100%" src="http://114.134.184.91:9008/?url='+MacPlayer.PlayUrl+'" frameborder="0" scrolling="no" allowfullscreen></iframe>';try{MacPlayer.Show()}catch(e){}</script>
     <?php endif; ?>
     <script>
     (function () {
