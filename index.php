@@ -251,4 +251,59 @@ Logger::log(
     ]
 );
 
+/* ==========================================================================
+ * v1.17.17: 智能自动重定向 —— 浏览器访问 ?url=xxx 时直接跳播放器
+ *
+ * 触发条件（同时满足全部）：
+ *   1) code = 200（解析成功）
+ *   2) player_url 非空（有播放器可跳）
+ *   3) 不是 JSONP callback（有 callback=xxx 就返回 JSON）
+ *   4) 未显式带 ?raw=1（raw 强制返回 JSON）
+ *   5) 浏览器 Accept 偏好 text/html 高于 application/json
+ *
+ * 显式参数：
+ *   ?redirect=1  → 强制跳（覆盖自动判断）
+ *   ?redirect=0  → 强制返回 JSON
+ *   ?raw=1       → 强制返回 JSON
+ * ========================================================================== */
+
+$doRedirect = false;
+$redirectOverride = $_GET['redirect'] ?? null;
+
+if ($redirectOverride !== null) {
+    // 显式参数优先
+    $doRedirect = (string)$redirectOverride === '1';
+} elseif (isset($_GET['raw'])) {
+    $doRedirect = false;  // raw=1 强制 JSON
+} else {
+    // 自动检测：浏览器 Accept 头偏好 text/html
+    $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+    $prefersHtml  = str_contains($accept, 'text/html');
+    $prefersJson  = str_contains($accept, 'application/json');
+    $hasCallback  = !empty($_GET['callback']);
+
+    // 浏览器请求（非 API 客户端）→ text/html 存在且 application/json 不存在，或 html 优先
+    if ($prefersHtml && !$hasCallback) {
+        // Accept 里 application/json 优先级通常用 q 参数
+        // 简单判断：如果明确包含 application/json 且没有 text/html 的 q 更高，就不跳
+        $doRedirect = true;
+        if ($prefersJson) {
+            // 两者都有 → 看 q 值（浏览器默认给 text/html 更高 q）
+            // 简化：如果 user-agent 里有 curl/wget/Postman/python/axios → 不跳
+            $ua = strtolower($_SERVER['HTTP_USER_AGENT'] ?? '');
+            $apiClients = ['curl', 'wget', 'postman', 'python', 'axios', 'fetch', 'guzzle', 'node-fetch', 'okhttp', 'java/'];
+            foreach ($apiClients as $c) {
+                if (str_contains($ua, $c)) { $doRedirect = false; break; }
+            }
+        }
+    }
+}
+
+// 触发重定向：code=200 + player_url 非空
+if ($doRedirect && (int)($vars['code'] ?? 0) === 200 && !empty($vars['player_url'])) {
+    $target = $vars['player_url'];
+    header('Location: ' . $target, true, 302);
+    exit;
+}
+
 mxgj_json_out($out);
