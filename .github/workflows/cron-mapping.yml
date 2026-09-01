@@ -1,0 +1,44 @@
+name: Auto CronMapping (双保险)
+
+# 每 3 小时自动 curl 远程 cron/mapping.php，作为 Self-Trigger 的双保险
+# 即使没有用户访问 index.php，也能保证 3 小时一次的映射采集
+on:
+  schedule:
+    # UTC 时间每 3 小时（0/3/6/9/12/15/18/21 点）
+    # 北京时间 = UTC+8 → 对应 8/11/14/17/20/23/2(+1)/5(+1) 点
+    - cron: '0 */3 * * *'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  cron-trigger:
+    name: Trigger Remote CronMapping
+    runs-on: ubuntu-latest
+    steps:
+      - name: 触发远程 cron/mapping.php
+        run: |
+          echo "=== 1. 执行采集（dry=0 写入映射）==="
+          HTTP_CODE=$(curl -s -o /tmp/cron_out.txt -w "%{http_code}" \
+            --max-time 120 \
+            "http://114.134.184.91:9007/cron/mapping.php?key=moxi123&dry=0")
+          echo "HTTP $HTTP_CODE"
+          head -20 /tmp/cron_out.txt
+          echo
+
+          echo "=== 2. 验证 Self-Trigger 状态（dry=1 预览）==="
+          curl -s --max-time 60 \
+            "http://114.134.184.91:9007/cron/mapping.php?key=moxi123&dry=1" \
+            | tail -5
+          echo
+
+          echo "=== 3. 搜索接口回归测试 ==="
+          curl -s --max-time 30 \
+            "http://114.134.184.91:9007/?url=https://m.v.qq.com/x/m/play?cid=mzc00200zx8psx0&vid=k4102szvyce&key=moxi123" \
+            | head -c 300
+          echo
+
+          # 退出码
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ cron/mapping.php 返回 HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "✅ CronMapping 双保险触发完成"
