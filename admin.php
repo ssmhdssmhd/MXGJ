@@ -235,6 +235,31 @@ switch ($ACTION) {
                 ['k' => 'KFZ',  'v' => '沫兮官替系统'],
             ];
         }
+        // cron 定时采集配置
+        $cronCfg = is_array($st['cron'] ?? null) ? $st['cron'] : [];
+        // seed_links 支持两种输入：text 每行一个 URL，或直接提交 JSON 数组字符串
+        $seedInput = trim((string)($_POST['cron_seed_links'] ?? ''));
+        if ($seedInput !== '') {
+            // 尝试 JSON 解析（优先）
+            $decoded = json_decode($seedInput, true);
+            if (is_array($decoded)) {
+                $seeds = array_values(array_filter(array_map('trim', $decoded), fn($s) => $s !== ''));
+            } else {
+                // 每行一个 URL
+                $seeds = array_values(array_filter(array_map('trim', preg_split('/[\s,]+/', $seedInput)), fn($s) => $s !== ''));
+            }
+        } else {
+            // 无输入则保留原有
+            $seeds = is_array($cronCfg['seed_links'] ?? null) ? $cronCfg['seed_links'] : [];
+        }
+        $cronCfg['key']           = trim((string)($_POST['cron_key'] ?? $cronCfg['key'] ?? ''));
+        $cronCfg['interval_mins'] = max(1, (int)($_POST['cron_interval_mins'] ?? $cronCfg['interval_mins'] ?? 60));
+        $cronCfg['scan_sites']    = !empty($_POST['cron_scan_sites']) ?: !empty($cronCfg['scan_sites']);
+        $cronCfg['scan_pages']    = max(1, (int)($_POST['cron_scan_pages'] ?? $cronCfg['scan_pages'] ?? 1));
+        $cronCfg['timeout']       = max(5, (int)($_POST['cron_timeout'] ?? $cronCfg['timeout'] ?? 20));
+        $cronCfg['seed_links']    = $seeds;
+        $st['cron'] = $cronCfg;
+
         $st['output'] = [
             'mode'        => ($_POST['out_mode'] ?? 'standard') === 'legacy' ? 'legacy' : 'standard',
             'show_source' => !empty($_POST['out_show_source']),
