@@ -1,8 +1,8 @@
 {
   "name": "沫兮官替系统",
   "name_en": "MXGJ",
-  "version": "1.17.15",
-  "release": "2026-08-31",
+  "version": "1.17.16",
+  "release": "2026-09-01",
   "php": ">=7.4",
   "extensions": [
     "curl",

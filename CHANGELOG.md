@@ -2,6 +2,77 @@
 
 
 
+---
+
+## [v1.17.16] 2026-09-01 · 📦 自动映射采集（cron/mapping.php 实测 + 扩展 seed_links）
+
+### ✨ 新特性
+
+#### 1. seed_links 从 7 条扩展到 20 条（覆盖五大主流平台热门剧集）
+
+| 平台 | 新增条数 | 示例 |
+|------|---------|------|
+| 腾讯视频 | 5 | 庆余年、莲花楼、斗罗大陆、长相思、长月烬明 |
+| 爱奇艺 | 4 | 狂飙、三体、斗罗大陆、莲花楼 |
+| 优酷 | 2 | 狂飙、长安三万里 |
+| 芒果TV | 1 | 狂飙 |
+| 哔哩哔哩 | 1 | 斗罗大陆（B站番剧） |
+
+下次跑 cron/mapping.php 自动采集时，这些官方链接会逐个被 PageResolver 抓取剧名和集数，然后写入 [mapping] episode，新服务器零配置即可跑起。
+
+#### 2. cron/mapping.php 远程实测通过
+
+远程服务器 http://114.134.184.91:9007/cron/mapping.php?key=moxi123：
+- dry=1 预览模式正确列出"新增/已存在/失败"统计
+- 实际采集正确写入 7 条 episode 映射（含集数）
+- 资源站库存盘点：并发扫描 XGZYAPI 资源站采集接口，整理出 20 部在库剧名（写入 mapping.stock）
+- 已存在映射自动跳过（保护人工配置不覆盖）
+
+### 📋 当前 .env.ini [mapping] 存量
+
+```
+episode: 11 条（庆余年/师兄太稳健/以法之名/你是迟来的欢喜/着迷/开心锤锤/蝉/护花/重器/这一秒过火/师兄太稳健 第42集）
+cid:      1 条（mzc00200zx8psx0 → 庆余年）
+stock:   20 条资源站在库剧名（含遮天/一念永恒/花开锦绣/藏锋/蝉/密室大逃脱第八季等）
+```
+
+### 🛠 如何触发自动映射
+
+```bash
+# 方式 A：HTTP URL（远程服务器）
+curl -s "http://你的域名/cron/mapping.php?key=后台密码"
+
+# 方式 B：dry 预览（不写库，只看将新增哪些）
+curl -s "http://你的域名/cron/mapping.php?key=后台密码&dry=1"
+
+# 方式 C：Linux crontab（每小时一次）
+0 * * * *  php /path/to/mxgj/cron/mapping.php key=你的密码 quiet
+
+# 方式 D：本地 PHP CLI（沙箱内）
+php cron/mapping.php key=moxi123
+```
+
+### 改动文件
+
+| 文件 | 变更 |
+|------|------|
+| config/.env.ini | cron.seed_links 从 7 条 → 20 条（五大平台热门剧集覆盖） |
+| config/.env.ini | [mapping] section 保留 cron 自动采集的 11 条 episode + 1 条 cid + 20 条 stock |
+| version.json | 版本号 1.17.15 → 1.17.16，release 2026-09-01 |
+| lib/bootstrap.php | MXGJ_VERSION 常量更新 |
+| README.md | Badge 版本号更新 |
+
+### 验证结果
+
+```
+✅ cron/mapping.php dry 预览：7 条已映射跳过、0 失败
+✅ cron/mapping.php 实际采集：正确写入 .env.ini
+✅ 资源站库存盘点：扫描 XGZYAPI → 20 部在库剧名
+✅ seed_links 扩展：20 条覆盖腾讯/爱奇艺/优酷/芒果/B站
+✅ 远程 index.php API：庆余年 code=200
+✅ 全部 PHP 语法检查通过
+```
+
 ## [v1.17.15] 2026-09-01 · 🔧 Cache 类旧格式缓存兼容 + 移除 index.php 重复 ttl 检查
 
 ### 🐛 修复
