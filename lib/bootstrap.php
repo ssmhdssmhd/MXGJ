@@ -57,6 +57,33 @@ spl_autoload_register(function ($class) {
     }
 });
 
+// === v1.17.17: 数据库抽象层（可选启用，默认走 .env.ini）===
+// Db.php 提供 SQLite/MySQL PDO 单例 + CRUD 封装
+// 启用方式：在 .env.ini [db] section 设置 enabled=true driver=sqlite
+if (!class_exists('Db', false)) {
+    require_once __DIR__ . '/Db.php';
+}
+
+/* ---------------------------------------------------------------------------
+ * 存储层抽象：Db 启用时优先用数据库，否则走 .env.ini + JSON 文件
+ * 所有对外函数签名不变 — index.php / admin.php / cron 完全无感知
+ * ------------------------------------------------------------------------- */
+
+/**
+ * 判断数据库是否启用（供内部函数调用，外部不需要）
+ */
+function _mxgj_db_enabled(): bool {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+    $cache = class_exists('Db', false) && Db::enabled();
+    return $cache;
+}
+
+function _mxgj_db_flush(): void {
+    // 请求结束后重置 Db 缓存（下一请求重新读配置）
+    if (class_exists('Db', false)) Db::reset();
+}
+
 /* ---------------------------------------------------------------------------
  * 文件存储（无数据库，全部使用 JSON 文件）
  * ------------------------------------------------------------------------- */
@@ -166,6 +193,16 @@ function mxgj_env_enc(mixed $v): string
  */
 function mxgj_env_read(): array
 {
+    // v1.17.17: Db 启用时优先从数据库读（INI 格式不再是唯一数据源）
+    if (_mxgj_db_enabled()) {
+        $dbSections = Db::configAll();
+        // 补充 sites 和 mapping section（它们是独立表，不在 config 里）
+        $dbSections['sites'] = ['data' => Db::sites()];
+        $dbSections['mapping'] = ['data' => Db::mapping()];
+        // 把 sections 包成 mxgj_env_read 的返回结构
+        return ['sections' => $dbSections, 'env_file' => MXGJ_ENV, 'migrated' => false, 'from_db' => true];
+    }
+
     // 用 GLOBALS 传递 invalidate 标记（跨函数共享）
     // write() 成功后设 $GLOBALS['mxgj_env_reload'] = true
     if (!isset($GLOBALS['mxgj_env_cache'])) {
@@ -229,6 +266,24 @@ function mxgj_env_read(): array
  */
 function mxgj_env_write(array $sections): bool
 {
+    // v1.17.17: Db 启用时，先写数据库（双写保证 DB 和 .env.ini 同步）
+    if (_mxgj_db_enabled()) {
+        try {
+            foreach ($sections as $sec => $data) {
+                if ($sec === 'sites' && isset($data['data']) && is_array($data['data'])) {
+                    Db::saveSites($data['data']);
+                } elseif ($sec === 'mapping' && isset($data['data'])) {
+                    $map = is_array($data['data']) ? $data['data'] : (json_decode($data['data'], true) ?? []);
+                    Db::saveMapping($map['title'] ?? [], $map['cid'] ?? [], $map['episode'] ?? [], $map['stock'] ?? []);
+                } else {
+                    Db::configWriteSection($sec, is_array($data) ? $data : []);
+                }
+            }
+        } catch (\Throwable $e) {
+            Logger::log('error', 'Db 写入失败（继续写 .env.ini 降级）', 'error', ['msg' => $e->getMessage()]);
+        }
+    }
+
     $envFile = MXGJ_ENV;
     $dir = dirname($envFile);
     if (!is_dir($dir)) @mkdir($dir, 0755, true);

@@ -135,7 +135,7 @@ class CronMapping
             $steps[] = '官方种子链接 ' . count($seeds) . ' 条，逐个解析/抓取：';
             foreach ($seeds as $seed) {
                 $parsed = LinkParser::parse($seed);
-                $mapping = mxgj_read_json(MXGJ_CONFIG . '/mapping.json', []);
+                $mapping = mxgj_mapping_data();
                 $epMap = isset($mapping['episode']) && is_array($mapping['episode']) ? $mapping['episode'] : [];
                 $key = $parsed['vid'] !== ''
                     ? 'vid:' . $parsed['vid']
@@ -312,7 +312,7 @@ class CronMapping
         }
         // 控制体积：最多保留 2000 部
         $map['stock'] = array_slice($map['stock'], 0, 2000, true);
-        mxgj_write_json($file, $map);
+        mxgj_env_upsert("mapping", ["data" => $map]);
     }
 
     protected static function stripJsonP(string $body): string
