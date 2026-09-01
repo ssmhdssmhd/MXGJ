@@ -1,5 +1,37 @@
 # 更新日志 (CHANGELOG)
 
+## [v1.17.20] 2026-09-01 · 🐛 修复"不同资源解析出来都是一样的"（cid 映射结构冲突）
+
+### 🐛 根因
+
+**三层 Bug 叠加导致腾讯/芒果等平台剧名解析为"那条视频不见了"：**
+
+| 层级 | 问题 | 影响 |
+|------|------|------|
+| **1. 结构冲突** | `index.php` 3.1 循环同时查 episode section 的 `vid:` 和 `cid:` 前缀；`auto_mapping` 把 cid 也写入 episode section（格式 `cid:xxx`） | 当 episode 里有脏的 `cid:xxx` 条目时，**3.1 先命中并 break**，永远走不到 3.2 的 cid section 正确映射 |
+| **2. 垃圾固化** | `auto_mapping` 没有反爬文案过滤；腾讯 PageResolver 遇反爬返回 "那条视频不见了" → 被固化进 Db | 错误剧名污染 mapping 数据，越用越脏 |
+| **3. 缓存黑洞** | `purge_runtime` 只清文件缓存，**不清 Db cache 表** | 旧错误结果被缓存后，即使代码修复也一直返回旧结果 |
+
+### 🔧 修复清单
+
+| 文件 | 改动 |
+|------|------|
+| `index.php` 3.1 | **只查 `vid:` 前缀**，`cid:` 统一走 3.2 的 cid section |
+| `lib/bootstrap.php` `mxgj_auto_mapping` | cid 写入**正确的 cid section**（不再写进 episode）；新增 `mxgj_is_garbage_title()` 反爬黑名单过滤 |
+| `lib/bootstrap.php` `mxgj_purge_runtime` | 新增 **Db cache 表清理**（`DELETE FROM cache`） |
+
+### ✨ 新增 `mxgj_is_garbage_title()` 反爬黑名单
+覆盖各平台常见兜底文案：那条视频不见了 / 视频不存在 / 已下架 / 暂无法 / 验证码 / 反爬 / 试看 / VIP ...
+
+### ✅ 验证
+- 腾讯庆余年 cover URL → cid 映射命中 → `庆余年` ✅
+- 爱奇艺师兄太稳健 → vid 映射命中 → `师兄太稳健` ✅
+- 芒果你是迟来的欢喜 → vid 映射命中 + episode=8 ✅
+- 被污染的 episode 数据（cid:xxx=那条视频不见了）不再错误命中 ✅
+- PageResolver 反爬结果不再固化 ✅
+
+---
+
 ## [v1.17.19] 2026-09-01 · 🎬 播放器切换为觅知弹幕ART（9008端口）
 
 ### ✨ 新特性

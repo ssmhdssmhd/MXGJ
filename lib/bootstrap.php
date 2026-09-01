@@ -16,7 +16,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.19');
+define('MXGJ_VERSION', '1.17.20');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -1047,20 +1047,67 @@ function mxgj_build_output(array $vars, bool $debug): array
  */
 function mxgj_auto_mapping(array $parsed, string $name, int $episode): bool
 {
-    $key = $parsed['vid'] !== '' ? 'vid:' . $parsed['vid']
-         : ($parsed['cid'] !== '' ? 'cid:' . $parsed['cid'] : '');
-    if ($key === '' || $name === '' || $episode <= 0) {
+    // 过滤反爬/垃圾 title（各平台常见兜底文案）
+    if (mxgj_is_garbage_title($name)) {
         return false;
     }
+
     $mapping = mxgj_env_section('mapping');
-    if (!isset($mapping['episode']) || !is_array($mapping['episode'])) {
-        $mapping['episode'] = [];
+
+    // vid → episode section（格式 vid:xxx → {name, episode}）
+    if ($parsed['vid'] !== '' && $episode > 0) {
+        $key = 'vid:' . $parsed['vid'];
+        if (!isset($mapping['episode']) || !is_array($mapping['episode'])) {
+            $mapping['episode'] = [];
+        }
+        if (!isset($mapping['episode'][$key])) {
+            $mapping['episode'][$key] = ['name' => $name, 'episode' => (int)$episode];
+            return mxgj_env_upsert('mapping', ['data' => $mapping]);
+        }
     }
-    if (isset($mapping['episode'][$key])) {
-        return false; // 已有映射，不覆盖
+
+    // cid → cid section（格式 xxx → name），不进 episode section
+    if ($parsed['cid'] !== '') {
+        $cidKey = $parsed['cid'];
+        if (!isset($mapping['cid']) || !is_array($mapping['cid'])) {
+            $mapping['cid'] = [];
+        }
+        if (!isset($mapping['cid'][$cidKey])) {
+            $mapping['cid'][$cidKey] = $name;
+            return mxgj_env_upsert('mapping', ['data' => $mapping]);
+        }
     }
-    $mapping['episode'][$key] = ['name' => $name, 'episode' => (int)$episode];
-    return mxgj_env_upsert('mapping', ['data' => $mapping]);
+
+    return false;
+}
+
+/**
+ * 判断 title 是否为垃圾/反爬文案（各视频平台常见的错误兜底）
+ */
+function mxgj_is_garbage_title(string $title): bool
+{
+    $t = trim($title);
+    if ($t === '') return true;
+    // 太长或太短
+    if (mb_strlen($t) > 40) return true;
+    // 黑名单关键词
+    $blacklist = [
+        '那条视频不见了', '视频不见了', '那条视频不存在',
+        '暂无法', '暂无资源', '暂无法播放', '无法播放', '无法观看',
+        '没有相关', '没有找到', '未找到', '未找到该',
+        '视频不存在', '内容不存在', '资源不存在',
+        '已下架', '已删除', '已下线', '已失效',
+        '请稍后', '请登录', '会员', 'VIP', '试看',
+        '反爬', '验证', 'captcha', '验证码',
+        'access denied', 'forbidden', 'not found', 'error', 'invalid',
+        '抱歉', '对不起', '温馨提示', '友情提示',
+        '加载中', '请稍候', '服务器', '网络错误',
+    ];
+    $low = strtolower($t);
+    foreach ($blacklist as $b) {
+        if (str_contains($low, strtolower($b))) return true;
+    }
+    return false;
 }
 
 /**
@@ -1117,6 +1164,20 @@ function mxgj_purge_runtime(): array
     // 6) PHP opcache（PHP-FPM 场景下最常见的"改了没生效"原因）
     if (function_exists('opcache_reset') && ini_get('opcache.enable')) {
         $cleaned['opcache_reset'] = @opcache_reset();
+    }
+
+    // 7) Db cache 表（如果启用了数据库）
+    if (class_exists('Db') && Db::enabled()) {
+        try {
+            $pdo = Db::connect();
+            if ($pdo !== null) {
+                $nDb = (int)$pdo->exec('DELETE FROM cache');
+                $cleaned['db_cache'] = ['count' => $nDb, 'purged' => true];
+                $cleaned['items'] += $nDb;
+            }
+        } catch (Throwable) {
+            $cleaned['db_cache'] = ['purged' => false];
+        }
     }
 
     return $cleaned;

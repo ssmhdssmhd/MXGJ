@@ -57,19 +57,15 @@ $mapping = mxgj_mapping_data();
 $name    = $parsed['title'];
 $episode = $parsed['episode'] > 0 ? $parsed['episode'] : $page;
 
-// 3.1 官方ID精确映射：vid / cid → 剧名+集数（仅启用条目生效）
+// 3.1 官方ID精确映射：vid → 剧名+集数（仅启用条目生效）
+// 注意：cid 不在 episode section 里查（auto_mapping 会把 cid 固化进 episode 但那是脏数据）
+// cid 统一走 3.2 的 cid section 精确映射
 $epMap = isset($mapping['episode']) && is_array($mapping['episode']) ? $mapping['episode'] : [];
-foreach (['vid:' . $parsed['vid'], 'cid:' . $parsed['cid']] as $key) {
-    if ($key === 'vid:' || $key === 'cid:') {
-        continue;
-    }
-    if (!mxgj_mapping_enabled($mapping, 'episode', $key)) {
-        continue; // 该映射被快捷禁用
-    }
-    if (isset($epMap[$key]) && !empty($epMap[$key]['name'])) {
-        $name    = $epMap[$key]['name'];
-        $episode = !empty($epMap[$key]['episode']) ? (int)$epMap[$key]['episode'] : $episode;
-        break;
+$vidKey = 'vid:' . $parsed['vid'];
+if ($parsed['vid'] !== '' && mxgj_mapping_enabled($mapping, 'episode', $vidKey)) {
+    if (isset($epMap[$vidKey]) && !empty($epMap[$vidKey]['name'])) {
+        $name    = $epMap[$vidKey]['name'];
+        $episode = !empty($epMap[$vidKey]['episode']) ? (int)$epMap[$vidKey]['episode'] : $episode;
     }
 }
 
