@@ -21,6 +21,9 @@
 
 require_once __DIR__ . '/lib/bootstrap.php';
 
+// 🕒 v1.17.23: 注册自动 CronMapping 触发器（shutdown 后异步执行，不阻塞主响应）
+mxgj_register_auto_cron(100);
+
 $debug = !empty($_GET['debug']);
 $page  = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $t0    = microtime(true); // 计时（毫秒）

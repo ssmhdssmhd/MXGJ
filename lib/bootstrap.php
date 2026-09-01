@@ -16,7 +16,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 define('MXGJ_NAME', '沫兮官替系统');
-define('MXGJ_VERSION', '1.17.22');
+define('MXGJ_VERSION', '1.17.23');
 
 if (!defined('MXGJ_ROOT')) {
     define('MXGJ_ROOT', dirname(__DIR__));
@@ -1289,4 +1289,135 @@ function mxgj_save_players(array $players): bool
     $dir = dirname(MXGJ_PLAYER_FILE);
     if (!is_dir($dir)) @mkdir($dir, 0755, true);
     return mxgj_write_json(MXGJ_PLAYER_FILE, ['players' => array_values($players)]);
+}
+
+/* ================================================================
+ * 自动触发 CronMapping（Self-Trigger）— 无需服务器 crontab
+ *
+ * 原理：每次 index.php 请求结束时检查 data/cron_auto.lock，
+ *  如果上次运行时间超过 interval_mins（默认 180 分钟 = 3 小时），
+ *  就异步触发 CronMapping::run(false) 自动采集映射。
+ *
+ * 用 register_shutdown_function 保证主请求先返回、再后台跑 cron，
+ *  不会阻塞用户端的响应时间。
+ * ================================================================ */
+
+/**
+ * 注册 shutdown 回调，下次请求结束时可能触发 CronMapping
+ *
+ * @param int  $probability  触发概率（1-100），默认 100% 检查；高流量站可降为 30 减轻负载
+ */
+function mxgj_register_auto_cron(int $probability = 100): void
+{
+    // 概率开关（默认每次都检查，因为 lock 文件读取非常轻量）
+    if ($probability < 100 && mt_rand(1, 100) > $probability) return;
+
+    register_shutdown_function(function () {
+        // 跳过条件：
+        //  1. mapping.php 自己在跑（CLI crontab 或 HTTP 访问 /cron/mapping.php）
+        //  2. MXGJ_INTERNAL_CRON 已提前定义（内部程序直接调用了 mxgj_auto_cron_trigger）
+        if (defined('MXGJ_INTERNAL_CRON')) return;
+        $script = basename($_SERVER['SCRIPT_NAME'] ?? ($_SERVER['PHP_SELF'] ?? ''));
+        if ($script === 'mapping.php') return;
+
+        mxgj_auto_cron_trigger();
+    });
+}
+
+/**
+ * 检查并触发 CronMapping（幂等，interval_mins 内只跑一次）
+ *
+ * @return array{triggered:bool, reason:string, report?:array}
+ */
+function mxgj_auto_cron_trigger(): array
+{
+    $lockFile = MXGJ_DATA . '/cron_auto.lock';
+    @mkdir(MXGJ_DATA, 0755, true);
+
+    // 1. 读上次运行时间
+    $lastRun = 0;
+    if (is_file($lockFile)) {
+        $contents = @file_get_contents($lockFile);
+        if ($contents !== false) {
+            $decoded = json_decode($contents, true);
+            if (is_array($decoded) && isset($decoded['ts'])) {
+                $lastRun = (int)$decoded['ts'];
+            } else {
+                $lastRun = (int)@filemtime($lockFile);
+            }
+        }
+    }
+
+    // 2. 算 interval（分钟）
+    $st = mxgj_settings();
+    $cronCfg = is_array($st['cron'] ?? null) ? $st['cron'] : [];
+    $intervalMins = max(1, (int)($cronCfg['interval_mins'] ?? 180));
+    $intervalSecs = $intervalMins * 60;
+    $now = time();
+
+    // 3. 未到时间 → 跳过
+    if ($lastRun > 0 && ($now - $lastRun) < $intervalSecs) {
+        return [
+            'triggered' => false,
+            'reason' => 'cooling_down',
+            'next_run' => date('Y-m-d H:i:s', $lastRun + $intervalSecs),
+        ];
+    }
+
+    // 4. 抢 lock（原子写）— 避免并发请求同时触发
+    $lockContent = json_encode([
+        'ts' => $now,
+        'pid' => getmypid(),
+        'interval_mins' => $intervalMins,
+        'status' => 'running',
+    ], JSON_UNESCAPED_UNICODE);
+
+    // 用 file_put_contents + LOCK_EX 避免并发
+    $locked = @file_put_contents($lockFile, $lockContent . "\n", LOCK_EX);
+    if ($locked === false) {
+        return ['triggered' => false, 'reason' => 'lock_fail'];
+    }
+
+    // 5. 触发 CronMapping（define MXGJ_INTERNAL_CRON 跳过 cron/mapping.php 全局执行逻辑）
+    $report = ['ok' => false, 'msg' => 'unknown'];
+    try {
+        if (file_exists(__DIR__ . '/../cron/mapping.php')) {
+            // 标记：cron/mapping.php 内会用此常量跳过鉴权和全局输出/exit
+            if (!defined('MXGJ_INTERNAL_CRON')) define('MXGJ_INTERNAL_CRON', true);
+            require_once __DIR__ . '/../cron/mapping.php';
+            if (class_exists('CronMapping')) {
+                $report = CronMapping::run(false);
+            }
+        }
+    } catch (\Throwable $e) {
+        $report = ['ok' => false, 'msg' => $e->getMessage(),
+                   'file' => $e->getFile(), 'line' => $e->getLine(),
+                   'trace' => $e->getTraceAsString()];
+    }
+
+    // 6. 更新 lock 状态
+    $lockPayload = [
+        'ts' => $now,
+        'pid' => getmypid(),
+        'interval_mins' => $intervalMins,
+        'status' => ($report['ok'] ?? false) ? 'done' : 'failed',
+        'msg' => $report['msg'] ?? '',
+        'added' => $report['seed_added'] ?? 0,
+        'skip' => $report['seed_skip'] ?? 0,
+        'fail' => $report['seed_fail'] ?? 0,
+        'site_count' => $report['stock_sites'] ?? 0,
+    ];
+    // 错误时附带调试信息（供排查）
+    if (!empty($report['file'])) {
+        $lockPayload['error_file'] = $report['file'];
+        $lockPayload['error_line'] = $report['line'] ?? 0;
+        $lockPayload['error_trace'] = $report['trace'] ?? '';
+    }
+    @file_put_contents($lockFile, json_encode($lockPayload, JSON_UNESCAPED_UNICODE) . "\n", LOCK_EX);
+
+    return [
+        'triggered' => true,
+        'reason' => 'interval_elapsed',
+        'report' => $report,
+    ];
 }

@@ -26,7 +26,9 @@ $isCli = PHP_SAPI === 'cli';
 // 参数：通过命令行 key=... 或 URL ?key=...
 $params = [];
 if ($isCli) {
-    parse_str(implode('&', array_slice($argv, 1)), $params);
+    // 注意：在 PHP shutdown 回调里 $argv 可能已丢失（为 null），需空保护
+    $_argv = isset($argv) ? (array)$argv : [];
+    parse_str(implode('&', array_slice($_argv, 1)), $params);
 } else {
     $params = $_GET;
 }
@@ -42,34 +44,40 @@ $cronKey = isset($cronCfg['key']) && trim((string)$cronCfg['key']) !== ''
         ? trim((string)$st['updater_key'])
         : (string)($st['admin_password'] ?? ''));
 
-// 鉴权
-if (($cronKey !== '' && $key !== $cronKey) || ($cronKey === '' && $key === '')) {
-    out(($dry ? '[dry] ' : '') . "错误：定时密钥不合法（请在 URL/crontab 携带 key=定时密钥）\n");
-    exit(1);
+// 鉴权 — 内部调用（MXGJ_INTERNAL_CRON 已定义）跳过密钥检查
+if (!defined('MXGJ_INTERNAL_CRON')) {
+    if (($cronKey !== '' && $key !== $cronKey) || ($cronKey === '' && $key === '')) {
+        out(($dry ? '[dry] ' : '') . "错误：定时密钥不合法（请在 URL/crontab 携带 key=定时密钥）\n");
+        exit(1);
+    }
 }
 
 $dry  = $dry || !empty($params['dry']);
-$report = CronMapping::run($dry);
-$dry  = $report['dry'] ?? $dry;
 
-// 命令行/页面输出
-out("\n===== 沫兮官替系统 - 定时映射采集 " . ($dry ? '(dry 预览)' : '') . " =====\n");
-out('触发时间: ' . date('Y-m-d H:i:s') . "\n\n");
-foreach ($report['steps'] as $i => $step) {
-    out(($i + 1) . ") {$step}\n");
+// 内部调用（MXGJ_INTERNAL_CRON 已定义）跳过全局执行逻辑
+if (!defined('MXGJ_INTERNAL_CRON')) {
+    $report = CronMapping::run($dry);
+    $dry  = $report['dry'] ?? $dry;
+
+    // 命令行/页面输出
+    out("\n===== 沫兮官替系统 - 定时映射采集 " . ($dry ? '(dry 预览)' : '') . " =====\n");
+    out('触发时间: ' . date('Y-m-d H:i:s') . "\n\n");
+    foreach ($report['steps'] as $i => $step) {
+        out(($i + 1) . ") {$step}\n");
+    }
+    out("\n汇总: 种子链接=" . $report['seed_total'] . " 新增映射=" . $report['seed_added']
+        . " 已存在=" . $report['seed_skip'] . " 识别失败=" . $report['seed_fail']
+        . " 资源站盘点=" . $report['stock_sites'] . "\n");
+    if (!empty($report['rollback'])) {
+        out("已回滚新增映射: " . implode(', ', $report['rollback']) . "\n");
+    }
+    out(($report['ok'] ? '✔ ' : '✘ ') . $report['msg'] . "\n");
+
+    // 追加运行日志
+    appendLog($report, $dry);
+
+    exit($report['ok'] ? 0 : 1);
 }
-out("\n汇总: 种子链接=" . $report['seed_total'] . " 新增映射=" . $report['seed_added']
-    . " 已存在=" . $report['seed_skip'] . " 识别失败=" . $report['seed_fail']
-    . " 资源站盘点=" . $report['stock_sites'] . "\n");
-if (!empty($report['rollback'])) {
-    out("已回滚新增映射: " . implode(', ', $report['rollback']) . "\n");
-}
-out(($report['ok'] ? '✔ ' : '✘ ') . $report['msg'] . "\n");
-
-// 追加运行日志
-appendLog($report, $dry);
-
-exit($report['ok'] ? 0 : 1);
 
 // ---------- 辅助 ----------
 
